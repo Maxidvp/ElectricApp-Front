@@ -1,0 +1,92 @@
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /** https://colorffy.com/dark-theme-generator?colors=6f68b8-121212&success=22946E&warning=A87A2A&danger=9C2121&info=21498A&primaryCount=6&surfaceCount=6 */
+  /** Base colors */
+  --clr-dark-a0: #000000;
+  --clr-light-a0: #ffffff;
+
+  /** Theme primary colors */
+  --clr-primary-a0: #6f68b8;
+  --clr-primary-a10: #7f78c0;
+  --clr-primary-a20: #9087c8;
+  --clr-primary-a30: #a098d0;
+  --clr-primary-a40: #afa8d8;
+  --clr-primary-a50: #bfb9e0;
+
+  /** Theme surface colors */
+  --clr-surface-a0: #121212;
+  --clr-surface-a10: #282828;
+  --clr-surface-a20: #3f3f3f;
+  --clr-surface-a30: #575757;
+  --clr-surface-a40: #717171;
+  --clr-surface-a50: #8b8b8b;
+
+  /** Theme tonal surface colors */
+  --clr-surface-tonal-a0: #1b1a20;
+  --clr-surface-tonal-a10: #302f35;
+  --clr-surface-tonal-a20: #46454b;
+  --clr-surface-tonal-a30: #5e5d62;
+  --clr-surface-tonal-a40: #77767a;
+  --clr-surface-tonal-a50: #909093;
+
+  /** Fonts colors */
+  --clr-font-a0: #ffffff;
+  --clr-font-a10: #eeeeee;
+  --clr-font-a20: #dddddd;
+
+  /** Success colors */
+  --clr-success-a0: #22946e;
+  --clr-success-a10: #47d5a6;
+  --clr-success-a20: #9ae8ce;
+
+  /** Warning colors */
+  --clr-warning-a0: #a87a2a;
+  --clr-warning-a10: #d7ac61;
+  --clr-warning-a20: #ecd7b2;
+
+  /** Danger colors */
+  --clr-danger-a0: #9c2121;
+  --clr-danger-a10: #d94a4a;
+  --clr-danger-a20: #eb9e9e;
+
+  /** Info colors */
+  --clr-info-a0: #21498a;
+  --clr-info-a10: #4077d1;
+  --clr-info-a20: #92b2e5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+html {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.material-icons {
+  font-size: 16px;
+}
+
+.container {
+  background-color: var(--clr-surface-a0);
+}
+
+.subcontainer {
+  background-color: var(--clr-surface-a10);
+}

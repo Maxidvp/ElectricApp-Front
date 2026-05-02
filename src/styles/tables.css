@@ -1,0 +1,256 @@
+/*https://codepen.io/cesarrrguez/pen/MWegWYa*/
+
+:root {
+  --dt-padding: 12px;
+  --dt-padding-s: 6px;
+  --dt-padding-xs: 2px;
+  --dt-border-radius: 3px;
+
+  --dt-background-color-container: var(--clr-surface-tonal-a10);
+  --dt-border-color: var(--clr-surface-tonal-a30);
+  --dt-bg-color: var(--clr-info-a10);
+  --dt-text-color: var(--clr-font-a0);
+  --dt-bg-active-button: var(--clr-info-a10);
+  --dt-text-color-button: var(--clr-font-a0);
+  --dt-text-color-active-button: var(--clr-font-a0);
+  --dt-hover-cell-color: var(--clr-info-a10);
+  --dt-even-row-color: var(--clr-surface-tonal-a30);
+  --dt-focus-color: var(--clr-info-a10);
+  --dt-input-background-color: var(--clr-surface-tonal-a30);
+  --dt-input-color: var(--clr-surface-tonal-a10);
+}
+
+.datatable-container {
+  font-family: sans-serif;
+  background-color: var(--dt-background-color-container);
+  border-radius: var(--dt-border-radius);
+  color: var(--dt-text-color);
+  max-width: 1140px;
+  min-width: 950px;
+  margin: 0 auto;
+  font-size: 12px;
+}
+
+.datatable-container .header-tools {
+  border-bottom: solid 1px var(--dt-border-color);
+  padding: var(--dt-padding);
+  padding-left: 0;
+  display: flex;
+  align-items: baseline;
+}
+
+.datatable-container .header-tools .search {
+  width: 30%;
+}
+
+.datatable-container .header-tools .search .search-input {
+  width: 100%;
+  height: calc(1.5em + 0.75rem + 2px);
+  padding: 0.375rem 0.75rem;
+  background-color: var(--dt-input-background-color);
+  display: block;
+  box-sizing: border-box;
+  border-radius: var(--dt-border-radius);
+  border: solid 1px var(--dt-border-color);
+  color: var(--dt-input-color);
+}
+
+.datatable-container .header-tools .tools {
+  width: 70%;
+}
+
+.datatable-container .header-tools .tools ul {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: start;
+  align-items: baseline;
+}
+
+.datatable-container .header-tools .tools ul li {
+  display: inline-block;
+  margin: 0 var(--dt-padding-xs);
+  align-items: baseline;
+}
+
+.datatable-container .footer-tools {
+  padding: var(--dt-padding);
+  display: flex;
+  align-items: baseline;
+}
+
+.datatable-container .footer-tools .list-items {
+  width: 50%;
+}
+
+.datatable-container .footer-tools .pages {
+  margin-left: auto;
+  margin-right: 0;
+  width: 50%;
+}
+
+.datatable-container .footer-tools .pages ul {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+}
+
+.datatable-container .footer-tools .pages ul li {
+  display: inline-block;
+  margin: 0 var(--dt-padding-xs);
+}
+
+.datatable-container .footer-tools .pages ul li button,
+.datatable-container .header-tools .tools ul li button {
+  color: var(--dt-text-color-button);
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--dt-border-radius);
+  background: transparent;
+  cursor: pointer;
+}
+
+.datatable-container .footer-tools .pages ul li button:hover,
+.datatable-container .header-tools .tools ul li button:hover {
+  background: var(--dt-bg-active-button);
+  color: var(--dt-text-color-active-button);
+}
+
+.datatable-container .footer-tools .pages ul li span.active {
+  background-color: var(--dt-bg-color);
+  border-radius: var(--dt-border-radius);
+}
+
+.datatable-container .footer-tools .pages ul li button,
+.datatable-container .footer-tools .pages ul li span,
+.datatable-container .header-tools .tools ul li button {
+  padding: var(--dt-padding-s) var(--dt-padding);
+}
+
+.datatable-container .datatable {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.datatable-container .datatable,
+.datatable-container .datatable th,
+.datatable-container .datatable td {
+  padding: var(--dt-padding) var(--dt-padding);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.datatable-container .datatable th {
+  font-weight: bolder;
+  text-align: left;
+  border-bottom: solid 1px var(--dt-border-color);
+}
+
+.datatable-container .datatable td {
+  border-bottom: solid 1px var(--dt-border-color);
+}
+
+.datatable-container .datatable tbody tr:nth-child(even) {
+  background-color: var(--dt-even-row-color);
+}
+
+.datatable-container .datatable tbody tr:hover {
+  background-color: var(--dt-hover-cell-color);
+}
+
+.datatable-container .datatable tbody tr .available::after,
+.datatable-container .datatable tbody tr .away::after,
+.datatable-container .datatable tbody tr .offline::after {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.datatable-container .datatable tbody tr .available::after {
+  content: "Online";
+  color: var(--dt-status-available-color);
+}
+
+.datatable-container .datatable tbody tr .away::after {
+  content: "Away";
+  color: var(--dt-status-away-color);
+}
+
+.datatable-container .datatable tbody tr .offline::after {
+  content: "Offline";
+  color: var(--dt-status-offline-color);
+}
+
+.datatable-container .datatable tbody tr .available::before,
+.datatable-container .datatable tbody tr .away::before,
+.datatable-container .datatable tbody tr .offline::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.datatable-container .datatable tbody tr .available::before {
+  background-color: var(--dt-status-available-color);
+}
+
+.datatable-container .datatable tbody tr .away::before {
+  background-color: var(--dt-status-away-color);
+}
+
+.datatable-container .datatable tbody tr .offline::before {
+  background-color: var(--dt-status-offline-color);
+}
+
+
+/*//////////////////////////////////*/
+
+
+.resizer {
+  position: absolute;
+  top: 10%;
+  right: 0;
+  width: 6px;
+  height: 80%;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: all !important;
+}
+
+.resizer::before,
+.resizer::after {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 100%;
+  background: var(--dt-border-color);
+  border-radius: 1px;
+  transition: background 0.15s;
+}
+
+.resizer:hover::before,
+.resizer:hover::after {
+  background: var(--clr-info-a10);
+}
+
+.resizer.isResizing::before,
+.resizer.isResizing::after {
+  background: var(--clr-info-a10);
+}
+
+
+
+/*//////////////////////////////////////////*/
+
