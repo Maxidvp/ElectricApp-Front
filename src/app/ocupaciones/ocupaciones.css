@@ -1,0 +1,235 @@
+/* ── Layout ─────────────────────────────────────────────── */
+.ocup-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--clr-surface-a0);
+  overflow: hidden;
+}
+
+/* ── Sticky header ──────────────────────────────────────── */
+.ocup-sticky {
+  flex-shrink: 0;
+  background: var(--clr-surface-tonal-a0);
+  border-bottom: 1px solid var(--clr-surface-tonal-a20);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* ── Scrollable area ────────────────────────────────────── */
+.ocup-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Selected row ───────────────────────────────────────── */
+.datatable tbody tr.ocup-row-selected {
+  background: rgba(33, 73, 138, 0.35) !important;
+  outline: 1px solid var(--clr-info-a10);
+  cursor: pointer;
+}
+
+.datatable tbody tr {
+  cursor: pointer;
+}
+
+/* ── Type badges ────────────────────────────────────────── */
+.ocup-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.ocup-badge-canio   { background: rgba(232,124,58,0.15); color: #E87C3A; border: 1px solid rgba(232,124,58,0.3); }
+.ocup-badge-bandeja { background: rgba(55,138,221,0.15); color: #378ADD; border: 1px solid rgba(55,138,221,0.3); }
+
+/* ── Inline select ──────────────────────────────────────── */
+.ocup-inline-select {
+  padding: 3px 6px;
+  background: var(--clr-surface-tonal-a10);
+  border: 1px solid var(--clr-info-a10);
+  border-radius: 5px;
+  color: var(--clr-font-a0);
+  font-size: 12px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.ocup-inline-select:focus {
+  outline: none;
+  border-color: var(--clr-primary-a20);
+}
+
+/* ── Progress bar ───────────────────────────────────────── */
+.ocup-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ocup-bar-track {
+  width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--clr-surface-tonal-a20);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.ocup-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+/* ── Circuit chips ──────────────────────────────────────── */
+.ocup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ocup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--clr-surface-tonal-a10);
+  font-size: 11px;
+  color: var(--clr-font-a10);
+  border: 1px solid var(--clr-surface-tonal-a20);
+}
+
+.ocup-chip-remove {
+  background: transparent;
+  border: none;
+  color: var(--clr-surface-tonal-a40);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 1px;
+}
+
+.ocup-chip-remove:hover { color: var(--clr-danger-a10); }
+
+/* ── Dim / empty ────────────────────────────────────────── */
+.ocup-dim {
+  color: var(--clr-surface-tonal-a40);
+  font-size: 12px;
+}
+
+.ocup-empty-row {
+  text-align: center;
+  padding: 28px !important;
+  color: var(--clr-surface-tonal-a40);
+  font-size: 13px;
+}
+
+/* ── Footer ─────────────────────────────────────────────── */
+.ocup-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 0 8px;
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+.ocup-add-btn {
+  padding: 7px 18px;
+  border-radius: 6px;
+  border: 1px solid var(--clr-primary-a0);
+  background: var(--clr-primary-a0);
+  color: var(--clr-font-a0);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.ocup-add-btn:hover:not(:disabled) { background: var(--clr-primary-a10); }
+.ocup-add-btn:disabled { opacity: 0.5; cursor: default; }
+
+.ocup-btn-cancel {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--clr-surface-tonal-a30);
+  background: transparent;
+  color: var(--clr-font-a20);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ocup-btn-cancel:hover { background: var(--clr-surface-tonal-a10); }
+
+/* ── Modal ──────────────────────────────────────────────── */
+.ocup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.ocup-modal {
+  background: var(--clr-surface-tonal-a0);
+  border: 1px solid var(--clr-surface-tonal-a20);
+  border-radius: 10px;
+  padding: 20px 24px;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ocup-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--clr-font-a0);
+}
+
+.ocup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ocup-field label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--clr-font-a20);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ocup-field select,
+.ocup-field input {
+  padding: 6px 10px;
+  background: var(--clr-surface-tonal-a10);
+  border: 1px solid var(--clr-surface-tonal-a20);
+  border-radius: 6px;
+  color: var(--clr-font-a0);
+  font-size: 13px;
+}
+
+.ocup-field select:focus,
+.ocup-field input:focus {
+  outline: none;
+  border-color: var(--clr-primary-a20);
+}
+
+.ocup-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}

@@ -4,7 +4,9 @@ import "./globals.css";
 import "../styles/tables.css"
 
 // Contexto global — provee los tableros y circuitos a toda la app
-import { TablerosProvider } from "@/context/TablerosContext";
+import { TablerosProvider } from "@/context/TablerosContext"
+import { CablesProvider } from "@/context/CablesContext";
+import { RuteoProvider } from "@/context/RuteoContext";
 
 // Fuentes de Google cargadas con el sistema de Next.js
 // se inyectan como variables CSS y se aplican en el <html>
@@ -40,7 +42,11 @@ export default function RootLayout({
             componente pueda acceder a los tableros y circuitos
             usando el hook useTableros() sin necesidad de props */}
         <TablerosProvider>
-          {children}
+          <CablesProvider>
+            <RuteoProvider>
+              {children}
+            </RuteoProvider>
+          </CablesProvider>
         </TablerosProvider>
 
       </body>

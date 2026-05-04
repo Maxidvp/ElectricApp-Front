@@ -1,0 +1,275 @@
+'use client'
+import { useState, useMemo } from 'react'
+import Link from 'next/link'
+import { useRuteo } from '@/context/RuteoContext'
+import * as api from '@/services/ruteo'
+
+// ── Helpers ─────────────────────────────────────────────
+
+function mToCm(s: string): number {
+  return Math.round(parseFloat(s.trim().replace(',', '.')) * 100)
+}
+
+function fmtM(cm: number): string {
+  return (cm / 100).toFixed(2) + 'm'
+}
+
+type SegData = {
+  x1: number; y1: number; z1: number
+  x2: number; y2: number; z2: number
+  tipo: 'canio' | 'bandeja' | 'pared'
+  canio_id: number | null
+  bandeja_id: number | null
+  label: string
+  matched: boolean
+}
+
+function parseSegments(
+  text: string,
+  tipo: 'canio' | 'bandeja' | 'pared',
+  catalog: { id: number; nombre: string | null }[]
+): SegData[] {
+  return text
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l && !isNaN(parseFloat(l.split(';')[0].replace(',', '.'))))
+    .map(line => {
+      const p = line.split(';').map(s => s.trim())
+      const x1 = mToCm(p[0] ?? '0'); const y1 = mToCm(p[1] ?? '0'); const z1 = mToCm(p[2] ?? '0')
+      const x2 = mToCm(p[3] ?? '0'); const y2 = mToCm(p[4] ?? '0'); const z2 = mToCm(p[5] ?? '0')
+      const label = p[6] ?? ''
+      const match = label ? catalog.find(c => c.nombre?.toLowerCase() === label.toLowerCase()) : null
+      return {
+        x1, y1, z1, x2, y2, z2, tipo, label,
+        canio_id:   tipo === 'canio'   ? (match?.id ?? null) : null,
+        bandeja_id: tipo === 'bandeja' ? (match?.id ?? null) : null,
+        matched:    tipo === 'pared' || !!match,
+      }
+    })
+    .filter(s => [s.x1, s.y1, s.x2, s.y2].every(n => !isNaN(n)))
+}
+
+// ── Page ─────────────────────────────────────────────────
+
+export default function ImportadorPage() {
+  const { canios, bandejas } = useRuteo()
+
+  const [textCanios,   setTextCanios]   = useState('')
+  const [textBandejas, setTextBandejas] = useState('')
+  const [textParedes,  setTextParedes]  = useState('')
+  const [status,   setStatus]   = useState<'idle' | 'importing' | 'done'>('idle')
+  const [imported, setImported] = useState(0)
+
+  const parsedCanios   = useMemo(() => parseSegments(textCanios,   'canio',   canios),   [textCanios,   canios])
+  const parsedBandejas = useMemo(() => parseSegments(textBandejas, 'bandeja', bandejas), [textBandejas, bandejas])
+  const parsedParedes  = useMemo(() => parseSegments(textParedes,  'pared',   []),        [textParedes])
+
+  const total = parsedCanios.length + parsedBandejas.length + parsedParedes.length
+
+  const handleImportar = async () => {
+    if (!total || status === 'importing') return
+    setStatus('importing')
+    let count = 0
+    for (const seg of [...parsedCanios, ...parsedBandejas, ...parsedParedes]) {
+      try {
+        await api.createSegmento({
+          tipo: seg.tipo,
+          x1: seg.x1, y1: seg.y1, z1: seg.z1,
+          x2: seg.x2, y2: seg.y2, z2: seg.z2,
+          canio_id: seg.canio_id,
+          bandeja_id: seg.bandeja_id,
+        })
+        count++
+      } catch (e) {
+        console.error('Error al importar segmento', e)
+      }
+    }
+    setImported(count)
+    setStatus('done')
+  }
+
+  return (
+    <div style={{ padding: '28px 36px', maxWidth: 960, margin: '0 auto' }}>
+
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 18, fontWeight: 600, color: 'var(--clr-font-a0)', margin: 0 }}>
+          Importador de segmentos
+        </h1>
+        <p style={{ fontSize: 13, color: 'var(--clr-surface-tonal-a40)', marginTop: 6 }}>
+          Pegá filas exportadas desde otro programa. Las coordenadas se interpretan en metros y se almacenan en centímetros.
+          La primera fila de encabezado se ignora automáticamente.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
+        <ImportSection
+          title="Caños"
+          color="#E87C3A"
+          hint="Start X;Start Y;Start Z;End X;End Y;End Z;Sección"
+          placeholder={`0.2282;15.0141;0.0000;1.0941;15.0141;0.0000;EMT 3/4`}
+          value={textCanios}
+          onChange={setTextCanios}
+          segments={parsedCanios}
+          catalogLabel="Sección"
+        />
+        <ImportSection
+          title="Bandejas"
+          color="#378ADD"
+          hint="Start X;Start Y;Start Z;End X;End Y;End Z;Dimensión"
+          placeholder={`0.2282;15.0141;0.0000;1.0941;15.0141;0.0000;BPC 150x50`}
+          value={textBandejas}
+          onChange={setTextBandejas}
+          segments={parsedBandejas}
+          catalogLabel="Dimensión"
+        />
+        <ImportSection
+          title="Paredes"
+          color="#888780"
+          hint="Start X;Start Y;Start Z;End X;End Y;End Z"
+          placeholder={`0.2282;15.0141;0.0000;1.0941;15.0141;0.0000`}
+          value={textParedes}
+          onChange={setTextParedes}
+          segments={parsedParedes}
+          catalogLabel={null}
+        />
+      </div>
+
+      <div style={{ marginTop: 36, display: 'flex', alignItems: 'center', gap: 16 }}>
+        {status === 'done' ? (
+          <>
+            <span style={{ fontSize: 14, color: 'var(--clr-success-a20)' }}>
+              ✓ {imported} segmento{imported !== 1 ? 's' : ''} importado{imported !== 1 ? 's' : ''} correctamente
+            </span>
+            <Link href="/ruteo" style={{ fontSize: 13, color: 'var(--clr-info-a10)', textDecoration: 'underline' }}>
+              Ir a Ruteo →
+            </Link>
+          </>
+        ) : (
+          <button
+            onClick={handleImportar}
+            disabled={!total || status === 'importing'}
+            style={{
+              padding: '9px 24px',
+              borderRadius: 7,
+              border: '1px solid var(--clr-primary-a0)',
+              background: status === 'importing' ? 'transparent' : 'var(--clr-primary-a0)',
+              color: 'var(--clr-font-a0)',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: !total || status === 'importing' ? 'default' : 'pointer',
+              opacity: !total ? 0.4 : 1,
+              transition: 'background 0.12s',
+            }}
+          >
+            {status === 'importing'
+              ? 'Importando…'
+              : total === 0
+              ? 'Nada que importar'
+              : `Importar ${total} segmento${total !== 1 ? 's' : ''}`}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Import section ────────────────────────────────────────
+
+type SectionProps = {
+  title: string
+  color: string
+  hint: string
+  placeholder: string
+  value: string
+  onChange: (v: string) => void
+  segments: SegData[]
+  catalogLabel: string | null
+}
+
+function ImportSection({ title, color, hint, placeholder, value, onChange, segments, catalogLabel }: SectionProps) {
+  const unmatched = catalogLabel ? segments.filter(s => s.label && !s.matched).length : 0
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0, display: 'inline-block' }} />
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--clr-font-a0)' }}>{title}</span>
+        {segments.length > 0 && (
+          <span style={{ fontSize: 12, color: 'var(--clr-surface-tonal-a40)' }}>
+            {segments.length} fila{segments.length !== 1 ? 's' : ''}
+          </span>
+        )}
+        {unmatched > 0 && (
+          <span style={{ fontSize: 12, color: 'var(--clr-warning-a10)' }}>
+            · {unmatched} sin coincidir en catálogo
+          </span>
+        )}
+      </div>
+
+      {/* Format hint */}
+      <div style={{
+        fontSize: 11, fontFamily: 'monospace',
+        color: 'var(--clr-surface-tonal-a40)', marginBottom: 6,
+      }}>
+        {hint}
+      </div>
+
+      {/* Textarea */}
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        spellCheck={false}
+        style={{
+          width: '100%', height: 110, boxSizing: 'border-box',
+          padding: '8px 10px',
+          background: 'var(--clr-surface-tonal-a10)',
+          border: '1px solid var(--clr-surface-tonal-a20)',
+          borderRadius: 7,
+          color: 'var(--clr-font-a0)',
+          fontSize: 12, fontFamily: 'monospace',
+          resize: 'vertical', outline: 'none',
+        }}
+      />
+
+      {/* Preview table */}
+      {segments.length > 0 && (
+        <div style={{ marginTop: 10, overflowX: 'auto' }}>
+          <table className="datatable" style={{ fontSize: 12, width: '100%' }}>
+            <thead>
+              <tr>
+                <th style={{ width: 32 }}>#</th>
+                <th>X1</th><th>Y1</th><th>Z1</th>
+                <th>X2</th><th>Y2</th><th>Z2</th>
+                {catalogLabel && <th>{catalogLabel}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {segments.map((seg, i) => (
+                <tr key={i}>
+                  <td style={{ color: 'var(--clr-surface-tonal-a40)', textAlign: 'center' }}>{i + 1}</td>
+                  <td>{fmtM(seg.x1)}</td>
+                  <td>{fmtM(seg.y1)}</td>
+                  <td>{fmtM(seg.z1)}</td>
+                  <td>{fmtM(seg.x2)}</td>
+                  <td>{fmtM(seg.y2)}</td>
+                  <td>{fmtM(seg.z2)}</td>
+                  {catalogLabel && (
+                    <td>
+                      {!seg.label
+                        ? <span style={{ color: 'var(--clr-surface-tonal-a40)' }}>—</span>
+                        : seg.matched
+                        ? <span style={{ color: 'var(--clr-success-a20)' }}>✓ {seg.label}</span>
+                        : <span style={{ color: 'var(--clr-warning-a10)' }} title="No encontrado en catálogo">⚠ {seg.label}</span>
+                      }
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}

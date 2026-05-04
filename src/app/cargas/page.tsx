@@ -4,9 +4,8 @@ import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from "
 import "../../styles/tables.css"
 import "../../styles/FormacionModal.css"
 import FormacionModal from '@/components/FormacionModal'
+import TableroModal from '@/components/TableroModal'
 import { useTableros } from '@/context/TablerosContext'
-import { updateFormacion } from '@/services/circuitos'
-import { updateNombreCircuito } from '@/services/circuitos'
 
 type CircuitoAPI = {
   id: number
@@ -22,7 +21,19 @@ type CircuitoAPI = {
     cable: { seccion_f: string; diametro: number | null; calibre_tipo: string; familia_id: number }
     cable_neutro: { diametro: number | null } | null
     cable_tierra: { diametro: number | null } | null
-  }
+  } | null
+}
+
+type FormacionData = {
+  familia_id: string
+  nombre: string
+  cable_fase_id: string
+  cond_por_fase: string
+  Nfases: string
+  cable_neutro_id: string
+  Nneutro: string
+  familia_tierra_id: string
+  cable_tierra_id: string
 }
 
 type CircuitoRow = {
@@ -31,20 +42,10 @@ type CircuitoRow = {
   seccion: string
   formacion: string
   area: string
-  formacionData: {
-    familia_id: string
-    nombre: string
-    cable_fase_id: string
-    cond_por_fase: string
-    Nfases: string
-    cable_neutro_id: string
-    Nneutro: string
-    familia_tierra_id: string
-    cable_tierra_id: string
-  }
+  formacionData: FormacionData | null
 }
 
-function calcularArea(formacion: CircuitoAPI['formacion']): string {
+function calcularArea(formacion: NonNullable<CircuitoAPI['formacion']>): string {
   const area = (d: number | null) => d ? Math.PI * Math.pow(d / 2, 2) : 0
   const areaFases  = formacion.Nfases * formacion.cond_por_fase * area(formacion.cable.diametro)
   const areaNeutro = formacion.Nneutro * area(formacion.cable_neutro?.diametro ?? null)
@@ -52,7 +53,6 @@ function calcularArea(formacion: CircuitoAPI['formacion']): string {
   return (areaFases + areaNeutro + areaTierra).toFixed(2)
 }
 
-// Componente de celda editable
 function CeldaEditable({ valor, onGuardar }: { valor: string; onGuardar: (v: string) => void }) {
   const [editando, setEditando] = useState(false)
   const [texto, setTexto] = useState(valor)
@@ -69,33 +69,22 @@ function CeldaEditable({ valor, onGuardar }: { valor: string; onGuardar: (v: str
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
         onBlur={guardar}
+        onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Enter') guardar()
-          if (e.key === 'Escape') {
-            setTexto(valor)
-            setEditando(false)
-          }
+          if (e.key === 'Escape') { setTexto(valor); setEditando(false) }
         }}
         style={{
-          width: '100%',
-          height: 28,
-          padding: '0 6px',
-          fontSize: 12,
-          border: '1px solid var(--clr-info-a10)',
-          borderRadius: 4,
-          background: 'var(--clr-surface-a10)',
-          color: 'var(--clr-font-a0)',
-          outline: 'none',
+          width: '100%', height: 28, padding: '0 6px', fontSize: 12,
+          border: '1px solid var(--clr-info-a10)', borderRadius: 4,
+          background: 'var(--clr-surface-a10)', color: 'var(--clr-font-a0)', outline: 'none',
         }}
       />
     )
   }
 
   return (
-    <span
-      onClick={() => setEditando(true)}
-      style={{ cursor: 'text', display: 'block', width: '100%' }}
-    >
+    <span onClick={() => setEditando(true)} style={{ cursor: 'text', display: 'block', width: '100%' }}>
       {valor}
     </span>
   )
@@ -105,10 +94,10 @@ function mapearCircuitos(data: CircuitoAPI[]): CircuitoRow[] {
   return data.map((c) => ({
     id:        c.id,
     circuito:  c.circuito,
-    seccion:   `${c.formacion.cable.seccion_f} ${c.formacion.cable.calibre_tipo}`,
-    formacion: c.formacion.nombre,
-    area:      calcularArea(c.formacion),
-    formacionData: {
+    seccion:   c.formacion ? `${c.formacion.cable.seccion_f} ${c.formacion.cable.calibre_tipo}` : '—',
+    formacion: c.formacion?.nombre ?? '—',
+    area:      c.formacion ? calcularArea(c.formacion) : '—',
+    formacionData: c.formacion ? {
       familia_id:        String(c.formacion.cable.familia_id),
       nombre:            c.formacion.nombre,
       cable_fase_id:     String(c.formacion.cable_id),
@@ -118,31 +107,54 @@ function mapearCircuitos(data: CircuitoAPI[]): CircuitoRow[] {
       Nneutro:           String(c.formacion.Nneutro),
       familia_tierra_id: c.formacion.cable_tierra_id ? String(c.formacion.cable.familia_id) : '',
       cable_tierra_id:   c.formacion.cable_tierra_id ? String(c.formacion.cable_tierra_id) : '',
-    }
+    } : null,
   }))
 }
 
 const columnHelper = createColumnHelper<CircuitoRow>()
 
 export default function TablaCargas() {
-  const tableroId = 1
+  const {
+    tableros, getTablero, loading, error,
+    renombrarCircuito, agregarCircuito, duplicarCircuito,
+    actualizarFormacion, agregarTablero,
+  } = useTableros()
 
-  const { getTablero, tableros, loading, error, recargar  } = useTableros()
+  const [tableroId, setTableroId]                       = useState<number | null>(null)
+  const [modalTableroAbierto, setModalTableroAbierto]   = useState(false)
+  const [modalAbierto, setModalAbierto]                 = useState(false)
+  const [circuitoEditando, setCircuitoEditando]         = useState<number | null>(null)
+  const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
+  const [rowSeleccionada, setRowSeleccionada]           = useState<number | null>(null)
 
-  const [modalAbierto, setModalAbierto] = useState(false)
-  const [circuitoSeleccionado, setCircuitoSeleccionado] = useState<number | null>(null)
-  const [formacionSeleccionada, setFormacionSeleccionada] = useState<any>(null)
+  const idEfectivo = tableroId ?? tableros[0]?.id ?? null
+  const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
-  const tablero = getTablero(tableroId)
+  const cambiarTablero = (id: number) => {
+    setTableroId(id)
+    setRowSeleccionada(null)
+  }
 
+  const handleCrearTablero = async (data: any) => {
+    const nuevo = await agregarTablero(data)
+    cambiarTablero(nuevo.id)
+    setModalTableroAbierto(false)
+  }
 
-  
-  // useMemo evita recalcular los datos en cada render
   const data = useMemo(() =>
     tablero ? mapearCircuitos(tablero.circuitos as any) : []
   , [tablero])
 
-  // useMemo evita recrear las columnas en cada render — previene loops
+  const handleAgregar = () => {
+    if (!idEfectivo) return
+    agregarCircuito(idEfectivo)
+  }
+
+  const handleDuplicar = () => {
+    if (!rowSeleccionada) return
+    duplicarCircuito(rowSeleccionada)
+  }
+
   const columns = useMemo(() => [
     columnHelper.accessor('circuito', {
       header: 'Circuito',
@@ -150,36 +162,36 @@ export default function TablaCargas() {
       cell: (info) => (
         <CeldaEditable
           valor={info.getValue()}
-          onGuardar={async (nuevoValor) => {
-            try {
-              await updateNombreCircuito(info.row.original.id, nuevoValor)
-              recargar()
-            } catch (err) {
-              console.error('Error al guardar:', err)
-            }
-          }}
+          onGuardar={(nuevoValor) => renombrarCircuito(info.row.original.id, nuevoValor)}
         />
       )
     }),
-    columnHelper.accessor('seccion',  { header: 'Sección',  size: 120 }),
+    columnHelper.accessor('seccion', { header: 'Sección', size: 120 }),
     columnHelper.accessor('formacion', {
       header: 'Formación',
       size: 180,
-      cell: (info) => (
-        <span
-          style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
-          onClick={() => {
-            setCircuitoSeleccionado(info.row.original.id)
-            setFormacionSeleccionada(info.row.original.formacionData)
-            setModalAbierto(true)
-          }}
-        >
-          {info.getValue()}
-        </span>
-      )
+      cell: (info) => {
+        const fd = info.row.original.formacionData
+        if (!fd) return (
+          <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12 }}>Sin formación</span>
+        )
+        return (
+          <span
+            style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setCircuitoEditando(info.row.original.id)
+              setFormacionSeleccionada(fd)
+              setModalAbierto(true)
+            }}
+          >
+            {info.getValue()}
+          </span>
+        )
+      }
     }),
     columnHelper.accessor('area', { header: 'Área (mm²)', size: 140 }),
-  ], [recargar])
+  ], [renombrarCircuito])
 
   const table = useReactTable({
     data,
@@ -190,17 +202,48 @@ export default function TablaCargas() {
     enableColumnResizing: true,
   })
 
-  if (loading) return <p>Cargando...</p>
+  if (loading && !tablero) return <p>Cargando...</p>
   if (error) return <p>Error: {error}</p>
 
   return (
     <div className="subcontainer">
+      <div className="tablero-tabs">
+        {tableros.map((t) => (
+          <button
+            key={t.id}
+            className={`tablero-tab${idEfectivo === t.id ? ' activo' : ''}`}
+            onClick={() => cambiarTablero(t.id)}
+          >
+            {t.nombre ?? t.tag}
+          </button>
+        ))}
+        <button
+          className="tablero-tab"
+          onClick={() => setModalTableroAbierto(true)}
+          title="Agregar tablero"
+        >
+          <i className="material-icons" style={{ fontSize: 14, verticalAlign: 'middle' }}>add</i>
+        </button>
+      </div>
       <div className="datatable-container">
         <div className="header-tools">
           <div className="tools">
             <ul>
-              <li><button><i className="material-icons">add_circle</i></button></li>
-              <li><button><i className="material-icons">edit</i></button></li>
+              <li>
+                <button onClick={handleAgregar} title="Agregar circuito">
+                  <i className="material-icons">add_circle</i>
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={handleDuplicar}
+                  disabled={rowSeleccionada === null}
+                  title="Duplicar circuito seleccionado"
+                  style={{ opacity: rowSeleccionada === null ? 0.4 : 1 }}
+                >
+                  <i className="material-icons">content_copy</i>
+                </button>
+              </li>
               <li><button><i className="material-icons">delete</i></button></li>
             </ul>
           </div>
@@ -242,40 +285,54 @@ export default function TablaCargas() {
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} style={{ width: cell.column.getSize() }}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {table.getRowModel().rows.map((row) => {
+              const isSelected = row.original.id === rowSeleccionada
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => setRowSeleccionada(isSelected ? null : row.original.id)}
+                  style={{
+                    cursor: 'pointer',
+                    outline: isSelected ? '1px solid var(--clr-info-a10)' : undefined,
+                    background: isSelected ? 'var(--clr-info-a0)' : undefined,
+                  }}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} style={{ width: cell.column.getSize() }}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
-      {modalAbierto && (
+
+      {modalAbierto && formacionSeleccionada && (
         <FormacionModal
           formacionInicial={formacionSeleccionada}
-          onGuardar={async (data) => {
-            if (!circuitoSeleccionado) return
-            try {
-              await updateFormacion(circuitoSeleccionado, {
-                cable_id:        Number(data.cable_fase_id),
-                nombre:          data.nombre,
-                cond_por_fase:   Number(data.cond_por_fase),
-                Nfases:          Number(data.Nfases),
-                Nneutro:         Number(data.Nneutro),
-                cable_neutro_id: data.cable_neutro_id ? Number(data.cable_neutro_id) : null,
-                cable_tierra_id: data.cable_tierra_id ? Number(data.cable_tierra_id) : null,
-              })
-              recargar() // actualiza el contexto global
-              setModalAbierto(false)
-            } catch (err) {
-              console.error('Error al guardar:', err)
-            }
+          onGuardar={(data) => {
+            if (!circuitoEditando) return
+            actualizarFormacion(circuitoEditando, {
+              cable_id:        Number(data.cable_fase_id),
+              nombre:          data.nombre,
+              cond_por_fase:   Number(data.cond_por_fase),
+              Nfases:          Number(data.Nfases),
+              Nneutro:         Number(data.Nneutro),
+              cable_neutro_id: data.cable_neutro_id ? Number(data.cable_neutro_id) : null,
+              cable_tierra_id: data.cable_tierra_id ? Number(data.cable_tierra_id) : null,
+            })
+            setModalAbierto(false)
           }}
           onCerrar={() => setModalAbierto(false)}
+        />
+      )}
+
+      {modalTableroAbierto && (
+        <TableroModal
+          onGuardar={handleCrearTablero}
+          onCerrar={() => setModalTableroAbierto(false)}
         />
       )}
     </div>

@@ -1,5 +1,35 @@
 /*https://codepen.io/cesarrrguez/pen/MWegWYa*/
 
+.tablero-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 12px 12px 8px;
+  flex-wrap: wrap;
+}
+
+.tablero-tab {
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--dt-border-color);
+  background: transparent;
+  color: var(--dt-text-color);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.tablero-tab:hover {
+  opacity: 0.85;
+}
+
+.tablero-tab.activo {
+  background: var(--clr-info-a0);
+  border-color: var(--clr-info-a10);
+  opacity: 1;
+  font-weight: 500;
+}
+
 :root {
   --dt-padding: 12px;
   --dt-padding-s: 6px;

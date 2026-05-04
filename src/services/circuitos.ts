@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
 
 export async function getCircuitos() {
   const res = await fetch(`${API_URL}/circuitos`)
@@ -53,7 +53,25 @@ export async function updateNombreCircuito(id: number, circuito: string) {
   return res.json()
 }
 
-export async function updateFormacion(circuitoId: number, data: {
+export async function crearCircuitoVacio(tableroId: number) {
+  const res = await fetch(`${API_URL}/circuitos/vacio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tablero_id: tableroId })
+  })
+  if (!res.ok) throw new Error('Error al crear el circuito')
+  return res.json()
+}
+
+export async function duplicarCircuito(circuitoId: number) {
+  const res = await fetch(`${API_URL}/circuitos/duplicar/${circuitoId}`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Error al duplicar el circuito')
+  return res.json()
+}
+
+export type FormacionPatch = {
   cable_id: number
   nombre: string
   cond_por_fase: number
@@ -61,7 +79,9 @@ export async function updateFormacion(circuitoId: number, data: {
   Nneutro: number
   cable_neutro_id: number | null
   cable_tierra_id: number | null
-}) {
+}
+
+export async function updateFormacion(circuitoId: number, data: FormacionPatch) {
   const res = await fetch(`${API_URL}/circuitos/${circuitoId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

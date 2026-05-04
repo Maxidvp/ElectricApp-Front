@@ -1,0 +1,44 @@
+.circ-panel-circuitos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 12px 10px;
+  min-height: 44px;
+  align-items: center;
+}
+
+.circ-panel-hint {
+  font-size: 12px;
+  color: var(--clr-surface-tonal-a40);
+}
+
+.circ-panel-btn {
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--clr-surface-tonal-a30);
+  background: transparent;
+  color: var(--clr-font-a10);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+}
+
+.circ-panel-btn:hover:not(:disabled) {
+  background: var(--clr-info-a0);
+  border-color: var(--clr-info-a10);
+}
+
+.circ-panel-btn.asignado {
+  background: var(--clr-success-a0);
+  border-color: var(--clr-success-a10);
+  color: var(--clr-success-a20);
+  cursor: default;
+}
+
+.circ-panel-btn.sin-seleccion {
+  opacity: 0.35;
+}
+
+.circ-panel-btn:disabled {
+  cursor: default;
+}

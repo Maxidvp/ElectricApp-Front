@@ -1,13 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { getFamiliasCables } from '@/services/familiasCables'
-import { getCablesPorFamilia } from '@/services/cables'
+import { useCables } from '@/context/CablesContext'
 import '../styles/FormacionModal.css'
-
-type FamiliaCable = {
-  id: number
-  nombre: string
-}
 
 type Cable = {
   id: number
@@ -36,22 +30,38 @@ const initialState: FormacionForm = {
 
 type Props = {
   formacionInicial?: FormacionForm
-  onGuardar: (data: FormacionForm) => Promise<void>
+  onGuardar: (data: FormacionForm) => void | Promise<void>
   onCerrar: () => void
 }
 
+let globalClipboard: FormacionForm | null = null
+
 export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }: Props) {
-  const [familias, setFamilias] = useState<FamiliaCable[]>([])
+  const { familias, getCablesDeFamilia } = useCables()
   const [cablesFase, setCablesFase] = useState<Cable[]>([])
   const [cablesNeutro, setCablesNeutro] = useState<Cable[]>([])
   const [cablesTierra, setCablesTierra] = useState<Cable[]>([])
   const [form, setForm] = useState<FormacionForm>(formacionInicial ?? initialState)
   const [loading, setLoading] = useState(false)
   const [nombreEditado, setNombreEditado] = useState(false)
+  const [clipboardSnapshot, setClipboardSnapshot] = useState<FormacionForm | null>(globalClipboard)
+  const [copiadoReciente, setCopiadoReciente] = useState(false)
 
-  useEffect(() => {
-    getFamiliasCables().then(setFamilias)
-  }, [])
+  const handleCopiar = () => {
+    const copia = { ...form }
+    globalClipboard = copia
+    setClipboardSnapshot(copia)
+    setCopiadoReciente(true)
+    setTimeout(() => setCopiadoReciente(false), 1500)
+  }
+
+  const handlePegar = () => {
+    if (!clipboardSnapshot) return
+    setForm({ ...clipboardSnapshot })
+    setNombreEditado(!!clipboardSnapshot.nombre)
+    handleGuardar()
+    onCerrar()
+  }
 
   // Cables de fase y neutro comparten familia
   useEffect(() => {
@@ -60,7 +70,7 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
       setCablesNeutro([])
       return
     }
-    getCablesPorFamilia(Number(form.familia_id)).then((cables) => {
+    getCablesDeFamilia(Number(form.familia_id)).then((cables) => {
       setCablesFase(cables)
       setCablesNeutro(cables)
     })
@@ -72,7 +82,7 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
       setCablesTierra([])
       return
     }
-    getCablesPorFamilia(Number(form.familia_tierra_id)).then(setCablesTierra)
+    getCablesDeFamilia(Number(form.familia_tierra_id)).then(setCablesTierra)
   }, [form.familia_tierra_id])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -140,7 +150,7 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
     }
 
     if (tierra) {
-      partes.push(`${tierra.nombre}T`)
+      partes.push(`${tierra.nombre}(G)`)
     }
 
     return partes.join('+')
@@ -163,6 +173,12 @@ const handleGuardar = async () => {
 
         <div className="modal-header">
           <span className="modal-title">Formación</span>
+          <button className="modal-btn" onClick={handleCopiar}>
+            {copiadoReciente ? '¡Copiado!' : 'Copiar'}
+          </button>
+          <button className="modal-btn" onClick={handlePegar} disabled={!clipboardSnapshot}>
+            Pegar
+          </button>
           <button className="modal-close" onClick={onCerrar}>
             <i className="material-icons">close</i>
           </button>
@@ -201,6 +217,14 @@ const handleGuardar = async () => {
             </div>
             <div className="modal-grid">
               <div className="modal-field">
+                <label>Conductores por fase <span className="req">*</span></label>
+                <input name="cond_por_fase" type="number" min="1" max="4" value={form.cond_por_fase} onChange={handleChange} />
+              </div>
+              <div className="modal-field">
+                <label>N° fases <span className="req">*</span></label>
+                <input name="Nfases" type="number" min="1" max="3" value={form.Nfases} onChange={handleChange} />
+              </div>
+              <div className="modal-field">
                 <label>Cable <span className="req">*</span></label>
                 <select name="cable_fase_id" value={form.cable_fase_id} onChange={handleChange} disabled={!form.familia_id}>
                   <option value="">— Seleccioná —</option>
@@ -209,16 +233,7 @@ const handleGuardar = async () => {
                   ))}
                 </select>
               </div>
-              <div className="modal-field">
-                <label>N° fases <span className="req">*</span></label>
-                <input name="Nfases" type="number" min="1" max="3" value={form.Nfases} onChange={handleChange} />
-              </div>
-              <div className="modal-field">
-                <label>Conductores por fase <span className="req">*</span></label>
-                <input name="cond_por_fase" type="number" min="1" max="4" value={form.cond_por_fase} onChange={handleChange} />
-              </div>
             </div>
-
             {/* Divisor interno */}
             <div style={{ margin: '8px 12px 0', borderTop: '1px solid var(--clr-surface-tonal-a20)' }} />
 
