@@ -52,13 +52,19 @@ function parseSegments(
 // ── Page ─────────────────────────────────────────────────
 
 export default function ImportadorPage() {
-  const { canios, bandejas } = useRuteo()
+  const { canios, bandejas, conjuntos } = useRuteo()
 
-  const [textCanios,   setTextCanios]   = useState('')
-  const [textBandejas, setTextBandejas] = useState('')
-  const [textParedes,  setTextParedes]  = useState('')
-  const [status,   setStatus]   = useState<'idle' | 'importing' | 'done'>('idle')
-  const [imported, setImported] = useState(0)
+  const [textCanios,    setTextCanios]    = useState('')
+  const [textBandejas,  setTextBandejas]  = useState('')
+  const [textParedes,   setTextParedes]   = useState('')
+  const [conjuntoId,    setConjuntoId]    = useState<number | ''>('')
+  const [status,    setStatus]    = useState<'idle' | 'importing' | 'done'>('idle')
+  const [imported,  setImported]  = useState(0)
+
+  // Pre-seleccionar el primer conjunto disponible
+  useState(() => {
+    if (conjuntos.length > 0 && conjuntoId === '') setConjuntoId(conjuntos[0].id)
+  })
 
   const parsedCanios   = useMemo(() => parseSegments(textCanios,   'canio',   canios),   [textCanios,   canios])
   const parsedBandejas = useMemo(() => parseSegments(textBandejas, 'bandeja', bandejas), [textBandejas, bandejas])
@@ -78,6 +84,7 @@ export default function ImportadorPage() {
           x2: seg.x2, y2: seg.y2, z2: seg.z2,
           canio_id: seg.canio_id,
           bandeja_id: seg.bandeja_id,
+          conjunto_ids: conjuntoId !== '' ? [conjuntoId] : [],
         })
         count++
       } catch (e) {
@@ -134,7 +141,30 @@ export default function ImportadorPage() {
         />
       </div>
 
-      <div style={{ marginTop: 36, display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ marginTop: 36, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <label style={{ fontSize: 13, color: 'var(--clr-font-a20)', fontWeight: 500 }}>
+          Conjunto destino
+        </label>
+        <select
+          value={conjuntoId}
+          onChange={e => setConjuntoId(e.target.value ? Number(e.target.value) : '')}
+          style={{
+            padding: '5px 10px',
+            background: 'var(--clr-surface-tonal-a10)',
+            border: '1px solid var(--clr-surface-tonal-a20)',
+            borderRadius: 6,
+            color: 'var(--clr-font-a0)',
+            fontSize: 13,
+          }}
+        >
+          <option value="">— Sin conjunto —</option>
+          {conjuntos.map(c => (
+            <option key={c.id} value={c.id}>{c.nombre}</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         {status === 'done' ? (
           <>
             <span style={{ fontSize: 14, color: 'var(--clr-success-a20)' }}>

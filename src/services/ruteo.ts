@@ -5,6 +5,7 @@ export type Canio = {
   nombre: string | null
   diametro_nominal: number
   diametro_interno: number | null
+  color: string | null
 }
 
 export type Bandeja = {
@@ -12,12 +13,18 @@ export type Bandeja = {
   nombre: string | null
   ancho: number
   alto: number | null
+  color: string | null
 }
 
 export type SegmentoCircuito = {
   id: number
   circuito: string
   tablero: { tag: string }
+}
+
+export type Conjunto = {
+  id: number
+  nombre: string
 }
 
 export type Segmento = {
@@ -27,9 +34,16 @@ export type Segmento = {
   x2: number; y2: number; z2: number
   canio_id: number | null
   bandeja_id: number | null
+  color: string | null
   canio: Canio | null
   bandeja: Bandeja | null
   circuitos: SegmentoCircuito[]
+  conjuntos: Conjunto[]
+}
+
+export type CreateSegmentoInput = Omit<Segmento, 'id' | 'canio' | 'bandeja' | 'circuitos' | 'conjuntos' | 'color'> & {
+  color?: string | null
+  conjunto_ids?: number[]
 }
 
 // Canios
@@ -76,7 +90,7 @@ export async function getSegmentos(): Promise<Segmento[]> {
   return res.json()
 }
 
-export async function createSegmento(data: Omit<Segmento, 'id' | 'canio' | 'bandeja' | 'circuitos'>): Promise<Segmento> {
+export async function createSegmento(data: CreateSegmentoInput): Promise<Segmento> {
   const res = await fetch(`${API}/segmentos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -89,7 +103,7 @@ export async function createSegmento(data: Omit<Segmento, 'id' | 'canio' | 'band
   return res.json()
 }
 
-export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos'>>): Promise<Segmento> {
+export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>): Promise<Segmento> {
   const res = await fetch(`${API}/segmentos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -114,4 +128,46 @@ export async function removeCircuitoFromSegmento(segmentoId: number, circuitoId:
   const res = await fetch(`${API}/segmentos/${segmentoId}/circuitos/${circuitoId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar circuito')
   return res.json()
+}
+
+// Conjuntos
+export async function getConjuntos(): Promise<Conjunto[]> {
+  const res = await fetch(`${API}/conjuntos`)
+  if (!res.ok) throw new Error('Error al traer conjuntos')
+  return res.json()
+}
+
+export async function createConjunto(nombre: string): Promise<Conjunto> {
+  const res = await fetch(`${API}/conjuntos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre }),
+  })
+  if (!res.ok) throw new Error('Error al crear conjunto')
+  return res.json()
+}
+
+export async function updateConjunto(id: number, nombre: string): Promise<Conjunto> {
+  const res = await fetch(`${API}/conjuntos/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre }),
+  })
+  if (!res.ok) throw new Error('Error al renombrar conjunto')
+  return res.json()
+}
+
+export async function deleteConjunto(id: number): Promise<void> {
+  const res = await fetch(`${API}/conjuntos/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al eliminar conjunto')
+}
+
+export async function addSegmentoToConjunto(segId: number, conjuntoId: number): Promise<void> {
+  const res = await fetch(`${API}/conjuntos/${conjuntoId}/segmentos/${segId}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Error al agregar segmento al conjunto')
+}
+
+export async function removeSegmentoFromConjunto(segId: number, conjuntoId: number): Promise<void> {
+  const res = await fetch(`${API}/conjuntos/${conjuntoId}/segmentos/${segId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al quitar segmento del conjunto')
 }

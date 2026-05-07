@@ -1,50 +1,73 @@
 'use client'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import * as api from '@/services/ruteo'
-import type { Canio, Bandeja, Segmento, SegmentoCircuito } from '@/services/ruteo'
+import type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput } from '@/services/ruteo'
 
-// Temp IDs are negative so they never clash with real DB ids
 let _tempId = -1
 const nextTempId = () => _tempId--
 
-type Patch = Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos'>>
+type Patch = Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>
 
 interface RuteoCtxType {
   segmentos: Segmento[]
   canios: Canio[]
   bandejas: Bandeja[]
+  conjuntos: Conjunto[]
+  activeConjuntoId: number | null
   loading: boolean
 
-  addSegmento     : (data: Omit<Segmento, 'id' | 'canio' | 'bandeja' | 'circuitos'>) => void
-  previewSegmento : (id: number, patch: Patch) => void
-  editSegmento    : (id: number, patch: Patch) => void
-  removeSegmento  : (id: number) => void
-  asignarCircuito : (segId: number, circId: number, circ: SegmentoCircuito) => void
-  quitarCircuito  : (segId: number, circId: number) => void
+  setActiveConjuntoId : (id: number) => void
+
+  addSegmento             : (data: CreateSegmentoInput) => void
+  previewSegmento         : (id: number, patch: Patch) => void
+  editSegmento            : (id: number, patch: Patch) => void
+  removeSegmento          : (id: number) => void
+  asignarCircuito         : (segId: number, circId: number, circ: SegmentoCircuito) => void
+  quitarCircuito          : (segId: number, circId: number) => void
+
+  addConjunto             : (nombre: string) => void
+  renameConjunto          : (id: number, nombre: string) => void
+  deleteConjunto          : (id: number) => void
+  addSegmentoToConjunto   : (segId: number, conjuntoId: number) => void
+  removeSegmentoFromConjunto : (segId: number, conjuntoId: number) => void
 }
 
 const RuteoContext = createContext<RuteoCtxType | null>(null)
 
 export function RuteoProvider({ children }: { children: React.ReactNode }) {
-  const [segmentos, setSegmentos] = useState<Segmento[]>([])
-  const [canios,    setCanios]    = useState<Canio[]>([])
-  const [bandejas,  setBandejas]  = useState<Bandeja[]>([])
-  const [loading,   setLoading]   = useState(true)
+  const [segmentos,        setSegmentos]        = useState<Segmento[]>([])
+  const [canios,           setCanios]           = useState<Canio[]>([])
+  const [bandejas,         setBandejas]         = useState<Bandeja[]>([])
+  const [conjuntos,        setConjuntos]        = useState<Conjunto[]>([])
+  const [activeConjuntoId, setActiveConjuntoId] = useState<number | null>(null)
+  const [loading,          setLoading]          = useState(true)
 
-  // tempId → promise that resolves to the real Segmento once the API responds
   const pending = useRef<Map<number, Promise<Segmento>>>(new Map())
-  // segId → version counter; incremented on each edit; response is ignored unless it matches
   const editVer = useRef<Map<number, number>>(new Map())
 
-  // ── Bootstrap ─────────────────────────────────────────
+  // ── Bootstrap ──────────────────────────────────────────
   useEffect(() => {
-    Promise.all([api.getSegmentos(), api.getCanios(), api.getBandejas()])
-      .then(([segs, can, ban]) => { setSegmentos(segs); setCanios(can); setBandejas(ban) })
+    Promise.all([api.getSegmentos(), api.getCanios(), api.getBandejas(), api.getConjuntos()])
+      .then(async ([segs, can, ban, conjs]) => {
+        setSegmentos(segs)
+        setCanios(can)
+        setBandejas(ban)
+
+        // Garantizar que siempre existe al menos el conjunto "Default"
+        if (conjs.length === 0) {
+          const def = await api.createConjunto('Default')
+          setConjuntos([def])
+          setActiveConjuntoId(def.id)
+        } else {
+          setConjuntos(conjs)
+          setActiveConjuntoId(conjs[0].id)
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
 
-  // ── Helper: resolve nested objects from IDs ────────────
+  // ── Helper ─────────────────────────────────────────────
   function resolvePatch(patch: Patch, prevSeg: Segmento): Segmento {
     const next: Segmento = { ...prevSeg, ...patch }
     if ('canio_id' in patch)
@@ -54,16 +77,21 @@ export function RuteoProvider({ children }: { children: React.ReactNode }) {
     return next
   }
 
-  // ── Mutations ──────────────────────────────────────────
+  // ── Segmento mutations ─────────────────────────────────
 
-  function addSegmento(data: Omit<Segmento, 'id' | 'canio' | 'bandeja' | 'circuitos'>) {
+  function addSegmento(data: CreateSegmentoInput) {
     const tempId = nextTempId()
+    const conjuntosOptimistic = (data.conjunto_ids ?? [])
+      .map(id => conjuntos.find(c => c.id === id))
+      .filter(Boolean) as Conjunto[]
+
     const optimistic: Segmento = {
       ...data,
       id: tempId,
-      canio:    data.canio_id   != null ? (canios.find(c => c.id === data.canio_id)     ?? null) : null,
-      bandeja:  data.bandeja_id != null ? (bandejas.find(b => b.id === data.bandeja_id) ?? null) : null,
+      canio:     data.canio_id   != null ? (canios.find(c => c.id === data.canio_id)     ?? null) : null,
+      bandeja:   data.bandeja_id != null ? (bandejas.find(b => b.id === data.bandeja_id) ?? null) : null,
       circuitos: [],
+      conjuntos: conjuntosOptimistic,
     }
 
     setSegmentos(prev => [...prev, optimistic])
@@ -85,7 +113,6 @@ export function RuteoProvider({ children }: { children: React.ReactNode }) {
   }
 
   function editSegmento(id: number, patch: Patch) {
-    // Optimistic update immediately
     setSegmentos(prev => prev.map(s => s.id === id ? resolvePatch(patch, s) : s))
 
     const fire = (realId: number) => {
@@ -93,7 +120,6 @@ export function RuteoProvider({ children }: { children: React.ReactNode }) {
       editVer.current.set(realId, ver)
 
       api.updateSegmento(realId, patch).then(real => {
-        // Only apply response if no newer edit arrived while this was in-flight
         if (editVer.current.get(realId) === ver) {
           editVer.current.delete(realId)
           setSegmentos(prev => prev.map(s => s.id === realId ? real : s))
@@ -159,11 +185,75 @@ export function RuteoProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // ── Conjunto mutations ─────────────────────────────────
+
+  function addConjunto(nombre: string) {
+    api.createConjunto(nombre).then(real => {
+      setConjuntos(prev => [...prev, real])
+      setActiveConjuntoId(real.id)
+    }).catch(console.error)
+  }
+
+  function renameConjunto(id: number, nombre: string) {
+    setConjuntos(prev => prev.map(c => c.id === id ? { ...c, nombre } : c))
+    setSegmentos(prev => prev.map(s => ({
+      ...s,
+      conjuntos: s.conjuntos.map(c => c.id === id ? { ...c, nombre } : c),
+    })))
+    api.updateConjunto(id, nombre).catch(console.error)
+  }
+
+  function deleteConjunto(id: number) {
+    if (conjuntos.length <= 1) return  // siempre debe existir al menos uno
+    const remaining = conjuntos.filter(c => c.id !== id)
+    setConjuntos(remaining)
+    setSegmentos(prev => prev.map(s => ({ ...s, conjuntos: s.conjuntos.filter(c => c.id !== id) })))
+    if (activeConjuntoId === id) setActiveConjuntoId(remaining[0].id)
+    api.deleteConjunto(id).catch(console.error)
+  }
+
+  function addSegmentoToConjunto(segId: number, conjuntoId: number) {
+    const conjunto = conjuntos.find(c => c.id === conjuntoId)
+    if (!conjunto) return
+    setSegmentos(prev => prev.map(s =>
+      s.id === segId && !s.conjuntos.find(c => c.id === conjuntoId)
+        ? { ...s, conjuntos: [...s.conjuntos, { id: conjunto.id, nombre: conjunto.nombre }] }
+        : s
+    ))
+    const fire = (realId: number) =>
+      api.addSegmentoToConjunto(realId, conjuntoId).catch(console.error)
+
+    if (segId < 0 && pending.current.has(segId)) {
+      pending.current.get(segId)!.then(real => fire(real.id))
+    } else {
+      fire(segId)
+    }
+  }
+
+  function removeSegmentoFromConjunto(segId: number, conjuntoId: number) {
+    setSegmentos(prev => prev.map(s =>
+      s.id === segId
+        ? { ...s, conjuntos: s.conjuntos.filter(c => c.id !== conjuntoId) }
+        : s
+    ))
+    const fire = (realId: number) =>
+      api.removeSegmentoFromConjunto(realId, conjuntoId).catch(console.error)
+
+    if (segId < 0 && pending.current.has(segId)) {
+      pending.current.get(segId)!.then(real => fire(real.id))
+    } else {
+      fire(segId)
+    }
+  }
+
   return (
     <RuteoContext.Provider value={{
-      segmentos, canios, bandejas, loading,
+      segmentos, canios, bandejas, conjuntos, activeConjuntoId, loading,
+      setActiveConjuntoId,
       addSegmento, previewSegmento, editSegmento, removeSegmento,
       asignarCircuito, quitarCircuito,
+      addConjunto, renameConjunto, deleteConjunto,
+      addSegmentoToConjunto, removeSegmentoFromConjunto,
     }}>
       {children}
     </RuteoContext.Provider>
