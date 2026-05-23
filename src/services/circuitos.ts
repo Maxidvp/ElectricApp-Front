@@ -40,6 +40,16 @@ export async function deleteCircuito(id: number) {
   return res.json()
 }
 
+export async function updateDescripcionCircuito(id: number, descipcion: string | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/descripcion`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ descipcion }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar la descripción')
+  return res.json()
+}
+
 export async function updateNombreCircuito(id: number, circuito: string) {
   const res = await fetch(`${API_URL}/circuitos/${id}/nombre`, {
     method: 'PATCH',
@@ -79,6 +89,15 @@ export type FormacionPatch = {
   Nneutro: number
   cable_neutro_id: number | null
   cable_tierra_id: number | null
+}
+
+export async function reordenarCircuitos(ordenes: { id: number; orden: number }[]) {
+  const res = await fetch(`${API_URL}/circuitos/reordenar`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(ordenes),
+  })
+  if (!res.ok) throw new Error('Error al reordenar circuitos')
 }
 
 export async function updateFormacion(circuitoId: number, data: FormacionPatch) {

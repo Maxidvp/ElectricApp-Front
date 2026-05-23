@@ -7,6 +7,8 @@ import "../styles/tables.css"
 import { TablerosProvider } from "@/context/TablerosContext"
 import { CablesProvider } from "@/context/CablesContext";
 import { RuteoProvider } from "@/context/RuteoContext";
+import { ProyectosProvider } from "@/context/ProyectosContext";
+import Navbar from "@/components/Navbar";
 
 // Fuentes de Google cargadas con el sistema de Next.js
 // se inyectan como variables CSS y se aplican en el <html>
@@ -41,13 +43,16 @@ export default function RootLayout({
         {/* TablerosProvider envuelve toda la app para que cualquier
             componente pueda acceder a los tableros y circuitos
             usando el hook useTableros() sin necesidad de props */}
-        <TablerosProvider>
-          <CablesProvider>
-            <RuteoProvider>
-              {children}
-            </RuteoProvider>
-          </CablesProvider>
-        </TablerosProvider>
+        <ProyectosProvider>
+          <Navbar />
+          <TablerosProvider>
+            <CablesProvider>
+              <RuteoProvider>
+                {children}
+              </RuteoProvider>
+            </CablesProvider>
+          </TablerosProvider>
+        </ProyectosProvider>
 
       </body>
     </html>

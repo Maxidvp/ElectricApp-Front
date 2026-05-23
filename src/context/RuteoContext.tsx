@@ -30,6 +30,8 @@ interface RuteoCtxType {
   deleteConjunto          : (id: number) => void
   addSegmentoToConjunto   : (segId: number, conjuntoId: number) => void
   removeSegmentoFromConjunto : (segId: number, conjuntoId: number) => void
+  addTableroToConjunto    : (conjuntoId: number, tableroId: number) => void
+  removeTableroFromConjunto : (conjuntoId: number, tableroId: number) => void
 }
 
 const RuteoContext = createContext<RuteoCtxType | null>(null)
@@ -87,6 +89,7 @@ export function RuteoProvider({ children }: { children: React.ReactNode }) {
 
     const optimistic: Segmento = {
       ...data,
+      color:     data.color ?? null,
       id: tempId,
       canio:     data.canio_id   != null ? (canios.find(c => c.id === data.canio_id)     ?? null) : null,
       bandeja:   data.bandeja_id != null ? (bandejas.find(b => b.id === data.bandeja_id) ?? null) : null,
@@ -217,7 +220,7 @@ export function RuteoProvider({ children }: { children: React.ReactNode }) {
     if (!conjunto) return
     setSegmentos(prev => prev.map(s =>
       s.id === segId && !s.conjuntos.find(c => c.id === conjuntoId)
-        ? { ...s, conjuntos: [...s.conjuntos, { id: conjunto.id, nombre: conjunto.nombre }] }
+        ? { ...s, conjuntos: [...s.conjuntos, conjunto] }
         : s
     ))
     const fire = (realId: number) =>
@@ -246,6 +249,19 @@ export function RuteoProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  function addTableroToConjunto(conjuntoId: number, tableroId: number) {
+    api.addTableroToConjunto(conjuntoId, tableroId)
+      .then(updated => setConjuntos(prev => prev.map(c => c.id === conjuntoId ? updated : c)))
+      .catch(console.error)
+  }
+
+  function removeTableroFromConjunto(conjuntoId: number, tableroId: number) {
+    setConjuntos(prev => prev.map(c =>
+      c.id === conjuntoId ? { ...c, tableros: c.tableros.filter(t => t.id !== tableroId) } : c
+    ))
+    api.removeTableroFromConjunto(conjuntoId, tableroId).catch(console.error)
+  }
+
   return (
     <RuteoContext.Provider value={{
       segmentos, canios, bandejas, conjuntos, activeConjuntoId, loading,
@@ -254,6 +270,7 @@ export function RuteoProvider({ children }: { children: React.ReactNode }) {
       asignarCircuito, quitarCircuito,
       addConjunto, renameConjunto, deleteConjunto,
       addSegmentoToConjunto, removeSegmentoFromConjunto,
+      addTableroToConjunto, removeTableroFromConjunto,
     }}>
       {children}
     </RuteoContext.Provider>

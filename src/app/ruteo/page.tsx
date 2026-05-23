@@ -547,7 +547,9 @@ export default function RuteoPage() {
 
 // ── Modal de configuración de conjuntos ────────────────
 function ConjuntosModal({ onClose }: { onClose: () => void }) {
-  const { conjuntos, segmentos, addConjunto, renameConjunto, deleteConjunto, addSegmentoToConjunto } = useRuteo()
+  const { conjuntos, segmentos, addConjunto, renameConjunto, deleteConjunto, addSegmentoToConjunto, addTableroToConjunto, removeTableroFromConjunto } = useRuteo()
+  const { tableros } = useTableros()
+  const [tableroConjuntoId, setTableroConjuntoId] = useState<number | ''>(conjuntos[0]?.id ?? '')
 
   const [newName,     setNewName]     = useState('')
   const [editingId,   setEditingId]   = useState<number | null>(null)
@@ -663,6 +665,38 @@ function ConjuntosModal({ onClose }: { onClose: () => void }) {
             {copyFrom === copyTo && copyFrom !== '' && (
               <p className="rcm-copy-warn">Origen y destino deben ser distintos</p>
             )}
+          </>
+        )}
+
+        {/* Tableros por conjunto */}
+        {tableros.length > 0 && (
+          <>
+            <div className="ruteo-modal-section-label" style={{ marginTop: 20 }}>Tableros</div>
+            <div className="rcm-copy-row" style={{ alignItems: 'center' }}>
+              <select className="rcm-copy-select" value={tableroConjuntoId}
+                onChange={e => setTableroConjuntoId(Number(e.target.value))}>
+                {conjuntos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            {tableroConjuntoId !== '' && (() => {
+              const conj = conjuntos.find(c => c.id === tableroConjuntoId)
+              if (!conj) return null
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {tableros.map(t => {
+                    const inC = conj.tableros.some(ct => ct.id === t.id)
+                    return (
+                      <button key={t.id}
+                        className={`panel-seg-conjunto-btn${inC ? ' in' : ''}`}
+                        onClick={() => inC
+                          ? removeTableroFromConjunto(conj.id, t.id)
+                          : addTableroToConjunto(conj.id, t.id)}
+                      >{inC ? '✓ ' : ''}{t.tag}</button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </>
         )}
 

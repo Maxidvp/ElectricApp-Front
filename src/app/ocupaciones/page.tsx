@@ -64,6 +64,7 @@ export default function OcupacionesPage() {
   const { tableros, getCircuito } = useTableros()
   const {
     segmentos, canios, bandejas,
+    conjuntos, activeConjuntoId, setActiveConjuntoId,
     editSegmento,
     asignarCircuito, quitarCircuito,
   } = useRuteo()
@@ -71,8 +72,15 @@ export default function OcupacionesPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showAdd, setShowAdd]       = useState(false)
 
+  const activeConjunto    = conjuntos.find(c => c.id === activeConjuntoId)
+  const conjuntoTableroIds = new Set(activeConjunto?.tableros.map(t => t.id) ?? [])
+  const conjuntoTableros   = tableros.filter(t => conjuntoTableroIds.has(t.id))
+
   const selectedSeg = segmentos.find(s => s.id === selectedId) ?? null
-  const rows             = segmentos.filter(s => s.tipo === 'canio' || s.tipo === 'bandeja')
+  const rows = segmentos.filter(s =>
+    (s.tipo === 'canio' || s.tipo === 'bandeja') &&
+    (activeConjuntoId === null || s.conjuntos.some(c => c.id === activeConjuntoId))
+  )
 
   const handleAsignar = (circId: number) => {
     if (!selectedId) return
@@ -107,8 +115,23 @@ export default function OcupacionesPage() {
 
       {/* ── Sticky header ─── */}
       <div className="ocup-sticky">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0 4px' }}>
+          <label style={{ fontSize: 13, color: 'var(--clr-font-a20)', fontWeight: 500 }}>Conjunto</label>
+          <select
+            value={activeConjuntoId ?? ''}
+            onChange={e => setActiveConjuntoId(Number(e.target.value))}
+            style={{
+              padding: '4px 8px', fontSize: 13,
+              background: 'var(--clr-surface-tonal-a10)',
+              border: '1px solid var(--clr-surface-tonal-a20)',
+              borderRadius: 6, color: 'var(--clr-font-a0)',
+            }}
+          >
+            {conjuntos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+        </div>
         <CircuitosPanel
-          tableros={tableros}
+          tableros={conjuntoTableros}
           asignados={selectedSeg?.circuitos ?? []}
           segmentoSeleccionado={!!selectedId}
           onAsignar={handleAsignar}

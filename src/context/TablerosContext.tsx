@@ -32,6 +32,7 @@ type Formacion = {
 type Circuito = {
   id: number
   circuito: string
+  descipcion: string | null
   tablero_id: number
   formacion_id: number | null
   formacion: Formacion | null
@@ -76,7 +77,10 @@ type TablerosContextType = {
   renombrarCircuito  : (id: number, nombre: string) => void
   agregarCircuito    : (tableroId: number) => void
   duplicarCircuito   : (circuitoId: number) => void
-  actualizarFormacion: (circuitoId: number, data: circuitosApi.FormacionPatch) => void
+  eliminarCircuito   : (id: number) => void
+  reordenarCircuitos   : (tableroId: number, orderedIds: number[]) => void
+  actualizarDescripcion: (id: number, descipcion: string | null) => void
+  actualizarFormacion  : (circuitoId: number, data: circuitosApi.FormacionPatch) => void
   agregarTablero     : (data: any) => Promise<Tablero>
 }
 
@@ -94,6 +98,10 @@ function addCirc(tableros: Tablero[], tableroId: number, circ: Circuito): Tabler
   return tableros.map(t =>
     t.id === tableroId ? { ...t, circuitos: [...t.circuitos, circ] } : t
   )
+}
+
+function removeCirc(tableros: Tablero[], circId: number): Tablero[] {
+  return tableros.map(t => ({ ...t, circuitos: t.circuitos.filter(c => c.id !== circId) }))
 }
 
 function replaceCirc(tableros: Tablero[], tempId: number, real: Circuito): Tablero[] {
@@ -143,7 +151,7 @@ export function TablerosProvider({ children }: { children: React.ReactNode }) {
 
     const tempId = nextTempId()
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { id: tempId, circuito: tag, tablero_id: tableroId, formacion_id: null, formacion: null }
+    const temp: Circuito = { id: tempId, circuito: tag, descipcion: null, tablero_id: tableroId, formacion_id: null, formacion: null }
 
     setTableros(prev => addCirc(prev, tableroId, temp))
 
@@ -206,6 +214,32 @@ export function TablerosProvider({ children }: { children: React.ReactNode }) {
       .catch(console.error)
   }
 
+  // ── eliminarCircuito ───────────────────────────────────────
+  function eliminarCircuito(circuitoId: number) {
+    setTableros(prev => removeCirc(prev, circuitoId))
+    circuitosApi.deleteCircuito(circuitoId).catch(err => { console.error(err); cargar() })
+  }
+
+  // ── reordenarCircuitos ────────────────────────────────────
+  function reordenarCircuitos(tableroId: number, orderedIds: number[]) {
+    setTableros(prev => prev.map(t => {
+      if (t.id !== tableroId) return t
+      const byId = new Map(t.circuitos.map(c => [c.id, c]))
+      return {
+        ...t,
+        circuitos: orderedIds.map((id, i) => ({ ...byId.get(id)!, orden: i })),
+      }
+    }))
+    const ordenes = orderedIds.map((id, i) => ({ id, orden: i }))
+    circuitosApi.reordenarCircuitos(ordenes).catch(console.error)
+  }
+
+  // ── actualizarDescripcion ──────────────────────────────────
+  function actualizarDescripcion(id: number, descipcion: string | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, descipcion })))
+    circuitosApi.updateDescripcionCircuito(id, descipcion).catch(console.error)
+  }
+
   // ── agregarTablero ─────────────────────────────────────────
   async function agregarTablero(data: any): Promise<Tablero> {
     const real = await tablerosApi.createTablero(data) as Tablero
@@ -218,8 +252,8 @@ export function TablerosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error,
       recargar: cargar,
       getTablero, getCircuito,
-      renombrarCircuito, agregarCircuito, duplicarCircuito,
-      actualizarFormacion, agregarTablero,
+      renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
+      reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
     }}>
       {children}
     </TablerosContext.Provider>

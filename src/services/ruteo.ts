@@ -25,6 +25,7 @@ export type SegmentoCircuito = {
 export type Conjunto = {
   id: number
   nombre: string
+  tableros: { id: number; tag: string }[]
 }
 
 export type Segmento = {
@@ -160,6 +161,18 @@ export async function updateConjunto(id: number, nombre: string): Promise<Conjun
 export async function deleteConjunto(id: number): Promise<void> {
   const res = await fetch(`${API}/conjuntos/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar conjunto')
+}
+
+export async function addTableroToConjunto(conjuntoId: number, tableroId: number): Promise<Conjunto> {
+  const res = await fetch(`${API}/conjuntos/${conjuntoId}/tableros/${tableroId}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Error al agregar tablero al conjunto')
+  return res.json()
+}
+
+export async function removeTableroFromConjunto(conjuntoId: number, tableroId: number): Promise<Conjunto> {
+  const res = await fetch(`${API}/conjuntos/${conjuntoId}/tableros/${tableroId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al quitar tablero del conjunto')
+  return res.json()
 }
 
 export async function addSegmentoToConjunto(segId: number, conjuntoId: number): Promise<void> {

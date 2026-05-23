@@ -1,6 +1,12 @@
 'use client'
 import { useState, useMemo } from 'react'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table"
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import "../../styles/tables.css"
 import "../../styles/FormacionModal.css"
 import FormacionModal from '@/components/FormacionModal'
@@ -10,6 +16,7 @@ import { useTableros } from '@/context/TablerosContext'
 type CircuitoAPI = {
   id: number
   circuito: string
+  descipcion: string | null
   formacion: {
     nombre: string
     cond_por_fase: number
@@ -39,6 +46,7 @@ type FormacionData = {
 type CircuitoRow = {
   id: number
   circuito: string
+  descipcion: string | null
   seccion: string
   formacion: string
   area: string
@@ -84,7 +92,7 @@ function CeldaEditable({ valor, onGuardar }: { valor: string; onGuardar: (v: str
   }
 
   return (
-    <span onClick={() => setEditando(true)} style={{ cursor: 'text', display: 'block', width: '100%' }}>
+    <span onClick={() => { setTexto(valor); setEditando(true) }} style={{ cursor: 'text', display: 'block', width: '100%', minHeight: 20 }}>
       {valor}
     </span>
   )
@@ -94,6 +102,7 @@ function mapearCircuitos(data: CircuitoAPI[]): CircuitoRow[] {
   return data.map((c) => ({
     id:        c.id,
     circuito:  c.circuito,
+    descipcion: c.descipcion,
     seccion:   c.formacion ? `${c.formacion.cable.seccion_f} ${c.formacion.cable.calibre_tipo}` : '—',
     formacion: c.formacion?.nombre ?? '—',
     area:      c.formacion ? calcularArea(c.formacion) : '—',
@@ -116,9 +125,11 @@ const columnHelper = createColumnHelper<CircuitoRow>()
 export default function TablaCargas() {
   const {
     tableros, getTablero, loading, error,
-    renombrarCircuito, agregarCircuito, duplicarCircuito,
-    actualizarFormacion, agregarTablero,
+    renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
+    reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
   } = useTableros()
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const [tableroId, setTableroId]                       = useState<number | null>(null)
   const [modalTableroAbierto, setModalTableroAbierto]   = useState(false)
@@ -126,7 +137,7 @@ export default function TablaCargas() {
   const [circuitoEditando, setCircuitoEditando]         = useState<number | null>(null)
   const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
   const [rowSeleccionada, setRowSeleccionada]           = useState<number | null>(null)
-
+  const [draggingId,      setDraggingId]               = useState<string | null>(null)
   const idEfectivo = tableroId ?? tableros[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
@@ -141,9 +152,29 @@ export default function TablaCargas() {
     setModalTableroAbierto(false)
   }
 
-  const data = useMemo(() =>
-    tablero ? mapearCircuitos(tablero.circuitos as any) : []
-  , [tablero])
+  const contextData = useMemo(() => {
+    if (!tablero) return []
+    const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
+    return mapearCircuitos(sorted as any)
+  }, [tablero])
+
+  const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
+  if (displayData.length !== contextData.length ||
+      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descipcion !== contextData[i]?.descipcion)) {
+    setDisplayData(contextData)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id || !idEfectivo) return
+    const oldIndex = displayData.findIndex(r => String(r.id) === active.id)
+    const newIndex  = displayData.findIndex(r => String(r.id) === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const newOrder = arrayMove(displayData, oldIndex, newIndex)
+    setDisplayData(newOrder)
+    reordenarCircuitos(idEfectivo, newOrder.map(r => r.id))
+    setRowSeleccionada(Number(active.id))
+  }
 
   const handleAgregar = () => {
     if (!idEfectivo) return
@@ -153,6 +184,12 @@ export default function TablaCargas() {
   const handleDuplicar = () => {
     if (!rowSeleccionada) return
     duplicarCircuito(rowSeleccionada)
+  }
+
+  const handleEliminar = () => {
+    if (!rowSeleccionada) return
+    eliminarCircuito(rowSeleccionada)
+    setRowSeleccionada(null)
   }
 
   const columns = useMemo(() => [
@@ -166,25 +203,39 @@ export default function TablaCargas() {
         />
       )
     }),
+    columnHelper.accessor('descipcion', {
+      header: 'Descripción',
+      size: 200,
+      cell: (info) => (
+        <CeldaEditable
+          valor={info.getValue() ?? ''}
+          onGuardar={(v) => actualizarDescripcion(info.row.original.id, v.trim() || null)}
+        />
+      )
+    }),
     columnHelper.accessor('seccion', { header: 'Sección', size: 120 }),
     columnHelper.accessor('formacion', {
       header: 'Formación',
       size: 180,
       cell: (info) => {
         const fd = info.row.original.formacionData
+        const openModal = (e: React.MouseEvent) => {
+          e.stopPropagation()
+          setCircuitoEditando(info.row.original.id)
+          setFormacionSeleccionada(fd ?? {
+            familia_id: '', nombre: '', cable_fase_id: '', cond_por_fase: '1',
+            Nfases: '3', cable_neutro_id: '', Nneutro: '1', familia_tierra_id: '', cable_tierra_id: '',
+          })
+          setModalAbierto(true)
+        }
         if (!fd) return (
-          <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12 }}>Sin formación</span>
+          <span onClick={openModal}
+            style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, cursor: 'pointer' }}>
+            Sin formación
+          </span>
         )
         return (
-          <span
-            style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
-            onClick={(e) => {
-              e.stopPropagation()
-              setCircuitoEditando(info.row.original.id)
-              setFormacionSeleccionada(fd)
-              setModalAbierto(true)
-            }}
-          >
+          <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }} onClick={openModal}>
             {info.getValue()}
           </span>
         )
@@ -194,7 +245,7 @@ export default function TablaCargas() {
   ], [renombrarCircuito])
 
   const table = useReactTable({
-    data,
+    data: displayData,
     columns,
     getCoreRowModel: getCoreRowModel(),
     columnResizeMode: 'onChange',
@@ -231,7 +282,7 @@ export default function TablaCargas() {
             <ul>
               <li>
                 <button onClick={handleAgregar} title="Agregar circuito">
-                  <i className="material-icons">add_circle</i>
+                  <i className="material-icons">Agregar</i>
                 </button>
               </li>
               <li>
@@ -241,10 +292,19 @@ export default function TablaCargas() {
                   title="Duplicar circuito seleccionado"
                   style={{ opacity: rowSeleccionada === null ? 0.4 : 1 }}
                 >
-                  <i className="material-icons">content_copy</i>
+                  <i className="material-icons">Duplicar</i>
                 </button>
               </li>
-              <li><button><i className="material-icons">delete</i></button></li>
+              <li>
+                <button
+                  onClick={handleEliminar}
+                  disabled={rowSeleccionada === null}
+                  title="Eliminar circuito seleccionado"
+                  style={{ opacity: rowSeleccionada === null ? 0.4 : 1 }}
+                >
+                  <i className="material-icons">Eliminar</i>
+                </button>
+              </li>
             </ul>
           </div>
           <div className="search">
@@ -263,6 +323,7 @@ export default function TablaCargas() {
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
+                <th style={{ width: 32 }} />
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
@@ -284,28 +345,34 @@ export default function TablaCargas() {
               </tr>
             ))}
           </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => {
-              const isSelected = row.original.id === rowSeleccionada
-              return (
-                <tr
-                  key={row.id}
-                  onClick={() => setRowSeleccionada(isSelected ? null : row.original.id)}
-                  style={{
-                    cursor: 'pointer',
-                    outline: isSelected ? '1px solid var(--clr-info-a10)' : undefined,
-                    background: isSelected ? 'var(--clr-info-a0)' : undefined,
-                  }}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} style={{ width: cell.column.getSize() }}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              )
-            })}
-          </tbody>
+          <DndContext sensors={sensors} collisionDetection={closestCenter}
+            onDragStart={e => setDraggingId(String(e.active.id))}
+            onDragEnd={e => { setDraggingId(null); handleDragEnd(e) }}
+            onDragCancel={() => setDraggingId(null)}
+          >
+            <SortableContext items={displayData.map(r => String(r.id))} strategy={verticalListSortingStrategy}>
+              <tbody>
+                {table.getRowModel().rows.map((row) => {
+                  const isSelected = row.original.id === rowSeleccionada
+                  return (
+                    <SortableRow
+                      key={row.id}
+                      id={String(row.original.id)}
+                      isSelected={isSelected}
+                      isAnyDragging={draggingId !== null}
+                      onClick={() => { setRowSeleccionada(isSelected ? null : row.original.id) }}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <td key={cell.id} style={{ width: cell.column.getSize() }}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      ))}
+                    </SortableRow>
+                  )
+                })}
+              </tbody>
+            </SortableContext>
+          </DndContext>
         </table>
       </div>
 
@@ -336,5 +403,40 @@ export default function TablaCargas() {
         />
       )}
     </div>
+  )
+}
+
+// ── Sortable row ──────────────────────────────────────────
+
+function SortableRow({ id, isSelected, isAnyDragging, onClick, children }: {
+  id: string
+  isSelected: boolean
+  isAnyDragging: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  return (
+    <tr
+      ref={setNodeRef}
+      onClick={onClick}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: isAnyDragging && !isDragging
+          ? `${transition}, background-color 500ms ease`
+          : 'background-color 500ms ease',
+        opacity: isDragging ? 0.4 : 1,
+        cursor: 'pointer',
+        outline: isSelected ? '1px solid var(--clr-info-a10)' : undefined,
+        background: isSelected ? 'var(--clr-info-a0)' : undefined,
+      }}
+    >
+      <td
+        style={{ width: 32, textAlign: 'center', color: 'var(--clr-surface-tonal-a40)', cursor: 'grab', userSelect: 'none' }}
+        onClick={e => e.stopPropagation()}
+        {...attributes} {...listeners}
+      >⠿</td>
+      {children}
+    </tr>
   )
 }
