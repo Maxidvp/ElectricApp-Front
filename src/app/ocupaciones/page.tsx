@@ -1,7 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useTableros } from '@/context/TablerosContext'
-import { useRuteo } from '@/context/RuteoContext'
+import { useProyectos } from '@/context/ProyectosContext'
 import type { Canio, Bandeja, Segmento } from '@/services/ruteo'
 import CircuitosPanel from '@/components/CircuitosPanel'
 import './ocupaciones.css'
@@ -61,13 +60,13 @@ function OcupacionBar({ pct }: { pct: number }) {
 // ── Page ───────────────────────────────────────────────────────
 
 export default function OcupacionesPage() {
-  const { tableros, getCircuito } = useTableros()
   const {
+    tableros, getCircuito,
     segmentos, canios, bandejas,
     conjuntos, activeConjuntoId, setActiveConjuntoId,
     editSegmento,
     asignarCircuito, quitarCircuito,
-  } = useRuteo()
+  } = useProyectos()
 
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showAdd, setShowAdd]       = useState(false)
@@ -279,7 +278,7 @@ function AddModal({ canios, bandejas, onClose }: {
   bandejas: Bandeja[]
   onClose: () => void
 }) {
-  const { addSegmento } = useRuteo()
+  const { addSegmento } = useProyectos()
   const [tipo, setTipo]           = useState<'canio' | 'bandeja' | 'pared'>('canio')
   const [canioId, setCanioId]     = useState<number | ''>(canios[0]?.id ?? '')
   const [bandejaId, setBandejaId] = useState<number | ''>(bandejas[0]?.id ?? '')

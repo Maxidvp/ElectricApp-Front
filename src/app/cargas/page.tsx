@@ -11,7 +11,7 @@ import "../../styles/tables.css"
 import "../../styles/FormacionModal.css"
 import FormacionModal from '@/components/FormacionModal'
 import TableroModal from '@/components/TableroModal'
-import { useTableros } from '@/context/TablerosContext'
+import { useProyectos } from '@/context/ProyectosContext'
 
 type CircuitoAPI = {
   id: number
@@ -127,7 +127,7 @@ export default function TablaCargas() {
     tableros, getTablero, loading, error,
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
-  } = useTableros()
+  } = useProyectos()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 

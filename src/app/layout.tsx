@@ -3,11 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "../styles/tables.css"
 
-// Contexto global — provee los tableros y circuitos a toda la app
-import { TablerosProvider } from "@/context/TablerosContext"
-import { CablesProvider } from "@/context/CablesContext";
-import { RuteoProvider } from "@/context/RuteoContext";
 import { ProyectosProvider } from "@/context/ProyectosContext";
+import { CablesProvider } from "@/context/CablesContext";
 import Navbar from "@/components/Navbar";
 
 // Fuentes de Google cargadas con el sistema de Next.js
@@ -40,18 +37,11 @@ export default function RootLayout({
     >
       <body>
 
-        {/* TablerosProvider envuelve toda la app para que cualquier
-            componente pueda acceder a los tableros y circuitos
-            usando el hook useTableros() sin necesidad de props */}
         <ProyectosProvider>
           <Navbar />
-          <TablerosProvider>
-            <CablesProvider>
-              <RuteoProvider>
-                {children}
-              </RuteoProvider>
-            </CablesProvider>
-          </TablerosProvider>
+          <CablesProvider>
+            {children}
+          </CablesProvider>
         </ProyectosProvider>
 
       </body>

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { useRuteo } from '@/context/RuteoContext'
+import { useProyectos } from '@/context/ProyectosContext'
 import * as api from '@/services/ruteo'
 
 // ── Helpers ─────────────────────────────────────────────
@@ -52,7 +52,7 @@ function parseSegments(
 // ── Page ─────────────────────────────────────────────────
 
 export default function ImportadorPage() {
-  const { canios, bandejas, conjuntos } = useRuteo()
+  const { canios, bandejas, conjuntos } = useProyectos()
 
   const [textCanios,    setTextCanios]    = useState('')
   const [textBandejas,  setTextBandejas]  = useState('')

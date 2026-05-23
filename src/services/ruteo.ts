@@ -138,11 +138,11 @@ export async function getConjuntos(): Promise<Conjunto[]> {
   return res.json()
 }
 
-export async function createConjunto(nombre: string): Promise<Conjunto> {
+export async function createConjunto(nombre: string, proyecto_id?: number | null): Promise<Conjunto> {
   const res = await fetch(`${API}/conjuntos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nombre }),
+    body: JSON.stringify({ nombre, proyecto_id }),
   })
   if (!res.ok) throw new Error('Error al crear conjunto')
   return res.json()
@@ -183,4 +183,51 @@ export async function addSegmentoToConjunto(segId: number, conjuntoId: number): 
 export async function removeSegmentoFromConjunto(segId: number, conjuntoId: number): Promise<void> {
   const res = await fetch(`${API}/conjuntos/${conjuntoId}/segmentos/${segId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar segmento del conjunto')
+}
+
+// Paredes
+export type Pared = {
+  id: number
+  nombre: string | null
+  color: string | null
+  x1: number; y1: number; z1: number
+  x2: number; y2: number; z2: number
+  conjuntos: { id: number; nombre: string }[]
+}
+
+export type CreateParedInput = Omit<Pared, 'id' | 'conjuntos'> & { conjunto_ids?: number[] }
+
+export async function createPared(data: CreateParedInput): Promise<Pared> {
+  const res = await fetch(`${API}/paredes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Error al crear pared')
+  return res.json()
+}
+
+export async function updatePared(id: number, data: Partial<Omit<Pared, 'id' | 'conjuntos'>>): Promise<Pared> {
+  const res = await fetch(`${API}/paredes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Error al actualizar pared')
+  return res.json()
+}
+
+export async function deletePared(id: number): Promise<void> {
+  const res = await fetch(`${API}/paredes/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al eliminar pared')
+}
+
+export async function addParedToConjunto(conjuntoId: number, paredId: number): Promise<void> {
+  const res = await fetch(`${API}/conjuntos/${conjuntoId}/paredes/${paredId}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Error al agregar pared al conjunto')
+}
+
+export async function removeParedFromConjunto(conjuntoId: number, paredId: number): Promise<void> {
+  const res = await fetch(`${API}/conjuntos/${conjuntoId}/paredes/${paredId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al quitar pared del conjunto')
 }
