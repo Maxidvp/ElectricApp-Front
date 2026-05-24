@@ -26,6 +26,7 @@ export default function RuteoPage() {
   const {
     tableros, segmentos, conjuntos, paredes,
     activeConjuntoId, setActiveConjuntoId,
+    tablaParedes, activaTablaParedId,
     addSegmento, removeSegmento,
     asignarCircuito, quitarCircuito,
     addPared, removePared,
@@ -50,8 +51,10 @@ export default function RuteoPage() {
 
   const isParedVisible = useCallback((p: Pared) => {
     if (activeConjuntoId === null) return true
-    return p.conjuntos.some(c => c.id === activeConjuntoId)
-  }, [activeConjuntoId])
+    const conjunto = conjuntos.find(c => c.id === activeConjuntoId)
+    if (!conjunto) return false
+    return conjunto.tabla_paredes.some(tp => tp.id === p.tabla_pared_id)
+  }, [activeConjuntoId, conjuntos])
 
   // ── Endpoint snap ──────────────────────────────────────
   const findNearestEndpoint = useCallback((x: number, y: number, excludeId: number) => {
@@ -108,18 +111,26 @@ export default function RuteoPage() {
 
     const pos = snapPoint(snap(rawPos.x), snap(rawPos.y))
     if (!drawStart) {
+      if (tool === 'pared' && tablaParedes.length === 0) {
+        setShowConfigModal(true)
+        return
+      }
       setDrawStart(pos)
     } else {
       if (tool === 'pared') {
-        addPared({ x1: drawStart.x, y1: drawStart.y, z1: drawZ, x2: pos.x, y2: pos.y, z2: drawZ,
-          nombre: null, color: null, conjunto_ids: activeConjuntoId ? [activeConjuntoId] : [] })
+        addPared({
+          x1: drawStart.x, y1: drawStart.y, z1: drawZ,
+          x2: pos.x, y2: pos.y, z2: drawZ,
+          nombre: null, color: null,
+          tabla_pared_id: activaTablaParedId,
+        })
       } else {
         addSegmento({ tipo: tool, x1: drawStart.x, y1: drawStart.y, z1: drawZ, x2: pos.x, y2: pos.y, z2: drawZ,
           canio_id: null, bandeja_id: null, conjunto_ids: activeConjuntoId ? [activeConjuntoId] : [] })
       }
       setDrawStart(null)
     }
-  }, [tool, drawStart, drawZ, activeConjuntoId, snapPoint, addSegmento, addPared])
+  }, [tool, drawStart, drawZ, activeConjuntoId, activaTablaParedId, tablaParedes.length, snapPoint, addSegmento, addPared])
 
   const handleSegmentClick = useCallback((id: number, e: KonvaEventObject<MouseEvent>) => {
     if (tool === 'seleccionar') {

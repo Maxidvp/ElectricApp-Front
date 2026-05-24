@@ -4,12 +4,12 @@ import * as ruteoApi from '@/services/ruteo'
 import * as circuitosApi from '@/services/circuitos'
 import * as tablerosApi from '@/services/tableros'
 import * as proyectosApi from '@/services/proyectos'
-import type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, Pared, CreateParedInput } from '@/services/ruteo'
+import type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, TablaPared } from '@/services/ruteo'
 import type { FormacionPatch } from '@/services/circuitos'
 import type { Proyecto as ProyectoMeta } from '@/services/proyectos'
 
 export type { ProyectoMeta }
-export type { Pared }
+export type { Pared, TablaPared }
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ type Formacion = {
 type Circuito = {
   id: number
   circuito: string
-  descipcion: string | null
+  descripcion: string | null
   tablero_id: number
   formacion_id: number | null
   formacion: Formacion | null
@@ -96,16 +96,6 @@ function deriveSegmentos(conjuntos: (Conjunto & { segmentos?: Segmento[] })[]): 
   return Array.from(map.values())
 }
 
-function deriveParedes(conjuntos: any[]): Pared[] {
-  const map = new Map<number, Pared>()
-  for (const c of conjuntos) {
-    for (const p of c.paredes ?? []) {
-      if (!map.has(p.id)) map.set(p.id, p)
-    }
-  }
-  return Array.from(map.values())
-}
-
 // ── Context type ──────────────────────────────────────────────────
 type ProyectosContextType = {
   // Project management
@@ -116,7 +106,7 @@ type ProyectosContextType = {
   actualizarProyecto: (id: number, data: { nombre: string; descripcion?: string | null }) => Promise<void>
   eliminarProyecto: (id: number) => Promise<void>
 
-  // Tableros & circuitos (ex-TablerosContext)
+  // Tableros & circuitos
   tableros: Tablero[]
   loading: boolean
   error: string | null
@@ -128,11 +118,11 @@ type ProyectosContextType = {
   duplicarCircuito: (circuitoId: number) => void
   eliminarCircuito: (id: number) => void
   reordenarCircuitos: (tableroId: number, orderedIds: number[]) => void
-  actualizarDescripcion: (id: number, descipcion: string | null) => void
+  actualizarDescripcion: (id: number, descripcion: string | null) => void
   actualizarFormacion: (circuitoId: number, data: FormacionPatch) => void
   agregarTablero: (data: any) => Promise<Tablero>
 
-  // Segmentos & conjuntos (ex-RuteoContext)
+  // Segmentos & conjuntos
   segmentos: Segmento[]
   canios: Canio[]
   bandejas: Bandeja[]
@@ -156,34 +146,62 @@ type ProyectosContextType = {
   // Paredes
   paredes: Pared[]
   addPared: (data: CreateParedInput) => void
-  editPared: (id: number, patch: Partial<Omit<Pared, 'id' | 'conjuntos'>>) => void
+  editPared: (id: number, patch: Partial<Omit<Pared, 'id'>>) => void
   removePared: (id: number) => void
-  addParedToConjunto: (conjuntoId: number, paredId: number) => void
-  removeParedFromConjunto: (conjuntoId: number, paredId: number) => void
+
+  // Tablas de paredes
+  tablaParedes: TablaPared[]
+  activaTablaParedId: number | null
+  setActivaTablaParedId: (id: number | null) => void
+  addTablaPared: (nombre: string) => void
+  renameTablaPared: (id: number, nombre: string) => void
+  deleteTablaPared: (id: number) => void
+  addTablaParedToConjunto: (tablaParedId: number, conjuntoId: number) => void
+  removeTablaParedFromConjunto: (tablaParedId: number, conjuntoId: number) => void
 }
 
 const ProyectosContext = createContext<ProyectosContextType | null>(null)
 
 // ── Provider ──────────────────────────────────────────────────────
 export function ProyectosProvider({ children }: { children: React.ReactNode }) {
-  // Project list (lightweight)
   const [proyectos,      setProyectos]      = useState<ProyectoMeta[]>([])
   const [proyectoActivo, setProyectoActivoState] = useState<ProyectoMeta | null>(null)
 
-  // Operational state
-  const [tableros,        setTableros]        = useState<Tablero[]>([])
-  const [conjuntos,       setConjuntos]       = useState<Conjunto[]>([])
-  const [segmentos,       setSegmentos]       = useState<Segmento[]>([])
-  const [canios,          setCanios]          = useState<Canio[]>([])
-  const [bandejas,        setBandejas]        = useState<Bandeja[]>([])
-  const [paredes,          setParedes]          = useState<Pared[]>([])
-  const [activeConjuntoId, setActiveConjuntoId] = useState<number | null>(null)
-  const [loading,         setLoading]         = useState(true)
-  const [error,           setError]           = useState<string | null>(null)
+  const [tableros,           setTableros]           = useState<Tablero[]>([])
+  const [conjuntos,          setConjuntos]          = useState<Conjunto[]>([])
+  const [segmentos,          setSegmentos]          = useState<Segmento[]>([])
+  const [canios,             setCanios]             = useState<Canio[]>([])
+  const [bandejas,           setBandejas]           = useState<Bandeja[]>([])
+  const [paredes,            setParedes]            = useState<Pared[]>([])
+  const [tablaParedes,       setTablaParedes]       = useState<TablaPared[]>([])
+  const [activeConjuntoId,   setActiveConjuntoIdState]   = useState<number | null>(null)
+  const [activaTablaParedId, setActivaTablaParedIdState] = useState<number | null>(null)
+  const [loading,            setLoading]            = useState(true)
+  const [error,              setError]              = useState<string | null>(null)
 
   const pendingCircuitos = useRef<Map<number, Promise<Circuito>>>(new Map())
   const pendingSegmentos = useRef<Map<number, Promise<Segmento>>>(new Map())
   const editVer          = useRef<Map<number, number>>(new Map())
+  const proyectoActivoRef = useRef<ProyectoMeta | null>(null)
+
+  const LS_PROYECTO   = 'ea_proyecto'
+  const lsConjunto    = (id: number) => `ea_conjunto_${id}`
+  const lsTablaPared  = (id: number) => `ea_tabla_pared_${id}`
+
+  const setActiveConjuntoId = (id: number) => {
+    setActiveConjuntoIdState(id)
+    if (proyectoActivoRef.current) {
+      localStorage.setItem(lsConjunto(proyectoActivoRef.current.id), String(id))
+    }
+  }
+
+  const setActivaTablaParedId = (id: number | null) => {
+    setActivaTablaParedIdState(id)
+    if (proyectoActivoRef.current) {
+      if (id !== null) localStorage.setItem(lsTablaPared(proyectoActivoRef.current.id), String(id))
+      else localStorage.removeItem(lsTablaPared(proyectoActivoRef.current.id))
+    }
+  }
 
   // ── Bootstrap: project list + catalog ────────────────────────
   useEffect(() => {
@@ -196,6 +214,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         setProyectos(projs)
         setCanios(cans)
         setBandejas(bans)
+        const savedId  = Number(localStorage.getItem(LS_PROYECTO)) || null
+        const lastProj = savedId ? (projs.find(p => p.id === savedId) ?? null) : null
+        if (lastProj) setProyectoActivo(lastProj)
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
@@ -204,28 +225,51 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   // ── Load full project data when active project changes ────────
   function setProyectoActivo(p: ProyectoMeta | null) {
     setProyectoActivoState(p)
+    proyectoActivoRef.current = p
     if (!p) {
+      localStorage.removeItem(LS_PROYECTO)
       setTableros([])
       setConjuntos([])
       setSegmentos([])
       setParedes([])
-      setActiveConjuntoId(null)
+      setTablaParedes([])
+      setActiveConjuntoIdState(null)
+      setActivaTablaParedIdState(null)
       return
     }
+    localStorage.setItem(LS_PROYECTO, String(p.id))
     setLoading(true)
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/proyectos/${p.id}`)
       .then(r => r.json())
       .then(data => {
         setTableros(data.tableros ?? [])
+
         const conjs: Conjunto[] = (data.conjuntos ?? []).map((c: any) => ({
           id: c.id,
           nombre: c.nombre,
           tableros: c.tableros ?? [],
+          tabla_paredes: c.tabla_paredes ?? [],
         }))
         setConjuntos(conjs)
         setSegmentos(deriveSegmentos(data.conjuntos ?? []))
-        setParedes(deriveParedes(data.conjuntos ?? []))
-        setActiveConjuntoId((data.conjuntos?.[0]?.id) ?? null)
+
+        const tablas: TablaPared[] = data.tabla_paredes ?? []
+        setTablaParedes(tablas)
+        setParedes(tablas.flatMap((tp: TablaPared) => tp.paredes))
+
+        // Restore active conjunto
+        const availableConjIds: number[] = (data.conjuntos ?? []).map((c: any) => c.id)
+        const savedConjId  = Number(localStorage.getItem(lsConjunto(p.id))) || null
+        const resolvedConj = savedConjId && availableConjIds.includes(savedConjId)
+          ? savedConjId : (availableConjIds[0] ?? null)
+        setActiveConjuntoIdState(resolvedConj)
+
+        // Restore active tabla de paredes
+        const availableTablaIds: number[] = tablas.map(tp => tp.id)
+        const savedTablaId  = Number(localStorage.getItem(lsTablaPared(p.id))) || null
+        const resolvedTabla = savedTablaId && availableTablaIds.includes(savedTablaId)
+          ? savedTablaId : (availableTablaIds[0] ?? null)
+        setActivaTablaParedIdState(resolvedTabla)
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
@@ -274,7 +318,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!tablero) return
     const tempId = nextTempId()
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { id: tempId, circuito: tag, descipcion: null, tablero_id: tableroId, formacion_id: null, formacion: null }
+    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null }
     setTableros(prev => addCirc(prev, tableroId, temp))
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(real => {
@@ -318,9 +362,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     circuitosApi.reordenarCircuitos(orderedIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
   }
 
-  function actualizarDescripcion(id: number, descipcion: string | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, descipcion })))
-    circuitosApi.updateDescripcionCircuito(id, descipcion).catch(console.error)
+  function actualizarDescripcion(id: number, descripcion: string | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, descripcion })))
+    circuitosApi.updateDescripcionCircuito(id, descripcion).catch(console.error)
   }
 
   function actualizarFormacion(circuitoId: number, data: FormacionPatch) {
@@ -439,7 +483,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     ruteoApi.createConjunto(nombre, proyectoActivo?.id)
       .then(real => {
         setConjuntos(prev => [...prev, real])
-        setActiveConjuntoId(real.id)
+        setActiveConjuntoId(real.id as number)
       })
       .catch(console.error)
   }
@@ -458,7 +502,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     const remaining = conjuntos.filter(c => c.id !== id)
     setConjuntos(remaining)
     setSegmentos(prev => prev.map(s => ({ ...s, conjuntos: s.conjuntos.filter(c => c.id !== id) })))
-    if (activeConjuntoId === id) setActiveConjuntoId(remaining[0].id)
+    if (activeConjuntoId === id) setActiveConjuntoId(remaining[0].id as number)
     ruteoApi.deleteConjunto(id).catch(console.error)
   }
 
@@ -501,19 +545,21 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   // ── Pared mutations ──────────────────────────────────────────
   function addPared(data: CreateParedInput) {
     const tempId = nextTempId()
-    const conjOptimistic = (data.conjunto_ids ?? [])
-      .map(id => conjuntos.find(c => c.id === id))
-      .filter(Boolean) as { id: number; nombre: string }[]
-    const optimistic: Pared = {
-      ...data, id: tempId, conjuntos: conjOptimistic,
-    }
+    const optimistic: Pared = { ...data, id: tempId }
     setParedes(prev => [...prev, optimistic])
     ruteoApi.createPared(data)
-      .then(real => setParedes(prev => prev.map(p => p.id === tempId ? real : p)))
+      .then(real => {
+        setParedes(prev => prev.map(p => p.id === tempId ? real : p))
+        setTablaParedes(prev => prev.map(tp =>
+          tp.id === real.tabla_pared_id
+            ? { ...tp, paredes: [...tp.paredes.filter(p => p.id !== tempId), real] }
+            : tp
+        ))
+      })
       .catch(err => { console.error(err); setParedes(prev => prev.filter(p => p.id !== tempId)) })
   }
 
-  function editPared(id: number, patch: Partial<Omit<Pared, 'id' | 'conjuntos'>>) {
+  function editPared(id: number, patch: Partial<Omit<Pared, 'id'>>) {
     setParedes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
     ruteoApi.updatePared(id, patch)
       .then(real => setParedes(prev => prev.map(p => p.id === id ? real : p)))
@@ -522,25 +568,66 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   function removePared(id: number) {
     setParedes(prev => prev.filter(p => p.id !== id))
+    setTablaParedes(prev => prev.map(tp => ({ ...tp, paredes: tp.paredes.filter(p => p.id !== id) })))
     ruteoApi.deletePared(id).catch(console.error)
   }
 
-  function addParedToConjunto(conjuntoId: number, paredId: number) {
-    const conjunto = conjuntos.find(c => c.id === conjuntoId)
-    if (!conjunto) return
-    setParedes(prev => prev.map(p =>
-      p.id === paredId && !p.conjuntos.some(c => c.id === conjuntoId)
-        ? { ...p, conjuntos: [...p.conjuntos, { id: conjuntoId, nombre: conjunto.nombre }] }
-        : p
-    ))
-    ruteoApi.addParedToConjunto(conjuntoId, paredId).catch(console.error)
+  // ── TablaPared mutations ─────────────────────────────────────
+  function addTablaPared(nombre: string) {
+    if (!proyectoActivo) return
+    ruteoApi.createTablaPared(nombre, proyectoActivo.id)
+      .then(real => {
+        setTablaParedes(prev => [...prev, real])
+        setActivaTablaParedId(real.id)
+      })
+      .catch(console.error)
   }
 
-  function removeParedFromConjunto(conjuntoId: number, paredId: number) {
-    setParedes(prev => prev.map(p =>
-      p.id === paredId ? { ...p, conjuntos: p.conjuntos.filter(c => c.id !== conjuntoId) } : p
+  function renameTablaPared(id: number, nombre: string) {
+    setTablaParedes(prev => prev.map(tp => tp.id === id ? { ...tp, nombre } : tp))
+    ruteoApi.updateTablaPared(id, nombre).catch(console.error)
+  }
+
+  function deleteTablaPared(id: number) {
+    setTablaParedes(prev => prev.filter(tp => tp.id !== id))
+    setParedes(prev => prev.filter(p => p.tabla_pared_id !== id))
+    setConjuntos(prev => prev.map(c => ({
+      ...c,
+      tabla_paredes: c.tabla_paredes.filter(tp => tp.id !== id),
+    })))
+    if (activaTablaParedId === id) {
+      const remaining = tablaParedes.filter(tp => tp.id !== id)
+      setActivaTablaParedId(remaining[0]?.id ?? null)
+    }
+    ruteoApi.deleteTablaPared(id).catch(console.error)
+  }
+
+  function addTablaParedToConjunto(tablaParedId: number, conjuntoId: number) {
+    setTablaParedes(prev => prev.map(tp =>
+      tp.id === tablaParedId && !tp.conjuntos.some(c => c.id === conjuntoId)
+        ? { ...tp, conjuntos: [...tp.conjuntos, { id: conjuntoId }] }
+        : tp
     ))
-    ruteoApi.removeParedFromConjunto(conjuntoId, paredId).catch(console.error)
+    setConjuntos(prev => prev.map(c =>
+      c.id === conjuntoId && !c.tabla_paredes.some(tp => tp.id === tablaParedId)
+        ? { ...c, tabla_paredes: [...c.tabla_paredes, { id: tablaParedId }] }
+        : c
+    ))
+    ruteoApi.addTablaParedToConjunto(tablaParedId, conjuntoId).catch(console.error)
+  }
+
+  function removeTablaParedFromConjunto(tablaParedId: number, conjuntoId: number) {
+    setTablaParedes(prev => prev.map(tp =>
+      tp.id === tablaParedId
+        ? { ...tp, conjuntos: tp.conjuntos.filter(c => c.id !== conjuntoId) }
+        : tp
+    ))
+    setConjuntos(prev => prev.map(c =>
+      c.id === conjuntoId
+        ? { ...c, tabla_paredes: c.tabla_paredes.filter(tp => tp.id !== tablaParedId) }
+        : c
+    ))
+    ruteoApi.removeTablaParedFromConjunto(tablaParedId, conjuntoId).catch(console.error)
   }
 
   return (
@@ -557,7 +644,10 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       addConjunto, renameConjunto, deleteConjunto,
       addSegmentoToConjunto, removeSegmentoFromConjunto,
       addTableroToConjunto, removeTableroFromConjunto,
-      paredes, addPared, editPared, removePared, addParedToConjunto, removeParedFromConjunto,
+      paredes, addPared, editPared, removePared,
+      tablaParedes, activaTablaParedId, setActivaTablaParedId,
+      addTablaPared, renameTablaPared, deleteTablaPared,
+      addTablaParedToConjunto, removeTablaParedFromConjunto,
     }}>
       {children}
     </ProyectosContext.Provider>

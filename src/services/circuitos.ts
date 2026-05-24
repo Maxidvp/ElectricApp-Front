@@ -40,11 +40,11 @@ export async function deleteCircuito(id: number) {
   return res.json()
 }
 
-export async function updateDescripcionCircuito(id: number, descipcion: string | null) {
+export async function updateDescripcionCircuito(id: number, descripcion: string | null) {
   const res = await fetch(`${API_URL}/circuitos/${id}/descripcion`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ descipcion }),
+    body: JSON.stringify({ descripcion }),
   })
   if (!res.ok) throw new Error('Error al actualizar la descripción')
   return res.json()

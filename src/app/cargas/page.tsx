@@ -16,7 +16,7 @@ import { useProyectos } from '@/context/ProyectosContext'
 type CircuitoAPI = {
   id: number
   circuito: string
-  descipcion: string | null
+  descripcion: string | null
   formacion: {
     nombre: string
     cond_por_fase: number
@@ -46,7 +46,7 @@ type FormacionData = {
 type CircuitoRow = {
   id: number
   circuito: string
-  descipcion: string | null
+  descripcion: string | null
   seccion: string
   formacion: string
   area: string
@@ -102,7 +102,7 @@ function mapearCircuitos(data: CircuitoAPI[]): CircuitoRow[] {
   return data.map((c) => ({
     id:        c.id,
     circuito:  c.circuito,
-    descipcion: c.descipcion,
+    descripcion: c.descripcion,
     seccion:   c.formacion ? `${c.formacion.cable.seccion_f} ${c.formacion.cable.calibre_tipo}` : '—',
     formacion: c.formacion?.nombre ?? '—',
     area:      c.formacion ? calcularArea(c.formacion) : '—',
@@ -160,7 +160,7 @@ export default function TablaCargas() {
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
   if (displayData.length !== contextData.length ||
-      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descipcion !== contextData[i]?.descipcion)) {
+      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion)) {
     setDisplayData(contextData)
   }
 
@@ -203,7 +203,7 @@ export default function TablaCargas() {
         />
       )
     }),
-    columnHelper.accessor('descipcion', {
+    columnHelper.accessor('descripcion', {
       header: 'Descripción',
       size: 200,
       cell: (info) => (

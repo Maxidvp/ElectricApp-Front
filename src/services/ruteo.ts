@@ -26,6 +26,7 @@ export type Conjunto = {
   id: number
   nombre: string
   tableros: { id: number; tag: string }[]
+  tabla_paredes: { id: number }[]
 }
 
 export type Segmento = {
@@ -192,10 +193,10 @@ export type Pared = {
   color: string | null
   x1: number; y1: number; z1: number
   x2: number; y2: number; z2: number
-  conjuntos: { id: number; nombre: string }[]
+  tabla_pared_id: number | null
 }
 
-export type CreateParedInput = Omit<Pared, 'id' | 'conjuntos'> & { conjunto_ids?: number[] }
+export type CreateParedInput = Omit<Pared, 'id'>
 
 export async function createPared(data: CreateParedInput): Promise<Pared> {
   const res = await fetch(`${API}/paredes`, {
@@ -207,7 +208,7 @@ export async function createPared(data: CreateParedInput): Promise<Pared> {
   return res.json()
 }
 
-export async function updatePared(id: number, data: Partial<Omit<Pared, 'id' | 'conjuntos'>>): Promise<Pared> {
+export async function updatePared(id: number, data: Partial<Omit<Pared, 'id'>>): Promise<Pared> {
   const res = await fetch(`${API}/paredes/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -222,12 +223,47 @@ export async function deletePared(id: number): Promise<void> {
   if (!res.ok) throw new Error('Error al eliminar pared')
 }
 
-export async function addParedToConjunto(conjuntoId: number, paredId: number): Promise<void> {
-  const res = await fetch(`${API}/conjuntos/${conjuntoId}/paredes/${paredId}`, { method: 'POST' })
-  if (!res.ok) throw new Error('Error al agregar pared al conjunto')
+// Tablas de paredes
+export type TablaPared = {
+  id: number
+  nombre: string
+  paredes: Pared[]
+  conjuntos: { id: number }[]
 }
 
-export async function removeParedFromConjunto(conjuntoId: number, paredId: number): Promise<void> {
-  const res = await fetch(`${API}/conjuntos/${conjuntoId}/paredes/${paredId}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error('Error al quitar pared del conjunto')
+export async function createTablaPared(nombre: string, proyecto_id: number): Promise<TablaPared> {
+  const res = await fetch(`${API}/tabla_paredes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre, proyecto_id }),
+  })
+  if (!res.ok) throw new Error('Error al crear tabla de paredes')
+  return res.json()
+}
+
+export async function updateTablaPared(id: number, nombre: string): Promise<TablaPared> {
+  const res = await fetch(`${API}/tabla_paredes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre }),
+  })
+  if (!res.ok) throw new Error('Error al renombrar tabla de paredes')
+  return res.json()
+}
+
+export async function deleteTablaPared(id: number): Promise<void> {
+  const res = await fetch(`${API}/tabla_paredes/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al eliminar tabla de paredes')
+}
+
+export async function addTablaParedToConjunto(tablaParedId: number, conjuntoId: number): Promise<TablaPared> {
+  const res = await fetch(`${API}/tabla_paredes/${tablaParedId}/conjuntos/${conjuntoId}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Error al aplicar tabla al conjunto')
+  return res.json()
+}
+
+export async function removeTablaParedFromConjunto(tablaParedId: number, conjuntoId: number): Promise<TablaPared> {
+  const res = await fetch(`${API}/tabla_paredes/${tablaParedId}/conjuntos/${conjuntoId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al quitar tabla del conjunto')
+  return res.json()
 }
