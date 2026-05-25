@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: '/ruteo',       label: 'Ruteo'       },
   { href: '/ocupaciones', label: 'Ocupaciones' },
   { href: '/cables',      label: 'Cables'      },
+  { href: '/locales',     label: 'Locales'     },
   { href: '/importador',  label: 'Importador'  },
 ]
 

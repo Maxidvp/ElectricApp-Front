@@ -5,6 +5,7 @@ const ROUTES = [
   { href: '/cables',      label: 'Cables',      desc: 'Catálogo de familias y cables'              },
   { href: '/ruteo',       label: 'Ruteo',       desc: 'Plano de rutas, caños y bandejas'           },
   { href: '/ocupaciones', label: 'Ocupaciones', desc: 'Ocupación de caños y bandejas por tramo'    },
+  { href: '/locales',     label: 'Locales',     desc: 'Gestión de locales'                          },
   { href: '/importador',  label: 'Importador',  desc: 'Importar segmentos desde archivos externos'  },
 ]
 
