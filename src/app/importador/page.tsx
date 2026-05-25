@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { useProyectos } from '@/context/ProyectosContext'
 import * as api from '@/services/ruteo'
@@ -49,34 +49,156 @@ function parseSegments(
     .filter(s => [s.x1, s.y1, s.x2, s.y2].every(n => !isNaN(n)))
 }
 
+// ── Destination selector ──────────────────────────────────
+
+const fieldStyle: React.CSSProperties = {
+  padding: '5px 10px',
+  background: 'var(--clr-surface-tonal-a10)',
+  border: '1px solid var(--clr-surface-tonal-a20)',
+  borderRadius: 6,
+  color: 'var(--clr-font-a0)',
+  fontSize: 13,
+  outline: 'none',
+}
+
+type NamedItem = { id: number; nombre: string }
+
+function DestSelector({
+  label, all, selectedId, onSelect,
+  creating, setCreating, newName, setNewName, onCommit,
+}: {
+  label: string
+  all: NamedItem[]
+  selectedId: number | null
+  onSelect: (id: number) => void
+  creating: boolean
+  setCreating: (v: boolean) => void
+  newName: string
+  setNewName: (v: string) => void
+  onCommit: () => void
+}) {
+  const word = label.split(' ')[0].toLowerCase()
+  const placeholder = `Nombre de la ${word}…`
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 200 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--clr-surface-tonal-a40)' }}>{label}</label>
+      {all.length === 0 || creating ? (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            autoFocus={all.length === 0}
+            style={{ ...fieldStyle, flex: 1 }}
+            placeholder={placeholder}
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter')  onCommit()
+              if (e.key === 'Escape' && all.length > 0) setCreating(false)
+            }}
+          />
+          <button
+            onClick={onCommit}
+            style={{ ...fieldStyle, cursor: 'pointer', background: 'var(--clr-primary-a0)', border: 'none' }}
+          >
+            Crear
+          </button>
+          {all.length > 0 && (
+            <button onClick={() => setCreating(false)} style={{ ...fieldStyle, cursor: 'pointer' }}>✕</button>
+          )}
+        </div>
+      ) : (
+        <select
+          style={fieldStyle}
+          value={selectedId ?? ''}
+          onChange={e => {
+            if (e.target.value === '__new__') setCreating(true)
+            else onSelect(Number(e.target.value))
+          }}
+        >
+          {all.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          <option value="__new__">＋ Crear nuevo</option>
+        </select>
+      )}
+    </div>
+  )
+}
+
 // ── Page ─────────────────────────────────────────────────
 
 export default function ImportadorPage() {
-  const { canios, bandejas, conjuntos } = useProyectos()
+  const { canios, bandejas, conjuntos, tablaParedes, proyectoActivo } = useProyectos()
 
   const [textCanios,    setTextCanios]    = useState('')
   const [textBandejas,  setTextBandejas]  = useState('')
   const [textParedes,   setTextParedes]   = useState('')
-  const [conjuntoId,    setConjuntoId]    = useState<number | ''>('')
-  const [status,    setStatus]    = useState<'idle' | 'importing' | 'done'>('idle')
-  const [imported,  setImported]  = useState(0)
+  const [conjuntoId,    setConjuntoId]    = useState<number | null>(null)
+  const [layoutId,      setLayoutId]      = useState<number | null>(null)
+  const [localConjs,    setLocalConjs]    = useState<NamedItem[]>([])
+  const [localLayouts,  setLocalLayouts]  = useState<NamedItem[]>([])
+  const [creandoConj,   setCreandoConj]   = useState(false)
+  const [nuevoConj,     setNuevoConj]     = useState('')
+  const [creandoLayout, setCreandoLayout] = useState(false)
+  const [nuevoLayout,   setNuevoLayout]   = useState('')
+  const [status,        setStatus]        = useState<'idle' | 'importing' | 'done'>('idle')
+  const [imported,      setImported]      = useState(0)
 
-  // Pre-seleccionar el primer conjunto disponible
-  useState(() => {
-    if (conjuntos.length > 0 && conjuntoId === '') setConjuntoId(conjuntos[0].id)
-  })
+  const allConjs = useMemo(() => [
+    ...conjuntos,
+    ...localConjs.filter(lc => !conjuntos.some(c => c.id === lc.id)),
+  ], [conjuntos, localConjs])
+
+  const allLayouts = useMemo(() => [
+    ...tablaParedes,
+    ...localLayouts.filter(ll => !tablaParedes.some(tp => tp.id === ll.id)),
+  ], [tablaParedes, localLayouts])
+
+  useEffect(() => {
+    if (conjuntoId === null && allConjs.length > 0) setConjuntoId(allConjs[0].id)
+  }, [allConjs, conjuntoId])
+
+  useEffect(() => {
+    if (layoutId === null && allLayouts.length > 0) setLayoutId(allLayouts[0].id)
+  }, [allLayouts, layoutId])
 
   const parsedCanios   = useMemo(() => parseSegments(textCanios,   'canio',   canios),   [textCanios,   canios])
   const parsedBandejas = useMemo(() => parseSegments(textBandejas, 'bandeja', bandejas), [textBandejas, bandejas])
   const parsedParedes  = useMemo(() => parseSegments(textParedes,  'pared',   []),        [textParedes])
 
-  const total = parsedCanios.length + parsedBandejas.length + parsedParedes.length
+  const totalSegs  = parsedCanios.length + parsedBandejas.length
+  const totalPared = parsedParedes.length
+  const total      = totalSegs + totalPared
+
+  const canImport = total > 0 &&
+    (totalSegs  === 0 || conjuntoId !== null) &&
+    (totalPared === 0 || layoutId   !== null)
+
+  const crearConjunto = async () => {
+    const nombre = nuevoConj.trim(); if (!nombre) return
+    try {
+      const c = await api.createConjunto(nombre, proyectoActivo?.id)
+      setLocalConjs(prev => [...prev, { id: c.id, nombre: c.nombre }])
+      setConjuntoId(c.id)
+      setCreandoConj(false)
+      setNuevoConj('')
+    } catch (e) { console.error(e) }
+  }
+
+  const crearLayout = async () => {
+    if (!proyectoActivo) return
+    const nombre = nuevoLayout.trim(); if (!nombre) return
+    try {
+      const tp = await api.createArquitectura(nombre, proyectoActivo.id)
+      setLocalLayouts(prev => [...prev, { id: tp.id, nombre: tp.nombre }])
+      setLayoutId(tp.id)
+      setCreandoLayout(false)
+      setNuevoLayout('')
+    } catch (e) { console.error(e) }
+  }
 
   const handleImportar = async () => {
-    if (!total || status === 'importing') return
+    if (!canImport || status === 'importing') return
     setStatus('importing')
     let count = 0
-    for (const seg of [...parsedCanios, ...parsedBandejas, ...parsedParedes]) {
+    for (const seg of [...parsedCanios, ...parsedBandejas]) {
       try {
         await api.createSegmento({
           tipo: seg.tipo,
@@ -84,12 +206,21 @@ export default function ImportadorPage() {
           x2: seg.x2, y2: seg.y2, z2: seg.z2,
           canio_id: seg.canio_id,
           bandeja_id: seg.bandeja_id,
-          conjunto_ids: conjuntoId !== '' ? [conjuntoId] : [],
+          conjunto_ids: conjuntoId !== null ? [conjuntoId] : [],
         })
         count++
-      } catch (e) {
-        console.error('Error al importar segmento', e)
-      }
+      } catch (e) { console.error('Error al importar segmento', e) }
+    }
+    for (const seg of parsedParedes) {
+      try {
+        await api.createPared({
+          x1: seg.x1, y1: seg.y1, z1: seg.z1,
+          x2: seg.x2, y2: seg.y2, z2: seg.z2,
+          nombre: null, color: null,
+          tabla_pared_id: layoutId,
+        })
+        count++
+      } catch (e) { console.error('Error al importar pared', e) }
     }
     setImported(count)
     setStatus('done')
@@ -113,7 +244,7 @@ export default function ImportadorPage() {
           title="Caños"
           color="#E87C3A"
           hint="Start X;Start Y;Start Z;End X;End Y;End Z;Sección"
-          placeholder={`0.2282;15.0141;0.0000;1.0941;15.0141;0.0000;EMT 3/4`}
+          placeholder="0.2282;15.0141;0.0000;1.0941;15.0141;0.0000;EMT 3/4"
           value={textCanios}
           onChange={setTextCanios}
           segments={parsedCanios}
@@ -123,48 +254,60 @@ export default function ImportadorPage() {
           title="Bandejas"
           color="#378ADD"
           hint="Start X;Start Y;Start Z;End X;End Y;End Z;Dimensión"
-          placeholder={`0.2282;15.0141;0.0000;1.0941;15.0141;0.0000;BPC 150x50`}
+          placeholder="0.2282;15.0141;0.0000;1.0941;15.0141;0.0000;BPC 150x50"
           value={textBandejas}
           onChange={setTextBandejas}
           segments={parsedBandejas}
           catalogLabel="Dimensión"
         />
+
+        {/* ── Destinos canalizaciones──────────────────────────────── */}
+        <div style={{
+          display: 'flex', gap: 24, flexWrap: 'wrap',
+          padding: '16px 20px',
+          background: 'var(--clr-surface-tonal-a10)',
+          border: '1px solid var(--clr-surface-tonal-a20)',
+          borderRadius: 8,
+        }}>
+          <DestSelector
+            label="Canalización destino"
+            all={allConjs} selectedId={conjuntoId} onSelect={setConjuntoId}
+            creating={creandoConj} setCreating={setCreandoConj}
+            newName={nuevoConj} setNewName={setNuevoConj} onCommit={crearConjunto}
+          />
+        </div>
+
         <ImportSection
           title="Paredes"
           color="#888780"
           hint="Start X;Start Y;Start Z;End X;End Y;End Z"
-          placeholder={`0.2282;15.0141;0.0000;1.0941;15.0141;0.0000`}
+          placeholder="0.2282;15.0141;0.0000;1.0941;15.0141;0.0000"
           value={textParedes}
           onChange={setTextParedes}
           segments={parsedParedes}
           catalogLabel={null}
         />
+
+        {/* ── Destinos layout──────────────────────────────── */}
+        <div style={{
+          display: 'flex', gap: 24, flexWrap: 'wrap',
+          padding: '16px 20px',
+          background: 'var(--clr-surface-tonal-a10)',
+          border: '1px solid var(--clr-surface-tonal-a20)',
+          borderRadius: 8,
+        }}>
+          <DestSelector
+            label="Layout destino"
+            all={allLayouts} selectedId={layoutId} onSelect={setLayoutId}
+            creating={creandoLayout} setCreating={setCreandoLayout}
+            newName={nuevoLayout} setNewName={setNuevoLayout} onCommit={crearLayout}
+          />
+        </div>
+
+
       </div>
 
-      <div style={{ marginTop: 36, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-        <label style={{ fontSize: 13, color: 'var(--clr-font-a20)', fontWeight: 500 }}>
-          Conjunto destino
-        </label>
-        <select
-          value={conjuntoId}
-          onChange={e => setConjuntoId(e.target.value ? Number(e.target.value) : '')}
-          style={{
-            padding: '5px 10px',
-            background: 'var(--clr-surface-tonal-a10)',
-            border: '1px solid var(--clr-surface-tonal-a20)',
-            borderRadius: 6,
-            color: 'var(--clr-font-a0)',
-            fontSize: 13,
-          }}
-        >
-          <option value="">— Sin conjunto —</option>
-          {conjuntos.map(c => (
-            <option key={c.id} value={c.id}>{c.nombre}</option>
-          ))}
-        </select>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ marginTop: 36, display: 'flex', alignItems: 'center', gap: 16 }}>
         {status === 'done' ? (
           <>
             <span style={{ fontSize: 14, color: 'var(--clr-success-a20)' }}>
@@ -177,7 +320,7 @@ export default function ImportadorPage() {
         ) : (
           <button
             onClick={handleImportar}
-            disabled={!total || status === 'importing'}
+            disabled={!canImport || status === 'importing'}
             style={{
               padding: '9px 24px',
               borderRadius: 7,
@@ -186,8 +329,8 @@ export default function ImportadorPage() {
               color: 'var(--clr-font-a0)',
               fontSize: 14,
               fontWeight: 500,
-              cursor: !total || status === 'importing' ? 'default' : 'pointer',
-              opacity: !total ? 0.4 : 1,
+              cursor: !canImport || status === 'importing' ? 'default' : 'pointer',
+              opacity: !canImport ? 0.4 : 1,
               transition: 'background 0.12s',
             }}
           >
@@ -220,7 +363,6 @@ function ImportSection({ title, color, hint, placeholder, value, onChange, segme
   const unmatched = catalogLabel ? segments.filter(s => s.label && !s.matched).length : 0
   return (
     <div>
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0, display: 'inline-block' }} />
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--clr-font-a0)' }}>{title}</span>
@@ -236,15 +378,10 @@ function ImportSection({ title, color, hint, placeholder, value, onChange, segme
         )}
       </div>
 
-      {/* Format hint */}
-      <div style={{
-        fontSize: 11, fontFamily: 'monospace',
-        color: 'var(--clr-surface-tonal-a40)', marginBottom: 6,
-      }}>
+      <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--clr-surface-tonal-a40)', marginBottom: 6 }}>
         {hint}
       </div>
 
-      {/* Textarea */}
       <textarea
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -262,7 +399,6 @@ function ImportSection({ title, color, hint, placeholder, value, onChange, segme
         }}
       />
 
-      {/* Preview table */}
       {segments.length > 0 && (
         <div style={{ marginTop: 10, overflowX: 'auto' }}>
           <table className="datatable" style={{ fontSize: 12, width: '100%' }}>

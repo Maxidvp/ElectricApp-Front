@@ -1,7 +1,7 @@
 .ruteo-layout {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: calc(100dvh - 48px);
   background: var(--clr-surface-a0);
   overflow: hidden;
 }
@@ -351,6 +351,15 @@
   font-size: 13px;
   color: var(--clr-font-a0);
 }
+
+.rcm-name-editable {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  transition: background 0.15s;
+}
+.rcm-name-editable:hover { background: rgba(255,255,255,0.07); }
 
 .rcm-rename-input {
   flex: 1;

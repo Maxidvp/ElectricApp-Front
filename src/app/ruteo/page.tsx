@@ -9,6 +9,7 @@ import { RuteoToolbar } from './RuteoToolbar'
 import { RuteoCanvas } from './RuteoCanvas'
 import { RuteoPanel } from './RuteoPanel'
 import { ConjuntosModal } from './ConjuntosModal'
+import { ArquitecturaesModal } from './ArquitecturaesModal'
 import '../../styles/ruteo.css'
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
@@ -21,12 +22,13 @@ export default function RuteoPage() {
   const [drawZ,            setDrawZ]            = useState(0)
   const [activeCircId,     setActiveCircId]     = useState<number | null>(null)
   const [asignarTableroId, setAsignarTableroId] = useState<number | null>(null)
-  const [showConfigModal,  setShowConfigModal]  = useState(false)
+  const [showConjuntosModal, setShowConjuntosModal] = useState(false)
+  const [showParedesModal,   setShowParedesModal]   = useState(false)
 
   const {
     tableros, segmentos, conjuntos, paredes,
     activeConjuntoId, setActiveConjuntoId,
-    tablaParedes, activaTablaParedId,
+    tablaParedes, activaArquitecturaId,
     addSegmento, removeSegmento,
     asignarCircuito, quitarCircuito,
     addPared, removePared,
@@ -53,7 +55,7 @@ export default function RuteoPage() {
     if (activeConjuntoId === null) return true
     const conjunto = conjuntos.find(c => c.id === activeConjuntoId)
     if (!conjunto) return false
-    return conjunto.tabla_paredes.some(tp => tp.id === p.tabla_pared_id)
+    return conjunto.arquitecturas.some(tp => tp.id === p.tabla_pared_id)
   }, [activeConjuntoId, conjuntos])
 
   // ── Endpoint snap ──────────────────────────────────────
@@ -112,7 +114,7 @@ export default function RuteoPage() {
     const pos = snapPoint(snap(rawPos.x), snap(rawPos.y))
     if (!drawStart) {
       if (tool === 'pared' && tablaParedes.length === 0) {
-        setShowConfigModal(true)
+        setShowParedesModal(true)
         return
       }
       setDrawStart(pos)
@@ -122,7 +124,7 @@ export default function RuteoPage() {
           x1: drawStart.x, y1: drawStart.y, z1: drawZ,
           x2: pos.x, y2: pos.y, z2: drawZ,
           nombre: null, color: null,
-          tabla_pared_id: activaTablaParedId,
+          tabla_pared_id: activaArquitecturaId,
         })
       } else {
         addSegmento({ tipo: tool, x1: drawStart.x, y1: drawStart.y, z1: drawZ, x2: pos.x, y2: pos.y, z2: drawZ,
@@ -130,7 +132,7 @@ export default function RuteoPage() {
       }
       setDrawStart(null)
     }
-  }, [tool, drawStart, drawZ, activeConjuntoId, activaTablaParedId, tablaParedes.length, snapPoint, addSegmento, addPared])
+  }, [tool, drawStart, drawZ, activeConjuntoId, activaArquitecturaId, tablaParedes.length, snapPoint, addSegmento, addPared])
 
   const handleSegmentClick = useCallback((id: number, e: KonvaEventObject<MouseEvent>) => {
     if (tool === 'seleccionar') {
@@ -164,8 +166,11 @@ export default function RuteoPage() {
         tool={tool} drawZ={drawZ} conjuntos={conjuntos}
         activeConjuntoId={activeConjuntoId} drawStart={drawStart}
         activeCircId={activeCircId} activeCirc={activeCirc} selectedId={selectedId}
+        tablasParedesCount={tablaParedes.length}
         onChangeTool={changeTool} onChangeDrawZ={setDrawZ}
-        onChangeConjunto={setActiveConjuntoId} onOpenConfig={() => setShowConfigModal(true)}
+        onChangeConjunto={setActiveConjuntoId}
+        onOpenConjuntos={() => setShowConjuntosModal(true)}
+        onOpenParedes={() => setShowParedesModal(true)}
       />
       <div className="ruteo-content">
         <RuteoCanvas
@@ -183,7 +188,8 @@ export default function RuteoPage() {
           handleDelete={handleDelete}
         />
       </div>
-      {showConfigModal && <ConjuntosModal onClose={() => setShowConfigModal(false)} />}
+      {showConjuntosModal && <ConjuntosModal onClose={() => setShowConjuntosModal(false)} />}
+      {showParedesModal   && <ArquitecturaesModal onClose={() => setShowParedesModal(false)} />}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import "../styles/tables.css"
 import { ProyectosProvider } from "@/context/ProyectosContext";
 import { CablesProvider } from "@/context/CablesContext";
 import Navbar from "@/components/Navbar";
+import LoadingGate from "@/components/LoadingGate";
 
 // Fuentes de Google cargadas con el sistema de Next.js
 // se inyectan como variables CSS y se aplican en el <html>
@@ -38,10 +39,12 @@ export default function RootLayout({
       <body>
 
         <ProyectosProvider>
-          <Navbar />
-          <CablesProvider>
-            {children}
-          </CablesProvider>
+          <LoadingGate>
+            <Navbar />
+            <CablesProvider>
+              {children}
+            </CablesProvider>
+          </LoadingGate>
         </ProyectosProvider>
 
       </body>
