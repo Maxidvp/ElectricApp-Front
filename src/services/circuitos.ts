@@ -40,6 +40,26 @@ export async function deleteCircuito(id: number) {
   return res.json()
 }
 
+export async function updateFPCircuito(id: number, fp: number | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/fp`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ FP: fp }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar el FP')
+  return res.json()
+}
+
+export async function updateLargoCircuito(id: number, largo: number | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/largo`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ Largo: largo }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar el largo')
+  return res.json()
+}
+
 export async function updateDescripcionCircuito(id: number, descripcion: string | null) {
   const res = await fetch(`${API_URL}/circuitos/${id}/descripcion`, {
     method: 'PATCH',

@@ -4,12 +4,12 @@ import * as ruteoApi from '@/services/ruteo'
 import * as circuitosApi from '@/services/circuitos'
 import * as tablerosApi from '@/services/tableros'
 import * as proyectosApi from '@/services/proyectos'
-import type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, TablaPared } from '@/services/ruteo'
+import type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura } from '@/services/ruteo'
 import type { FormacionPatch } from '@/services/circuitos'
 import type { Proyecto as ProyectoMeta } from '@/services/proyectos'
 
 export type { ProyectoMeta }
-export type { Pared, TablaPared }
+export type { Pared, Arquitectura }
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -43,6 +43,8 @@ type Circuito = {
   tablero_id: number
   formacion_id: number | null
   formacion: Formacion | null
+  FP: number | null
+  Largo: number | null
 }
 
 type Tablero = {
@@ -119,6 +121,8 @@ type ProyectosContextType = {
   eliminarCircuito: (id: number) => void
   reordenarCircuitos: (tableroId: number, orderedIds: number[]) => void
   actualizarDescripcion: (id: number, descripcion: string | null) => void
+  actualizarFP: (id: number, fp: number | null) => void
+  actualizarLargo: (id: number, largo: number | null) => void
   actualizarFormacion: (circuitoId: number, data: FormacionPatch) => void
   agregarTablero: (data: any) => Promise<Tablero>
 
@@ -150,14 +154,14 @@ type ProyectosContextType = {
   removePared: (id: number) => void
 
   // Tablas de paredes
-  tablaParedes: TablaPared[]
-  activaTablaParedId: number | null
-  setActivaTablaParedId: (id: number | null) => void
-  addTablaPared: (nombre: string) => void
-  renameTablaPared: (id: number, nombre: string) => void
-  deleteTablaPared: (id: number) => void
-  addTablaParedToConjunto: (tablaParedId: number, conjuntoId: number) => void
-  removeTablaParedFromConjunto: (tablaParedId: number, conjuntoId: number) => void
+  tablaParedes: Arquitectura[]
+  activaArquitecturaId: number | null
+  setActivaArquitecturaId: (id: number | null) => void
+  addArquitectura: (nombre: string) => void
+  renameArquitectura: (id: number, nombre: string) => void
+  deleteArquitectura: (id: number) => void
+  addArquitecturaToConjunto: (tablaParedId: number, conjuntoId: number) => void
+  removeArquitecturaFromConjunto: (tablaParedId: number, conjuntoId: number) => void
 }
 
 const ProyectosContext = createContext<ProyectosContextType | null>(null)
@@ -173,9 +177,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   const [canios,             setCanios]             = useState<Canio[]>([])
   const [bandejas,           setBandejas]           = useState<Bandeja[]>([])
   const [paredes,            setParedes]            = useState<Pared[]>([])
-  const [tablaParedes,       setTablaParedes]       = useState<TablaPared[]>([])
+  const [tablaParedes,       setArquitecturaes]       = useState<Arquitectura[]>([])
   const [activeConjuntoId,   setActiveConjuntoIdState]   = useState<number | null>(null)
-  const [activaTablaParedId, setActivaTablaParedIdState] = useState<number | null>(null)
+  const [activaArquitecturaId, setActivaArquitecturaIdState] = useState<number | null>(null)
   const [loading,            setLoading]            = useState(true)
   const [error,              setError]              = useState<string | null>(null)
 
@@ -186,7 +190,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   const LS_PROYECTO   = 'ea_proyecto'
   const lsConjunto    = (id: number) => `ea_conjunto_${id}`
-  const lsTablaPared  = (id: number) => `ea_tabla_pared_${id}`
+  const lsArquitectura  = (id: number) => `ea_tabla_pared_${id}`
 
   const setActiveConjuntoId = (id: number) => {
     setActiveConjuntoIdState(id)
@@ -195,11 +199,11 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const setActivaTablaParedId = (id: number | null) => {
-    setActivaTablaParedIdState(id)
+  const setActivaArquitecturaId = (id: number | null) => {
+    setActivaArquitecturaIdState(id)
     if (proyectoActivoRef.current) {
-      if (id !== null) localStorage.setItem(lsTablaPared(proyectoActivoRef.current.id), String(id))
-      else localStorage.removeItem(lsTablaPared(proyectoActivoRef.current.id))
+      if (id !== null) localStorage.setItem(lsArquitectura(proyectoActivoRef.current.id), String(id))
+      else localStorage.removeItem(lsArquitectura(proyectoActivoRef.current.id))
     }
   }
 
@@ -216,10 +220,13 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         setBandejas(bans)
         const savedId  = Number(localStorage.getItem(LS_PROYECTO)) || null
         const lastProj = savedId ? (projs.find(p => p.id === savedId) ?? null) : null
-        if (lastProj) setProyectoActivo(lastProj)
+        if (lastProj) {
+          setProyectoActivo(lastProj) // su propio finally maneja setLoading(false)
+        } else {
+          setLoading(false)
+        }
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch(err => { setError(err.message); setLoading(false) })
   }, [])
 
   // ── Load full project data when active project changes ────────
@@ -232,9 +239,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       setConjuntos([])
       setSegmentos([])
       setParedes([])
-      setTablaParedes([])
+      setArquitecturaes([])
       setActiveConjuntoIdState(null)
-      setActivaTablaParedIdState(null)
+      setActivaArquitecturaIdState(null)
       return
     }
     localStorage.setItem(LS_PROYECTO, String(p.id))
@@ -248,14 +255,14 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
           id: c.id,
           nombre: c.nombre,
           tableros: c.tableros ?? [],
-          tabla_paredes: c.tabla_paredes ?? [],
+          arquitecturas: c.arquitecturas ?? [],
         }))
         setConjuntos(conjs)
         setSegmentos(deriveSegmentos(data.conjuntos ?? []))
 
-        const tablas: TablaPared[] = data.tabla_paredes ?? []
-        setTablaParedes(tablas)
-        setParedes(tablas.flatMap((tp: TablaPared) => tp.paredes))
+        const tablas: Arquitectura[] = data.arquitecturas ?? []
+        setArquitecturaes(tablas)
+        setParedes(tablas.flatMap((tp: Arquitectura) => tp.paredes))
 
         // Restore active conjunto
         const availableConjIds: number[] = (data.conjuntos ?? []).map((c: any) => c.id)
@@ -266,10 +273,10 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
         // Restore active tabla de paredes
         const availableTablaIds: number[] = tablas.map(tp => tp.id)
-        const savedTablaId  = Number(localStorage.getItem(lsTablaPared(p.id))) || null
+        const savedTablaId  = Number(localStorage.getItem(lsArquitectura(p.id))) || null
         const resolvedTabla = savedTablaId && availableTablaIds.includes(savedTablaId)
           ? savedTablaId : (availableTablaIds[0] ?? null)
-        setActivaTablaParedIdState(resolvedTabla)
+        setActivaArquitecturaIdState(resolvedTabla)
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
@@ -318,7 +325,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!tablero) return
     const tempId = nextTempId()
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null }
+    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null }
     setTableros(prev => addCirc(prev, tableroId, temp))
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(real => {
@@ -365,6 +372,16 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   function actualizarDescripcion(id: number, descripcion: string | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, descripcion })))
     circuitosApi.updateDescripcionCircuito(id, descripcion).catch(console.error)
+  }
+
+  function actualizarFP(id: number, fp: number | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, FP: fp })))
+    circuitosApi.updateFPCircuito(id, fp).catch(console.error)
+  }
+
+  function actualizarLargo(id: number, largo: number | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, Largo: largo })))
+    circuitosApi.updateLargoCircuito(id, largo).catch(console.error)
   }
 
   function actualizarFormacion(circuitoId: number, data: FormacionPatch) {
@@ -550,7 +567,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     ruteoApi.createPared(data)
       .then(real => {
         setParedes(prev => prev.map(p => p.id === tempId ? real : p))
-        setTablaParedes(prev => prev.map(tp =>
+        setArquitecturaes(prev => prev.map(tp =>
           tp.id === real.tabla_pared_id
             ? { ...tp, paredes: [...tp.paredes.filter(p => p.id !== tempId), real] }
             : tp
@@ -568,66 +585,66 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   function removePared(id: number) {
     setParedes(prev => prev.filter(p => p.id !== id))
-    setTablaParedes(prev => prev.map(tp => ({ ...tp, paredes: tp.paredes.filter(p => p.id !== id) })))
+    setArquitecturaes(prev => prev.map(tp => ({ ...tp, paredes: tp.paredes.filter(p => p.id !== id) })))
     ruteoApi.deletePared(id).catch(console.error)
   }
 
-  // ── TablaPared mutations ─────────────────────────────────────
-  function addTablaPared(nombre: string) {
+  // ── Arquitectura mutations ─────────────────────────────────────
+  function addArquitectura(nombre: string) {
     if (!proyectoActivo) return
-    ruteoApi.createTablaPared(nombre, proyectoActivo.id)
+    ruteoApi.createArquitectura(nombre, proyectoActivo.id)
       .then(real => {
-        setTablaParedes(prev => [...prev, real])
-        setActivaTablaParedId(real.id)
+        setArquitecturaes(prev => [...prev, real])
+        setActivaArquitecturaId(real.id)
       })
       .catch(console.error)
   }
 
-  function renameTablaPared(id: number, nombre: string) {
-    setTablaParedes(prev => prev.map(tp => tp.id === id ? { ...tp, nombre } : tp))
-    ruteoApi.updateTablaPared(id, nombre).catch(console.error)
+  function renameArquitectura(id: number, nombre: string) {
+    setArquitecturaes(prev => prev.map(tp => tp.id === id ? { ...tp, nombre } : tp))
+    ruteoApi.updateArquitectura(id, nombre).catch(console.error)
   }
 
-  function deleteTablaPared(id: number) {
-    setTablaParedes(prev => prev.filter(tp => tp.id !== id))
+  function deleteArquitectura(id: number) {
+    setArquitecturaes(prev => prev.filter(tp => tp.id !== id))
     setParedes(prev => prev.filter(p => p.tabla_pared_id !== id))
     setConjuntos(prev => prev.map(c => ({
       ...c,
-      tabla_paredes: c.tabla_paredes.filter(tp => tp.id !== id),
+      arquitecturas: c.arquitecturas.filter(tp => tp.id !== id),
     })))
-    if (activaTablaParedId === id) {
+    if (activaArquitecturaId === id) {
       const remaining = tablaParedes.filter(tp => tp.id !== id)
-      setActivaTablaParedId(remaining[0]?.id ?? null)
+      setActivaArquitecturaId(remaining[0]?.id ?? null)
     }
-    ruteoApi.deleteTablaPared(id).catch(console.error)
+    ruteoApi.deleteArquitectura(id).catch(console.error)
   }
 
-  function addTablaParedToConjunto(tablaParedId: number, conjuntoId: number) {
-    setTablaParedes(prev => prev.map(tp =>
+  function addArquitecturaToConjunto(tablaParedId: number, conjuntoId: number) {
+    setArquitecturaes(prev => prev.map(tp =>
       tp.id === tablaParedId && !tp.conjuntos.some(c => c.id === conjuntoId)
         ? { ...tp, conjuntos: [...tp.conjuntos, { id: conjuntoId }] }
         : tp
     ))
     setConjuntos(prev => prev.map(c =>
-      c.id === conjuntoId && !c.tabla_paredes.some(tp => tp.id === tablaParedId)
-        ? { ...c, tabla_paredes: [...c.tabla_paredes, { id: tablaParedId }] }
+      c.id === conjuntoId && !c.arquitecturas.some(tp => tp.id === tablaParedId)
+        ? { ...c, arquitecturas: [...c.arquitecturas, { id: tablaParedId }] }
         : c
     ))
-    ruteoApi.addTablaParedToConjunto(tablaParedId, conjuntoId).catch(console.error)
+    ruteoApi.addArquitecturaToConjunto(tablaParedId, conjuntoId).catch(console.error)
   }
 
-  function removeTablaParedFromConjunto(tablaParedId: number, conjuntoId: number) {
-    setTablaParedes(prev => prev.map(tp =>
+  function removeArquitecturaFromConjunto(tablaParedId: number, conjuntoId: number) {
+    setArquitecturaes(prev => prev.map(tp =>
       tp.id === tablaParedId
         ? { ...tp, conjuntos: tp.conjuntos.filter(c => c.id !== conjuntoId) }
         : tp
     ))
     setConjuntos(prev => prev.map(c =>
       c.id === conjuntoId
-        ? { ...c, tabla_paredes: c.tabla_paredes.filter(tp => tp.id !== tablaParedId) }
+        ? { ...c, arquitecturas: c.arquitecturas.filter(tp => tp.id !== tablaParedId) }
         : c
     ))
-    ruteoApi.removeTablaParedFromConjunto(tablaParedId, conjuntoId).catch(console.error)
+    ruteoApi.removeArquitecturaFromConjunto(tablaParedId, conjuntoId).catch(console.error)
   }
 
   return (
@@ -637,7 +654,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-      reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
+      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarFormacion, agregarTablero,
       segmentos, canios, bandejas, conjuntos, activeConjuntoId, setActiveConjuntoId,
       addSegmento, previewSegmento, editSegmento, removeSegmento,
       asignarCircuito, quitarCircuito,
@@ -645,9 +662,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       addSegmentoToConjunto, removeSegmentoFromConjunto,
       addTableroToConjunto, removeTableroFromConjunto,
       paredes, addPared, editPared, removePared,
-      tablaParedes, activaTablaParedId, setActivaTablaParedId,
-      addTablaPared, renameTablaPared, deleteTablaPared,
-      addTablaParedToConjunto, removeTablaParedFromConjunto,
+      tablaParedes, activaArquitecturaId, setActivaArquitecturaId,
+      addArquitectura, renameArquitectura, deleteArquitectura,
+      addArquitecturaToConjunto, removeArquitecturaFromConjunto,
     }}>
       {children}
     </ProyectosContext.Provider>

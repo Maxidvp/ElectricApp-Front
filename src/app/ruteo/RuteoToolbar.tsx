@@ -11,16 +11,22 @@ interface Props {
   activeCircId: number | null
   activeCirc: { circuito: string } | null
   selectedId: number | null
+  tablasParedesCount: number
   onChangeTool: (t: ToolType) => void
   onChangeDrawZ: (z: number) => void
   onChangeConjunto: (id: number) => void
-  onOpenConfig: () => void
+  onOpenConjuntos: () => void
+  onOpenParedes: () => void
 }
 
 export function RuteoToolbar({
   tool, drawZ, conjuntos, activeConjuntoId, drawStart, activeCircId, activeCirc, selectedId,
-  onChangeTool, onChangeDrawZ, onChangeConjunto, onOpenConfig,
+  tablasParedesCount,
+  onChangeTool, onChangeDrawZ, onChangeConjunto, onOpenConjuntos, onOpenParedes,
 }: Props) {
+  const conjuntosAlert = conjuntos.length === 0
+  const paredesAlert   = tablasParedesCount === 0
+
   return (
     <div className="ruteo-toolbar">
       {TOOLS.map(t => (
@@ -43,7 +49,22 @@ export function RuteoToolbar({
         onChange={e => onChangeConjunto(Number(e.target.value))}>
         {conjuntos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
       </select>
-      <button className="ruteo-tool" onClick={onOpenConfig}>⚙ Configurar</button>
+
+      <button
+        className="ruteo-tool"
+        style={conjuntosAlert ? { color: '#ff5555', borderColor: '#ff5555' } : {}}
+        onClick={onOpenConjuntos}
+      >
+        {conjuntosAlert ? '⚠ ' : ''}Canalizaciones
+      </button>
+
+      <button
+        className="ruteo-tool"
+        style={paredesAlert ? { color: '#ff5555', borderColor: '#ff5555' } : {}}
+        onClick={onOpenParedes}
+      >
+        {paredesAlert ? '⚠ ' : ''}Paredes
+      </button>
 
       <div className="ruteo-separator" />
 

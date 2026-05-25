@@ -6,6 +6,7 @@ import { useProyectos } from '@/context/ProyectosContext'
 
 const NAV_LINKS = [
   { href: '/cargas',      label: 'Cargas'      },
+  { href: '/caida',       label: 'Caída'       },
   { href: '/ruteo',       label: 'Ruteo'       },
   { href: '/ocupaciones', label: 'Ocupaciones' },
   { href: '/cables',      label: 'Cables'      },

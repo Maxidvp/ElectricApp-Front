@@ -151,7 +151,7 @@ export function RuteoPanel({
 
       {conjuntos.length > 0 && (
         <div className="panel-section">
-          <label>Conjuntos</label>
+          <label>Canalizaciones</label>
           <div className="panel-seg-conjuntos">
             {conjuntos.map(c => {
               const inC = selectedSeg.conjuntos.some(sc => sc.id === c.id)

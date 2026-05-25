@@ -17,6 +17,8 @@ type CircuitoAPI = {
   id: number
   circuito: string
   descripcion: string | null
+  FP: number | null
+  Largo: number | null
   formacion: {
     nombre: string
     cond_por_fase: number
@@ -47,6 +49,8 @@ type CircuitoRow = {
   id: number
   circuito: string
   descripcion: string | null
+  FP: number | null
+  Largo: number | null
   seccion: string
   formacion: string
   area: string
@@ -103,6 +107,8 @@ function mapearCircuitos(data: CircuitoAPI[]): CircuitoRow[] {
     id:        c.id,
     circuito:  c.circuito,
     descripcion: c.descripcion,
+    FP:        c.FP,
+    Largo:     c.Largo,
     seccion:   c.formacion ? `${c.formacion.cable.seccion_f} ${c.formacion.cable.calibre_tipo}` : '—',
     formacion: c.formacion?.nombre ?? '—',
     area:      c.formacion ? calcularArea(c.formacion) : '—',
@@ -127,6 +133,7 @@ export default function TablaCargas() {
     tableros, getTablero, loading, error,
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
+    actualizarFP, actualizarLargo,
   } = useProyectos()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -160,7 +167,7 @@ export default function TablaCargas() {
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
   if (displayData.length !== contextData.length ||
-      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion)) {
+      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo)) {
     setDisplayData(contextData)
   }
 
@@ -241,8 +248,28 @@ export default function TablaCargas() {
         )
       }
     }),
+    columnHelper.accessor('FP', {
+      header: 'FP',
+      size: 70,
+      cell: (info) => (
+        <CeldaEditable
+          valor={info.getValue() !== null ? String(info.getValue()) : ''}
+          onGuardar={(v) => actualizarFP(info.row.original.id, v.trim() ? Number(v) : null)}
+        />
+      )
+    }),
+    columnHelper.accessor('Largo', {
+      header: 'Largo (m)',
+      size: 90,
+      cell: (info) => (
+        <CeldaEditable
+          valor={info.getValue() !== null ? String(info.getValue()) : ''}
+          onGuardar={(v) => actualizarLargo(info.row.original.id, v.trim() ? Number(v) : null)}
+        />
+      )
+    }),
     columnHelper.accessor('area', { header: 'Área (mm²)', size: 140 }),
-  ], [renombrarCircuito])
+  ], [renombrarCircuito, actualizarFP, actualizarLargo])
 
   const table = useReactTable({
     data: displayData,
@@ -265,16 +292,14 @@ export default function TablaCargas() {
             className={`tablero-tab${idEfectivo === t.id ? ' activo' : ''}`}
             onClick={() => cambiarTablero(t.id)}
           >
-            {t.nombre ?? t.tag}
+            {t.nombre || t.tag}
           </button>
         ))}
         <button
           className="tablero-tab"
           onClick={() => setModalTableroAbierto(true)}
           title="Agregar tablero"
-        >
-          <i className="material-icons" style={{ fontSize: 14, verticalAlign: 'middle' }}>add</i>
-        </button>
+        >+</button>
       </div>
       <div className="datatable-container">
         <div className="header-tools">
@@ -311,45 +336,45 @@ export default function TablaCargas() {
             <input type="search" className="search-input" placeholder="Buscar..." />
           </div>
         </div>
-        <table
-          className="datatable"
-          style={{
-            width: table.getTotalSize(),
-            tableLayout: 'fixed',
-            borderCollapse: 'separate',
-            borderSpacing: 0,
-          }}
+        <DndContext sensors={sensors} collisionDetection={closestCenter}
+          onDragStart={e => setDraggingId(String(e.active.id))}
+          onDragEnd={e => { setDraggingId(null); handleDragEnd(e) }}
+          onDragCancel={() => setDraggingId(null)}
         >
-          <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                <th style={{ width: 32 }} />
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    colSpan={header.colSpan}
-                    style={{ width: header.getSize(), position: 'relative' }}
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                    {header.column.getCanResize() && (
-                      <div
-                        onMouseDown={header.getResizeHandler()}
-                        onTouchStart={header.getResizeHandler()}
-                        className={`resizer ${header.column.getIsResizing() ? 'isResizing' : ''}`}
-                      />
-                    )}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <DndContext sensors={sensors} collisionDetection={closestCenter}
-            onDragStart={e => setDraggingId(String(e.active.id))}
-            onDragEnd={e => { setDraggingId(null); handleDragEnd(e) }}
-            onDragCancel={() => setDraggingId(null)}
+          <table
+            className="datatable"
+            style={{
+              width: table.getTotalSize(),
+              tableLayout: 'fixed',
+              borderCollapse: 'separate',
+              borderSpacing: 0,
+            }}
           >
+            <thead>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  <th style={{ width: 32 }} />
+                  {headerGroup.headers.map((header) => (
+                    <th
+                      key={header.id}
+                      colSpan={header.colSpan}
+                      style={{ width: header.getSize(), position: 'relative' }}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.column.getCanResize() && (
+                        <div
+                          onMouseDown={header.getResizeHandler()}
+                          onTouchStart={header.getResizeHandler()}
+                          className={`resizer ${header.column.getIsResizing() ? 'isResizing' : ''}`}
+                        />
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
             <SortableContext items={displayData.map(r => String(r.id))} strategy={verticalListSortingStrategy}>
               <tbody>
                 {table.getRowModel().rows.map((row) => {
@@ -372,8 +397,8 @@ export default function TablaCargas() {
                 })}
               </tbody>
             </SortableContext>
-          </DndContext>
-        </table>
+          </table>
+        </DndContext>
       </div>
 
       {modalAbierto && formacionSeleccionada && (
