@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 
-export function ArquitecturaesModal({ onClose }: { onClose: () => void }) {
+export function ArquitecturasModal({ onClose }: { onClose: () => void }) {
   const {
     conjuntos, tablaParedes, paredes, activaArquitecturaId,
     addArquitectura, renameArquitectura, deleteArquitectura,

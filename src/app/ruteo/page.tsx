@@ -9,7 +9,7 @@ import { RuteoToolbar } from './RuteoToolbar'
 import { RuteoCanvas } from './RuteoCanvas'
 import { RuteoPanel } from './RuteoPanel'
 import { ConjuntosModal } from './ConjuntosModal'
-import { ArquitecturaesModal } from './ArquitecturaesModal'
+import { ArquitecturasModal } from './ArquitecturasModal'
 import '../../styles/ruteo.css'
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
@@ -189,7 +189,7 @@ export default function RuteoPage() {
         />
       </div>
       {showConjuntosModal && <ConjuntosModal onClose={() => setShowConjuntosModal(false)} />}
-      {showParedesModal   && <ArquitecturaesModal onClose={() => setShowParedesModal(false)} />}
+      {showParedesModal   && <ArquitecturasModal onClose={() => setShowParedesModal(false)} />}
     </div>
   )
 }
