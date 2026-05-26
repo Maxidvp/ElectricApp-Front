@@ -122,8 +122,8 @@ export function RuteoCanvas({
   const selectedSeg   = selectedId !== null ? segmentos.find(s => s.id === selectedId) ?? null : null
 
   return (
-    <div ref={containerRef} className={`ruteo-canvas-wrapper${isPanMode ? ' tool-seleccionar' : ''}`}>
-      <div className="ruteo-coords">
+    <div ref={containerRef} className={`flex-1 overflow-hidden relative ${isPanMode ? 'cursor-default' : 'cursor-crosshair'}`}>
+      <div className="absolute bottom-2.5 left-3 text-[11px] text-surface-tonal-a40 bg-[rgba(27,26,32,0.75)] px-2 py-0.75 rounded-sm pointer-events-none z-5 tabular-nums tracking-[0.02em]">
         X {(mousePos.x/100).toFixed(2)}m · Y {(mousePos.y/100).toFixed(2)}m · Z {(drawZ/100).toFixed(2)}m
       </div>
       <Stage ref={stageRef} width={size.w} height={size.h}

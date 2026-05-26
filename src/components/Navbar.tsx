@@ -17,8 +17,8 @@ const NAV_LINKS = [
 export default function Navbar() {
   const { proyectos, proyectoActivo, setProyectoActivo, crearProyecto } = useProyectos()
   const pathname  = usePathname()
-  const [open, setOpen]         = useState(false)
-  const [creando, setCreando]   = useState(false)
+  const [open, setOpen]               = useState(false)
+  const [creando, setCreando]         = useState(false)
   const [nuevoNombre, setNuevoNombre] = useState('')
   const dropRef  = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -27,285 +27,111 @@ export default function Navbar() {
     if (!open) return
     const handler = (e: MouseEvent) => {
       if (dropRef.current && !dropRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setCreando(false)
-        setNuevoNombre('')
+        setOpen(false); setCreando(false); setNuevoNombre('')
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  useEffect(() => {
-    if (creando) inputRef.current?.focus()
-  }, [creando])
+  useEffect(() => { if (creando) inputRef.current?.focus() }, [creando])
 
   const seleccionar = (p: typeof proyectoActivo) => {
-    setProyectoActivo(p)
-    setOpen(false)
-    setCreando(false)
-    setNuevoNombre('')
+    setProyectoActivo(p); setOpen(false); setCreando(false); setNuevoNombre('')
   }
 
   const confirmarNuevo = async () => {
     const nombre = nuevoNombre.trim()
     if (!nombre) return
     const nuevo = await crearProyecto({ nombre })
-    setProyectoActivo(nuevo)
-    setOpen(false)
-    setCreando(false)
-    setNuevoNombre('')
+    setProyectoActivo(nuevo); setOpen(false); setCreando(false); setNuevoNombre('')
   }
 
   return (
-    <>
-      <style>{`
-        .navbar {
-          height: 48px;
-          background: var(--clr-surface-tonal-a0);
-          border-bottom: 1px solid var(--clr-surface-tonal-a20);
-          display: flex;
-          align-items: center;
-          padding: 0 20px;
-          gap: 24px;
-          position: sticky;
-          top: 0;
-          z-index: 100;
-        }
-        .navbar-brand {
-          font-size: 14px;
-          font-weight: 700;
-          color: var(--clr-primary-a30);
-          text-decoration: none;
-          letter-spacing: 0.03em;
-          flex-shrink: 0;
-        }
-        .navbar-sep {
-          width: 1px;
-          height: 22px;
-          background: var(--clr-surface-tonal-a20);
-          flex-shrink: 0;
-        }
-        .navbar-links {
-          display: flex;
-          gap: 4px;
-          flex: 1;
-        }
-        .navbar-link {
-          font-size: 13px;
-          color: var(--clr-surface-tonal-a40);
-          text-decoration: none;
-          padding: 5px 10px;
-          border-radius: 6px;
-          transition: color 0.15s, background 0.15s;
-        }
-        .navbar-link:hover {
-          color: var(--clr-font-a0);
-          background: var(--clr-surface-tonal-a10);
-        }
-        .navbar-link.active {
-          color: var(--clr-font-a0);
-          background: var(--clr-surface-tonal-a10);
-        }
-        .proyecto-wrap {
-          position: relative;
-          flex-shrink: 0;
-        }
-        .proyecto-btn {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          background: var(--clr-surface-tonal-a10);
-          border: 1px solid var(--clr-surface-tonal-a20);
-          border-radius: 7px;
-          padding: 5px 10px 5px 12px;
-          cursor: pointer;
-          color: var(--clr-font-a0);
-          font-size: 13px;
-          min-width: 160px;
-          transition: border-color 0.15s;
-        }
-        .proyecto-btn:hover {
-          border-color: var(--clr-primary-a20);
-        }
-        .proyecto-btn-label {
-          flex: 1;
-          text-align: left;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .proyecto-btn-label.sin {
-          color: var(--clr-surface-tonal-a40);
-          font-style: italic;
-        }
-        .proyecto-caret {
-          color: var(--clr-surface-tonal-a40);
-          font-size: 10px;
-          flex-shrink: 0;
-        }
-        .proyecto-dropdown {
-          position: absolute;
-          right: 0;
-          top: calc(100% + 6px);
-          min-width: 200px;
-          background: var(--clr-surface-tonal-a0);
-          border: 1px solid var(--clr-surface-tonal-a20);
-          border-radius: 8px;
-          padding: 4px;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-          z-index: 200;
-        }
-        .proyecto-item {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          width: 100%;
-          text-align: left;
-          background: none;
-          border: none;
-          color: var(--clr-font-a10);
-          font-size: 13px;
-          padding: 7px 10px;
-          border-radius: 5px;
-          cursor: pointer;
-          transition: background 0.12s;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .proyecto-item:hover {
-          background: var(--clr-surface-tonal-a10);
-        }
-        .proyecto-item.selected {
-          color: var(--clr-primary-a30);
-        }
-        .proyecto-item.sin-proyecto {
-          color: var(--clr-surface-tonal-a40);
-          font-style: italic;
-        }
-        .proyecto-divider {
-          height: 1px;
-          background: var(--clr-surface-tonal-a20);
-          margin: 4px 0;
-        }
-        .proyecto-nuevo-row {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 6px;
-        }
-        .proyecto-nuevo-input {
-          flex: 1;
-          background: var(--clr-surface-tonal-a10);
-          border: 1px solid var(--clr-surface-tonal-a20);
-          border-radius: 5px;
-          color: var(--clr-font-a0);
-          font-size: 13px;
-          padding: 5px 8px;
-          outline: none;
-        }
-        .proyecto-nuevo-input:focus {
-          border-color: var(--clr-primary-a20);
-        }
-        .proyecto-nuevo-ok {
-          background: var(--clr-primary-a0);
-          border: none;
-          border-radius: 5px;
-          color: white;
-          font-size: 13px;
-          padding: 5px 10px;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-        .proyecto-nuevo-ok:hover {
-          background: var(--clr-primary-a10);
-        }
-        .proyecto-nuevo-btn {
-          width: 100%;
-          text-align: left;
-          background: none;
-          border: none;
-          color: var(--clr-primary-a30);
-          font-size: 13px;
-          padding: 7px 10px;
-          border-radius: 5px;
-          cursor: pointer;
-          transition: background 0.12s;
-        }
-        .proyecto-nuevo-btn:hover {
-          background: var(--clr-surface-tonal-a10);
-        }
-      `}</style>
+    <nav className="h-12 bg-surface-tonal-a0 border-b border-surface-tonal-a20 flex items-center px-5 gap-6 sticky top-0 z-[100]">
+      <Link href="/" className="text-sm font-bold text-primary-a30 no-underline tracking-[0.03em] shrink-0">
+        ⚡ ElectricApp
+      </Link>
 
-      <nav className="navbar">
-        <Link href="/" className="navbar-brand">⚡ ElectricApp</Link>
-        <div className="navbar-sep" />
-        <div className="navbar-links">
-          {NAV_LINKS.map(l => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`navbar-link${pathname === l.href ? ' active' : ''}`}
+      <div className="w-px h-[22px] bg-surface-tonal-a20 shrink-0" />
+
+      <div className="flex gap-1 flex-1">
+        {NAV_LINKS.map(l => (
+          <Link
+            key={l.href}
+            href={l.href}
+            className={`text-[13px] no-underline py-[5px] px-[10px] rounded-md transition-colors ${
+              pathname === l.href
+                ? 'text-font-a0 bg-surface-tonal-a10'
+                : 'text-surface-tonal-a40 hover:text-font-a0 hover:bg-surface-tonal-a10'
+            }`}
+          >
+            {l.label}
+          </Link>
+        ))}
+      </div>
+
+      <div className="relative shrink-0" ref={dropRef}>
+        <button
+          className="flex items-center gap-2 bg-surface-tonal-a10 border border-surface-tonal-a20 rounded-[7px] py-[5px] pr-[10px] pl-3 cursor-pointer text-font-a0 text-[13px] min-w-[160px] transition-colors hover:border-primary-a20"
+          onClick={() => setOpen(o => !o)}
+        >
+          <span className={`flex-1 text-left whitespace-nowrap overflow-hidden text-ellipsis ${!proyectoActivo ? 'text-surface-tonal-a40 italic' : ''}`}>
+            {proyectoActivo ? proyectoActivo.nombre : 'Sin proyecto'}
+          </span>
+          <span className="text-surface-tonal-a40 text-[10px] shrink-0">▼</span>
+        </button>
+
+        {open && (
+          <div className="absolute right-0 top-[calc(100%+6px)] min-w-[200px] bg-surface-tonal-a0 border border-surface-tonal-a20 rounded-lg p-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] z-[200]">
+            <button
+              className={`flex items-center gap-2 w-full text-left bg-transparent border-none text-[13px] py-[7px] px-[10px] rounded-[5px] cursor-pointer transition-colors hover:bg-surface-tonal-a10 italic ${!proyectoActivo ? 'text-primary-a30' : 'text-surface-tonal-a40'}`}
+              onClick={() => seleccionar(null)}
             >
-              {l.label}
-            </Link>
-          ))}
-        </div>
+              Sin proyecto
+            </button>
 
-        <div className="proyecto-wrap" ref={dropRef}>
-          <button className="proyecto-btn" onClick={() => setOpen(o => !o)}>
-            <span className={`proyecto-btn-label${!proyectoActivo ? ' sin' : ''}`}>
-              {proyectoActivo ? proyectoActivo.nombre : 'Sin proyecto'}
-            </span>
-            <span className="proyecto-caret">▼</span>
-          </button>
+            {proyectos.length > 0 && <div className="h-px bg-surface-tonal-a20 my-1" />}
 
-          {open && (
-            <div className="proyecto-dropdown">
+            {proyectos.map(p => (
               <button
-                className={`proyecto-item sin-proyecto${!proyectoActivo ? ' selected' : ''}`}
-                onClick={() => seleccionar(null)}
+                key={p.id}
+                className={`flex items-center gap-2 w-full text-left bg-transparent border-none text-[13px] py-[7px] px-[10px] rounded-[5px] cursor-pointer transition-colors hover:bg-surface-tonal-a10 whitespace-nowrap overflow-hidden text-ellipsis ${proyectoActivo?.id === p.id ? 'text-primary-a30' : 'text-font-a10'}`}
+                onClick={() => seleccionar(p)}
               >
-                Sin proyecto
+                {proyectoActivo?.id === p.id && '✓ '}
+                {p.nombre}
               </button>
+            ))}
 
-              {proyectos.length > 0 && <div className="proyecto-divider" />}
+            <div className="h-px bg-surface-tonal-a20 my-1" />
 
-              {proyectos.map(p => (
+            {creando ? (
+              <div className="flex items-center gap-[6px] px-[6px] py-1">
+                <input
+                  ref={inputRef}
+                  className="flex-1 bg-surface-tonal-a10 border border-surface-tonal-a20 rounded-[5px] text-font-a0 text-[13px] py-[5px] px-2 outline-none focus:border-primary-a20"
+                  placeholder="Nombre del proyecto"
+                  value={nuevoNombre}
+                  onChange={e => setNuevoNombre(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmarNuevo(); if (e.key === 'Escape') setCreando(false) }}
+                />
                 <button
-                  key={p.id}
-                  className={`proyecto-item${proyectoActivo?.id === p.id ? ' selected' : ''}`}
-                  onClick={() => seleccionar(p)}
-                >
-                  {proyectoActivo?.id === p.id && '✓ '}
-                  {p.nombre}
-                </button>
-              ))}
-
-              <div className="proyecto-divider" />
-
-              {creando ? (
-                <div className="proyecto-nuevo-row">
-                  <input
-                    ref={inputRef}
-                    className="proyecto-nuevo-input"
-                    placeholder="Nombre del proyecto"
-                    value={nuevoNombre}
-                    onChange={e => setNuevoNombre(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') confirmarNuevo(); if (e.key === 'Escape') setCreando(false) }}
-                  />
-                  <button className="proyecto-nuevo-ok" onClick={confirmarNuevo}>OK</button>
-                </div>
-              ) : (
-                <button className="proyecto-nuevo-btn" onClick={() => setCreando(true)}>
-                  + Nuevo proyecto
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </nav>
-    </>
+                  className="bg-primary-a0 border-none rounded-[5px] text-white text-[13px] py-[5px] px-[10px] cursor-pointer whitespace-nowrap hover:bg-primary-a10"
+                  onClick={confirmarNuevo}
+                >OK</button>
+              </div>
+            ) : (
+              <button
+                className="w-full text-left bg-transparent border-none text-primary-a30 text-[13px] py-[7px] px-[10px] rounded-[5px] cursor-pointer transition-colors hover:bg-surface-tonal-a10"
+                onClick={() => setCreando(true)}
+              >
+                + Nuevo proyecto
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </nav>
   )
 }

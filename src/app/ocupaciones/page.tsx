@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import type { Canio, Bandeja, Segmento } from '@/services/ruteo'
 import CircuitosPanel from '@/components/CircuitosPanel'
-import './ocupaciones.css'
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -48,9 +47,9 @@ function OcupacionBar({ pct }: { pct: number }) {
     : pct > 25 ? 'var(--clr-warning-a10)'
     : 'var(--clr-success-a10)'
   return (
-    <div className="ocup-bar-wrap">
-      <div className="ocup-bar-track">
-        <div className="ocup-bar-fill" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
+    <div className="flex items-center gap-2">
+      <div className="w-20 h-1.5 rounded-full bg-surface-tonal-a20 overflow-hidden shrink-0">
+        <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
       </div>
       <span style={{ color, minWidth: 44, textAlign: 'right' }}>{pct.toFixed(1)}%</span>
     </div>
@@ -109,22 +108,19 @@ export default function OcupacionesPage() {
     editSegmento(segId, { bandeja_id: bandejaId })
   }
 
+  const inlineSelect = 'px-1.5 py-[3px] bg-surface-tonal-a10 border border-info-a10 rounded-[5px] text-font-a0 text-xs cursor-pointer w-full outline-none focus:border-primary-a20'
+
   return (
-    <div className="ocup-layout">
+    <div className="flex flex-col h-dvh bg-surface-a0 overflow-hidden">
 
       {/* ── Sticky header ─── */}
-      <div className="ocup-sticky">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0 4px' }}>
-          <label style={{ fontSize: 13, color: 'var(--clr-font-a20)', fontWeight: 500 }}>Conjunto</label>
+      <div className="shrink-0 bg-surface-tonal-a0 border-b border-surface-tonal-a20 sticky top-0 z-10">
+        <div className="flex items-center gap-2.5 pt-2 pb-1">
+          <label className="text-[13px] text-font-a20 font-medium">Conjunto</label>
           <select
             value={activeConjuntoId ?? ''}
             onChange={e => setActiveConjuntoId(Number(e.target.value))}
-            style={{
-              padding: '4px 8px', fontSize: 13,
-              background: 'var(--clr-surface-tonal-a10)',
-              border: '1px solid var(--clr-surface-tonal-a20)',
-              borderRadius: 6, color: 'var(--clr-font-a0)',
-            }}
+            className="px-2 py-1 text-[13px] bg-surface-tonal-a10 border border-surface-tonal-a20 rounded-md text-font-a0 outline-none"
           >
             {conjuntos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
@@ -138,7 +134,7 @@ export default function OcupacionesPage() {
       </div>
 
       {/* ── Scrollable content ─── */}
-      <div className="ocup-scroll">
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
         <div className="datatable-container" style={{ maxWidth: '100%', minWidth: 0 }}>
           <table className="datatable">
             <thead>
@@ -159,64 +155,53 @@ export default function OcupacionesPage() {
                 return (
                   <tr
                     key={seg.id}
-                    className={isSelected ? 'ocup-row-selected' : ''}
+                    className="cursor-pointer"
+                    style={isSelected ? { background: 'rgba(33, 73, 138, 0.35)', outline: '1px solid var(--clr-info-a10)' } : undefined}
                     onClick={() => setSelectedId(isSelected ? null : seg.id)}
                   >
                     <td onClick={isSelected ? e => e.stopPropagation() : undefined}>
                       {isSelected ? (
-                        <select
-                          className="ocup-inline-select"
-                          value={seg.tipo}
-                          onChange={e => handleChangeTipo(seg.id, e.target.value)}
-                        >
+                        <select className={inlineSelect} value={seg.tipo} onChange={e => handleChangeTipo(seg.id, e.target.value)}>
                           <option value="canio">Caño</option>
                           <option value="bandeja">Bandeja</option>
                         </select>
                       ) : (
-                        <span className={`ocup-badge ocup-badge-${seg.tipo}`}>{seg.tipo}</span>
+                        <span className={`inline-block px-2.25 py-0.5 rounded-[10px] text-[11px] font-medium capitalize tracking-[0.02em] ${
+                          seg.tipo === 'canio'
+                            ? 'bg-[rgba(232,124,58,0.15)] text-[#E87C3A] border border-[rgba(232,124,58,0.3)]'
+                            : 'bg-[rgba(55,138,221,0.15)] text-[#378ADD] border border-[rgba(55,138,221,0.3)]'
+                        }`}>{seg.tipo}</span>
                       )}
                     </td>
                     <td onClick={isSelected ? e => e.stopPropagation() : undefined}>
                       {isSelected && seg.tipo === 'canio' ? (
-                        <select
-                          className="ocup-inline-select"
-                          value={seg.canio_id ?? ''}
-                          onChange={e => handleChangeCanio(seg.id, e.target.value ? Number(e.target.value) : null)}
-                        >
+                        <select className={inlineSelect} value={seg.canio_id ?? ''} onChange={e => handleChangeCanio(seg.id, e.target.value ? Number(e.target.value) : null)}>
                           <option value="">— Sin especificar —</option>
-                          {canios.map(c => (
-                            <option key={c.id} value={c.id}>{c.nombre}</option>
-                          ))}
+                          {canios.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                         </select>
                       ) : isSelected && seg.tipo === 'bandeja' ? (
-                        <select
-                          className="ocup-inline-select"
-                          value={seg.bandeja_id ?? ''}
-                          onChange={e => handleChangeBandeja(seg.id, e.target.value ? Number(e.target.value) : null)}
-                        >
+                        <select className={inlineSelect} value={seg.bandeja_id ?? ''} onChange={e => handleChangeBandeja(seg.id, e.target.value ? Number(e.target.value) : null)}>
                           <option value="">— Sin especificar —</option>
-                          {bandejas.map(b => (
-                            <option key={b.id} value={b.id}>{b.nombre ?? 'Bandeja'} — {b.ancho} mm</option>
-                          ))}
+                          {bandejas.map(b => <option key={b.id} value={b.id}>{b.nombre ?? 'Bandeja'} — {b.ancho} mm</option>)}
                         </select>
                       ) : seg.canio ? (
                         seg.canio.nombre
                       ) : seg.bandeja ? (
                         `${seg.bandeja.nombre ?? 'Bandeja'} — ${seg.bandeja.ancho} mm`
                       ) : (
-                        <span className="ocup-dim">Sin asignar</span>
+                        <span className="text-surface-tonal-a40 text-xs">Sin asignar</span>
                       )}
                     </td>
                     <td>
-                      <div className="ocup-chips">
+                      <div className="flex flex-wrap gap-1">
                         {seg.circuitos.length === 0
-                          ? <span className="ocup-dim">—</span>
+                          ? <span className="text-surface-tonal-a40 text-xs">—</span>
                           : seg.circuitos.map(sc => (
-                              <span key={sc.id} className="ocup-chip">
+                              <span key={sc.id} className="inline-flex items-center gap-0.75 px-1.75 py-0.5 rounded-sm bg-surface-tonal-a10 text-[11px] text-font-a10 border border-surface-tonal-a20">
                                 {sc.circuito}
                                 {isSelected && (
                                   <button
-                                    className="ocup-chip-remove"
+                                    className="bg-transparent border-none text-surface-tonal-a40 cursor-pointer text-[13px] leading-none px-px hover:text-danger-a10"
                                     onClick={e => { e.stopPropagation(); handleQuitar(seg.id, sc.id) }}
                                     title="Quitar"
                                   >×</button>
@@ -231,20 +216,20 @@ export default function OcupacionesPage() {
                         ? `${calcC.areaOcupada.toFixed(1)} / ${calcC.areaTotal.toFixed(1)} mm²`
                         : calcB
                         ? `${calcB.anchoOcupado.toFixed(1)} / ${calcB.anchoTotal.toFixed(1)} mm`
-                        : <span className="ocup-dim">—</span>
+                        : <span className="text-surface-tonal-a40 text-xs">—</span>
                       }
                     </td>
                     <td>
                       {calcC ? <OcupacionBar pct={calcC.pct} />
                        : calcB ? <OcupacionBar pct={calcB.pct} />
-                       : <span className="ocup-dim">—</span>}
+                       : <span className="text-surface-tonal-a40 text-xs">—</span>}
                     </td>
                   </tr>
                 )
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="ocup-empty-row">
+                  <td colSpan={5} className="text-center p-7 text-surface-tonal-a40 text-[13px]">
                     Sin segmentos. Agregá uno con el botón de abajo.
                   </td>
                 </tr>
@@ -253,19 +238,18 @@ export default function OcupacionesPage() {
           </table>
         </div>
 
-        <div className="ocup-footer">
-          <button className="ocup-add-btn" onClick={() => setShowAdd(true)}>
+        <div className="flex justify-end py-2">
+          <button
+            className="px-4.5 py-1.75 rounded-md border border-primary-a0 bg-primary-a0 text-font-a0 text-[13px] cursor-pointer transition-colors hover:bg-primary-a10 disabled:opacity-50 disabled:cursor-default"
+            onClick={() => setShowAdd(true)}
+          >
             + Agregar segmento
           </button>
         </div>
       </div>
 
       {showAdd && (
-        <AddModal
-          canios={canios}
-          bandejas={bandejas}
-          onClose={() => setShowAdd(false)}
-        />
+        <AddModal canios={canios} bandejas={bandejas} onClose={() => setShowAdd(false)} />
       )}
     </div>
   )
@@ -294,14 +278,17 @@ function AddModal({ canios, bandejas, onClose }: {
     onClose()
   }
 
-  return (
-    <div className="ocup-overlay" onClick={onClose}>
-      <div className="ocup-modal" onClick={e => e.stopPropagation()}>
-        <div className="ocup-modal-title">Agregar segmento</div>
+  const fieldLabel = 'text-[11px] font-medium text-font-a20 uppercase tracking-[0.04em]'
+  const fieldSelect = 'px-[10px] py-1.5 bg-surface-tonal-a10 border border-surface-tonal-a20 rounded-md text-font-a0 text-[13px] outline-none focus:border-primary-a20'
 
-        <div className="ocup-field">
-          <label>Tipo</label>
-          <select value={tipo} onChange={e => setTipo(e.target.value as any)}>
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-100" onClick={onClose}>
+      <div className="bg-surface-tonal-a0 border border-surface-tonal-a20 rounded-[10px] px-6 py-5 min-w-80 flex flex-col gap-3.5" onClick={e => e.stopPropagation()}>
+        <div className="text-[15px] font-semibold text-font-a0">Agregar segmento</div>
+
+        <div className="flex flex-col gap-1.25">
+          <label className={fieldLabel}>Tipo</label>
+          <select className={fieldSelect} value={tipo} onChange={e => setTipo(e.target.value as any)}>
             <option value="canio">Caño</option>
             <option value="bandeja">Bandeja</option>
             <option value="pared">Pared</option>
@@ -309,36 +296,28 @@ function AddModal({ canios, bandejas, onClose }: {
         </div>
 
         {tipo === 'canio' && (
-          <div className="ocup-field">
-            <label>Caño</label>
-            <select value={canioId} onChange={e => setCanioId(Number(e.target.value))}>
+          <div className="flex flex-col gap-1.25">
+            <label className={fieldLabel}>Caño</label>
+            <select className={fieldSelect} value={canioId} onChange={e => setCanioId(Number(e.target.value))}>
               <option value="">— Sin especificar —</option>
-              {canios.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.nombre} — Ø{c.diametro_nominal}
-                </option>
-              ))}
+              {canios.map(c => <option key={c.id} value={c.id}>{c.nombre} — Ø{c.diametro_nominal}</option>)}
             </select>
           </div>
         )}
 
         {tipo === 'bandeja' && (
-          <div className="ocup-field">
-            <label>Bandeja</label>
-            <select value={bandejaId} onChange={e => setBandejaId(Number(e.target.value))}>
+          <div className="flex flex-col gap-1.25">
+            <label className={fieldLabel}>Bandeja</label>
+            <select className={fieldSelect} value={bandejaId} onChange={e => setBandejaId(Number(e.target.value))}>
               <option value="">— Sin especificar —</option>
-              {bandejas.map(b => (
-                <option key={b.id} value={b.id}>
-                  {b.nombre ?? 'Bandeja'} — {b.ancho} mm
-                </option>
-              ))}
+              {bandejas.map(b => <option key={b.id} value={b.id}>{b.nombre ?? 'Bandeja'} — {b.ancho} mm</option>)}
             </select>
           </div>
         )}
 
-        <div className="ocup-modal-actions">
-          <button className="ocup-btn-cancel" onClick={onClose}>Cancelar</button>
-          <button className="ocup-add-btn" onClick={handleSubmit}>
+        <div className="flex justify-end gap-2 mt-1">
+          <button className="px-4 py-1.75 rounded-md border border-surface-tonal-a30 bg-transparent text-font-a20 text-[13px] cursor-pointer hover:bg-surface-tonal-a10" onClick={onClose}>Cancelar</button>
+          <button className="px-4.5 py-1.75 rounded-md border border-primary-a0 bg-primary-a0 text-font-a0 text-[13px] cursor-pointer transition-colors hover:bg-primary-a10" onClick={handleSubmit}>
             Crear
           </button>
         </div>

@@ -7,8 +7,6 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import "../../styles/tables.css"
-import "../../styles/FormacionModal.css"
 import FormacionModal from '@/components/FormacionModal'
 import TableroModal from '@/components/TableroModal'
 import { useProyectos } from '@/context/ProyectosContext'
@@ -86,17 +84,13 @@ function CeldaEditable({ valor, onGuardar }: { valor: string; onGuardar: (v: str
           if (e.key === 'Enter') guardar()
           if (e.key === 'Escape') { setTexto(valor); setEditando(false) }
         }}
-        style={{
-          width: '100%', height: 28, padding: '0 6px', fontSize: 12,
-          border: '1px solid var(--clr-info-a10)', borderRadius: 4,
-          background: 'var(--clr-surface-a10)', color: 'var(--clr-font-a0)', outline: 'none',
-        }}
+        className="w-full h-7 px-1.5 text-xs border border-info-a10 rounded-sm bg-surface-a10 text-font-a0 outline-none"
       />
     )
   }
 
   return (
-    <span onClick={() => { setTexto(valor); setEditando(true) }} style={{ cursor: 'text', display: 'block', width: '100%', minHeight: 20 }}>
+    <span onClick={() => { setTexto(valor); setEditando(true) }} className="cursor-text block w-full min-h-5">
       {valor}
     </span>
   )
@@ -236,13 +230,12 @@ export default function TablaCargas() {
           setModalAbierto(true)
         }
         if (!fd) return (
-          <span onClick={openModal}
-            style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, cursor: 'pointer' }}>
+          <span onClick={openModal} className="text-surface-tonal-a40 text-xs cursor-pointer">
             Sin formación
           </span>
         )
         return (
-          <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }} onClick={openModal}>
+          <span className="cursor-pointer underline decoration-dotted" onClick={openModal}>
             {info.getValue()}
           </span>
         )
@@ -284,21 +277,25 @@ export default function TablaCargas() {
   if (error) return <p>Error: {error}</p>
 
   return (
-    <div className="subcontainer">
-      <div className="tablero-tabs">
+    <div className="bg-surface-a10">
+      <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
         {tableros.map((t) => (
           <button
             key={t.id}
-            className={`tablero-tab${idEfectivo === t.id ? ' activo' : ''}`}
             onClick={() => cambiarTablero(t.id)}
+            className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
+              idEfectivo === t.id
+                ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
+                : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'
+            }`}
           >
             {t.nombre || t.tag}
           </button>
         ))}
         <button
-          className="tablero-tab"
           onClick={() => setModalTableroAbierto(true)}
           title="Agregar tablero"
+          className="px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85"
         >+</button>
       </div>
       <div className="datatable-container">
@@ -457,7 +454,7 @@ function SortableRow({ id, isSelected, isAnyDragging, onClick, children }: {
       }}
     >
       <td
-        style={{ width: 32, textAlign: 'center', color: 'var(--clr-surface-tonal-a40)', cursor: 'grab', userSelect: 'none' }}
+        className="w-8 text-center text-surface-tonal-a40 cursor-grab select-none"
         onClick={e => e.stopPropagation()}
         {...attributes} {...listeners}
       >⠿</td>

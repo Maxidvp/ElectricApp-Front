@@ -10,7 +10,6 @@ import { RuteoCanvas } from './RuteoCanvas'
 import { RuteoPanel } from './RuteoPanel'
 import { ConjuntosModal } from './ConjuntosModal'
 import { ArquitecturasModal } from './ArquitecturasModal'
-import '../../styles/ruteo.css'
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
 
@@ -161,7 +160,7 @@ export default function RuteoPage() {
   const activeCirc = tableros.flatMap(t => t.circuitos).find(c => c.id === activeCircId) ?? null
 
   return (
-    <div className="ruteo-layout">
+    <div className="flex flex-col h-[calc(100dvh-48px)] bg-surface-a0 overflow-hidden">
       <RuteoToolbar
         tool={tool} drawZ={drawZ} conjuntos={conjuntos}
         activeConjuntoId={activeConjuntoId} drawStart={drawStart}
@@ -172,7 +171,7 @@ export default function RuteoPage() {
         onOpenConjuntos={() => setShowConjuntosModal(true)}
         onOpenParedes={() => setShowParedesModal(true)}
       />
-      <div className="ruteo-content">
+      <div className="flex flex-1 overflow-hidden">
         <RuteoCanvas
           tool={tool} drawStart={drawStart} drawZ={drawZ}
           selectedId={selectedId} selectedParedId={selectedParedId} activeCircId={activeCircId}

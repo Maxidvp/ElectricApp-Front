@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import '../styles/FormacionModal.css'
 
 type TableroForm = {
   tag: string
@@ -25,6 +24,17 @@ const initialState: TableroForm = {
 type Props = {
   onGuardar: (data: TableroForm) => Promise<void>
   onCerrar: () => void
+}
+
+const cx = {
+  input: 'h-[34px] border border-surface-tonal-a30 rounded-[7px] px-[10px] text-[13px] bg-surface-a10 text-font-a0 outline-none w-full hover:border-surface-tonal-a40 focus:border-info-a10 focus:shadow-[0_0_0_3px_rgba(64,119,209,0.2)]',
+  label: 'text-xs text-font-a20',
+  field: 'flex flex-col gap-[5px]',
+  section: 'border border-surface-tonal-a20 rounded-[10px] overflow-hidden',
+  sectionHdr: 'flex items-center gap-2 px-[14px] py-2 bg-surface-tonal-a0 border-b border-surface-tonal-a20 text-xs font-medium text-font-a20',
+  grid: 'p-3 grid gap-[10px] bg-surface-a10',
+  btn: 'h-[34px] px-4 rounded-[7px] text-[13px] font-medium cursor-pointer border border-surface-tonal-a30 bg-transparent text-font-a20 transition-colors hover:bg-surface-tonal-a10 hover:text-font-a0',
+  btnPrimary: 'h-[34px] px-4 rounded-[7px] text-[13px] font-medium cursor-pointer border border-info-a0 bg-info-a0 text-font-a0 transition-colors hover:bg-info-a10 hover:border-info-a10 disabled:opacity-50 disabled:cursor-not-allowed',
 }
 
 export default function TableroModal({ onGuardar, onCerrar }: Props) {
@@ -53,79 +63,75 @@ export default function TableroModal({ onGuardar, onCerrar }: Props) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onCerrar}>
-      <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-100" onClick={onCerrar}>
+      <div className="bg-surface-a0 border border-surface-tonal-a20 rounded-xl w-140 max-w-[95vw] max-h-[90vh] overflow-y-auto flex flex-col shadow-[0_8px_40px_rgba(0,0,0,0.6)]" onClick={(e) => e.stopPropagation()}>
 
-        <div className="modal-header">
-          <span className="modal-title">Nuevo tablero</span>
-          <button className="modal-close" onClick={onCerrar}>
+        <div className="flex items-center justify-between px-4 py-3.5 border-b border-surface-tonal-a20 bg-surface-tonal-a0 rounded-t-xl">
+          <span className="text-[14px] font-medium text-font-a0">Nuevo tablero</span>
+          <button className="bg-transparent border-none cursor-pointer text-font-a20 flex items-center p-1 rounded-md hover:bg-surface-tonal-a10 hover:text-font-a0" onClick={onCerrar}>
             <i className="material-icons">close</i>
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="p-4 flex flex-col gap-3 bg-surface-a0">
 
-          <div className="modal-section">
-            <div className="modal-section-header">
-              <div className="modal-dot" style={{ background: 'var(--clr-primary-a0)' }} />
+          <div className={cx.section}>
+            <div className={cx.sectionHdr}>
+              <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-primary-a0" />
               <span>Identificación</span>
             </div>
-            <div className="modal-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              <div className="modal-field">
-                <label>Tag <span className="req">*</span></label>
-                <input name="tag" type="text" value={form.tag} onChange={handleChange} placeholder="ej. TG-01" />
+            <div className={`${cx.grid} grid-cols-2`}>
+              <div className={cx.field}>
+                <label className={cx.label}>Tag <span className="text-danger-a10 ml-0.5">*</span></label>
+                <input className={cx.input} name="tag" type="text" value={form.tag} onChange={handleChange} placeholder="ej. TG-01" />
               </div>
-              <div className="modal-field">
-                <label>Sistema de tensión <span className="req">*</span></label>
-                <input name="sistema_tension" type="text" value={form.sistema_tension} onChange={handleChange} placeholder="ej. 230/400V" />
+              <div className={cx.field}>
+                <label className={cx.label}>Sistema de tensión <span className="text-danger-a10 ml-0.5">*</span></label>
+                <input className={cx.input} name="sistema_tension" type="text" value={form.sistema_tension} onChange={handleChange} placeholder="ej. 230/400V" />
               </div>
-              <div className="modal-field">
-                <label>Nombre</label>
-                <input name="nombre" type="text" value={form.nombre} onChange={handleChange} placeholder="ej. Tablero general" />
+              <div className={cx.field}>
+                <label className={cx.label}>Nombre</label>
+                <input className={cx.input} name="nombre" type="text" value={form.nombre} onChange={handleChange} placeholder="ej. Tablero general" />
               </div>
-              <div className="modal-field">
-                <label>Ubicación</label>
-                <input name="ubicacion" type="text" value={form.ubicacion} onChange={handleChange} placeholder="ej. Planta baja" />
+              <div className={cx.field}>
+                <label className={cx.label}>Ubicación</label>
+                <input className={cx.input} name="ubicacion" type="text" value={form.ubicacion} onChange={handleChange} placeholder="ej. Planta baja" />
               </div>
             </div>
           </div>
 
-          <div className="modal-section">
-            <div className="modal-section-header">
-              <div className="modal-dot" style={{ background: 'var(--clr-warning-a10)' }} />
+          <div className={cx.section}>
+            <div className={cx.sectionHdr}>
+              <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-warning-a10" />
               <span>Sistema eléctrico</span>
             </div>
-            <div className="modal-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-              <div className="modal-field">
-                <label>Tensión fase (V)</label>
-                <input name="tension_fase" type="number" value={form.tension_fase} onChange={handleChange} placeholder="ej. 220" />
+            <div className={`${cx.grid} grid-cols-3`}>
+              <div className={cx.field}>
+                <label className={cx.label}>Tensión fase (V)</label>
+                <input className={cx.input} name="tension_fase" type="number" value={form.tension_fase} onChange={handleChange} placeholder="ej. 220" />
               </div>
-              <div className="modal-field">
-                <label>Tensión neutro (V)</label>
-                <input name="tension_neutro" type="number" value={form.tension_neutro} onChange={handleChange} placeholder="ej. 127" />
+              <div className={cx.field}>
+                <label className={cx.label}>Tensión neutro (V)</label>
+                <input className={cx.input} name="tension_neutro" type="number" value={form.tension_neutro} onChange={handleChange} placeholder="ej. 127" />
               </div>
-              <div className="modal-field">
-                <label>Frecuencia (Hz)</label>
-                <input name="frecuencia" type="number" value={form.frecuencia} onChange={handleChange} placeholder="ej. 50" />
+              <div className={cx.field}>
+                <label className={cx.label}>Frecuencia (Hz)</label>
+                <input className={cx.input} name="frecuencia" type="number" value={form.frecuencia} onChange={handleChange} placeholder="ej. 50" />
               </div>
             </div>
           </div>
 
           {error && (
-            <div style={{
-              fontSize: 13, color: 'var(--clr-danger-a10)', padding: '8px 12px',
-              background: 'rgba(156,33,33,0.15)', borderRadius: 8,
-              border: '1px solid var(--clr-danger-a0)'
-            }}>
+            <div className="text-[13px] text-danger-a10 px-3 py-2 bg-[rgba(156,33,33,0.15)] rounded-lg border border-danger-a0">
               {error}
             </div>
           )}
 
         </div>
 
-        <div className="modal-footer">
-          <button className="modal-btn" onClick={onCerrar}>Cancelar</button>
-          <button className="modal-btn modal-btn-primary" onClick={handleGuardar} disabled={loading}>
+        <div className="px-4 py-3 border-t border-surface-tonal-a20 flex gap-2 justify-end bg-surface-tonal-a0 rounded-b-xl">
+          <button className={cx.btn} onClick={onCerrar}>Cancelar</button>
+          <button className={cx.btnPrimary} onClick={handleGuardar} disabled={loading}>
             {loading ? 'Guardando...' : 'Crear tablero'}
           </button>
         </div>

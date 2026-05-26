@@ -1,7 +1,6 @@
 'use client'
 import { useState, useMemo, useCallback } from 'react'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
-import '../../styles/tables.css'
 import { useProyectos } from '@/context/ProyectosContext'
 
 // ── Types ─────────────────────────────────────────────────────────

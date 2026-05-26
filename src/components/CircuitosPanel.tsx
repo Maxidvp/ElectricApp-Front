@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect } from 'react'
-import '@/styles/circuitos-panel.css'
 
 type Tablero = {
   id: number
@@ -26,26 +25,29 @@ export default function CircuitosPanel({ tableros, asignados, segmentoSelecciona
 
   return (
     <div>
-      <div className="tablero-tabs">
+      <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
         {tableros.map(t => (
           <button
             key={t.id}
-            className={`tablero-tab${tableroId === t.id ? ' activo' : ''}`}
             onClick={() => setTableroId(t.id)}
+            className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
+              tableroId === t.id
+                ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
+                : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'
+            }`}
           >
             {t.tag}
           </button>
         ))}
       </div>
-      <div className="circ-panel-circuitos">
+      <div className="flex flex-wrap gap-1.25 px-3 pb-2.5 min-h-11 items-center">
         {circuitos.length === 0
-          ? <span className="circ-panel-hint">Este tablero no tiene circuitos</span>
+          ? <span className="text-xs text-surface-tonal-a40">Este tablero no tiene circuitos</span>
           : circuitos.map(c => {
               const asignado = asignados.some(a => a.id === c.id)
               return (
                 <button
                   key={c.id}
-                  className={`circ-panel-btn${asignado ? ' asignado' : ''}${!segmentoSeleccionado ? ' sin-seleccion' : ''}`}
                   onClick={() => onAsignar(c.id)}
                   disabled={!segmentoSeleccionado || asignado}
                   title={
@@ -53,6 +55,13 @@ export default function CircuitosPanel({ tableros, asignados, segmentoSelecciona
                     : asignado ? 'Ya asignado'
                     : 'Asignar al tramo seleccionado'
                   }
+                  className={`px-3 py-1 rounded-[14px] border text-xs cursor-pointer transition-[background,border-color,opacity] duration-120 ${
+                    asignado
+                      ? 'bg-success-a0 border-success-a10 text-success-a20 cursor-default'
+                      : !segmentoSeleccionado
+                      ? 'bg-transparent border-surface-tonal-a30 text-font-a10 opacity-35'
+                      : 'bg-transparent border-surface-tonal-a30 text-font-a10 hover:bg-info-a0 hover:border-info-a10'
+                  }`}
                 >
                   {c.circuito}
                 </button>
