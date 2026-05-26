@@ -299,37 +299,33 @@ export default function TablaCargas() {
         >+</button>
       </div>
       <div className="datatable-container">
-        <div className="header-tools">
-          <div className="tools">
-            <ul>
-              <li>
-                <button onClick={handleAgregar} title="Agregar circuito">
-                  <i className="material-icons">Agregar</i>
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={handleDuplicar}
-                  disabled={rowSeleccionada === null}
-                  title="Duplicar circuito seleccionado"
-                  style={{ opacity: rowSeleccionada === null ? 0.4 : 1 }}
-                >
-                  <i className="material-icons">Duplicar</i>
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={handleEliminar}
-                  disabled={rowSeleccionada === null}
-                  title="Eliminar circuito seleccionado"
-                  style={{ opacity: rowSeleccionada === null ? 0.4 : 1 }}
-                >
-                  <i className="material-icons">Eliminar</i>
-                </button>
-              </li>
-            </ul>
+        <div className="header-tools sticky top-12 z-50 bg-surface-tonal-a10">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleAgregar}
+              title="Agregar circuito"
+              className="flex items-center ml-2 px-3 py-[5px] border border-green-500 rounded-md bg-transparent text-green-400 text-[13px] cursor-pointer transition-[background,color] hover:bg-green-500/10"
+            >
+              Agregar
+            </button>
+            <button
+              onClick={handleDuplicar}
+              disabled={rowSeleccionada === null}
+              title="Duplicar circuito seleccionado"
+              className="flex items-center px-3 py-[5px] border border-blue-500 rounded-md bg-transparent text-blue-400 text-[13px] cursor-pointer transition-[background,color] hover:bg-blue-500/10 disabled:opacity-40"
+            >
+              Duplicar
+            </button>
+            <button
+              onClick={handleEliminar}
+              disabled={rowSeleccionada === null}
+              title="Eliminar circuito seleccionado"
+              className="flex items-center px-3 py-[5px] border border-red-500 rounded-md bg-transparent text-red-400 text-[13px] cursor-pointer transition-[background,color] hover:bg-red-500/10 disabled:opacity-40"
+            >
+              Eliminar
+            </button>
           </div>
-          <div className="search">
+          <div className="search ml-auto">
             <input type="search" className="search-input" placeholder="Buscar..." />
           </div>
         </div>
