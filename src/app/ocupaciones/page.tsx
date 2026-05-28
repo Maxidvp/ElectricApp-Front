@@ -3,43 +3,7 @@ import { useState } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import type { Canio, Bandeja, Segmento } from '@/services/ruteo'
 import CircuitosPanel from '@/components/CircuitosPanel'
-
-// ── Helpers ────────────────────────────────────────────────────
-
-function calcCanio(seg: Segmento, getCirc: (id: number) => any) {
-  const dInt = seg.canio?.diametro_interno
-  if (!dInt) return null
-  const areaTotal = Math.PI * (dInt / 2) ** 2
-  let areaOcupada = 0
-  for (const sc of seg.circuitos) {
-    const f = getCirc(sc.id)?.formacion
-    if (!f) continue
-    if (f.cable?.diametro)
-      areaOcupada += f.Nfases * f.cond_por_fase * Math.PI * (f.cable.diametro / 2) ** 2
-    if (f.Nneutro > 0 && f.cable_neutro?.diametro)
-      areaOcupada += f.Nneutro * Math.PI * (f.cable_neutro.diametro / 2) ** 2
-    if (f.cable_tierra?.diametro)
-      areaOcupada += Math.PI * (f.cable_tierra.diametro / 2) ** 2
-  }
-  return { areaOcupada, areaTotal, pct: (areaOcupada / areaTotal) * 100 }
-}
-
-function calcBandeja(seg: Segmento, getCirc: (id: number) => any) {
-  const ancho = seg.bandeja?.ancho
-  if (!ancho) return null
-  let anchoOcupado = 0
-  for (const sc of seg.circuitos) {
-    const f = getCirc(sc.id)?.formacion
-    if (!f) continue
-    if (f.cable?.diametro)
-      anchoOcupado += f.Nfases * f.cond_por_fase * f.cable.diametro
-    if (f.Nneutro > 0 && f.cable_neutro?.diametro)
-      anchoOcupado += f.Nneutro * f.cable_neutro.diametro
-    if (f.cable_tierra?.diametro)
-      anchoOcupado += f.cable_tierra.diametro
-  }
-  return { anchoOcupado, anchoTotal: ancho, pct: (anchoOcupado / ancho) * 100 }
-}
+import { calcOcupacionCanio, calcOcupacionBandeja } from '@/utils/electricidad'
 
 function OcupacionBar({ pct }: { pct: number }) {
   const color =
@@ -75,9 +39,9 @@ export default function OcupacionesPage() {
   const conjuntoTableros   = tableros.filter(t => conjuntoTableroIds.has(t.id))
 
   const selectedSeg = segmentos.find(s => s.id === selectedId) ?? null
-  const rows = segmentos.filter(s =>
-    (s.tipo === 'canio' || s.tipo === 'bandeja') &&
-    (activeConjuntoId === null || s.conjuntos.some(c => c.id === activeConjuntoId))
+  const canalSegmentos = segmentos.filter(s => s.tipo === 'canio' || s.tipo === 'bandeja')
+  const rows = canalSegmentos.filter(s =>
+    activeConjuntoId === null || s.conjuntos.some(c => c.id === activeConjuntoId)
   )
 
   const handleAsignar = (circId: number) => {
@@ -139,6 +103,7 @@ export default function OcupacionesPage() {
           <table className="datatable">
             <thead>
               <tr>
+                <th style={{ width: 48 }}>#</th>
                 <th>Tipo</th>
                 <th>Caño / Bandeja</th>
                 <th>Circuitos</th>
@@ -148,9 +113,13 @@ export default function OcupacionesPage() {
             </thead>
             <tbody>
               {rows.map(seg => {
+                const segIdx = canalSegmentos.findIndex(s => s.id === seg.id) + 1
                 const isSelected = seg.id === selectedId
-                const calcC = seg.tipo === 'canio'   ? calcCanio(seg, getCircuito)   : null
-                const calcB = seg.tipo === 'bandeja' ? calcBandeja(seg, getCircuito) : null
+                const getF  = (id: number) => getCircuito(id)?.formacion
+                const calcC = seg.tipo === 'canio'   && seg.canio?.diametro_interno
+                  ? calcOcupacionCanio(seg.canio.diametro_interno, seg.circuitos, getF) : null
+                const calcB = seg.tipo === 'bandeja' && seg.bandeja?.ancho
+                  ? calcOcupacionBandeja(seg.bandeja.ancho, seg.circuitos, getF) : null
 
                 return (
                   <tr
@@ -159,6 +128,7 @@ export default function OcupacionesPage() {
                     style={isSelected ? { background: 'rgba(33, 73, 138, 0.35)', outline: '1px solid var(--clr-info-a10)' } : undefined}
                     onClick={() => setSelectedId(isSelected ? null : seg.id)}
                   >
+                    <td className="text-[11px] text-surface-tonal-a40 font-mono text-center select-none">#{segIdx}</td>
                     <td onClick={isSelected ? e => e.stopPropagation() : undefined}>
                       {isSelected ? (
                         <select className={inlineSelect} value={seg.tipo} onChange={e => handleChangeTipo(seg.id, e.target.value)}>
@@ -229,7 +199,7 @@ export default function OcupacionesPage() {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center p-7 text-surface-tonal-a40 text-[13px]">
+                  <td colSpan={6} className="text-center p-7 text-surface-tonal-a40 text-[13px]">
                     Sin segmentos. Agregá uno con el botón de abajo.
                   </td>
                 </tr>

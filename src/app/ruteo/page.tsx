@@ -10,6 +10,7 @@ import { RuteoCanvas } from './RuteoCanvas'
 import { RuteoPanel } from './RuteoPanel'
 import { ConjuntosModal } from './ConjuntosModal'
 import { ArquitecturasModal } from './ArquitecturasModal'
+import ConfirmModal from '@/components/ConfirmModal'
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
 
@@ -23,6 +24,7 @@ export default function RuteoPage() {
   const [asignarTableroId, setAsignarTableroId] = useState<number | null>(null)
   const [showConjuntosModal, setShowConjuntosModal] = useState(false)
   const [showParedesModal,   setShowParedesModal]   = useState(false)
+  const [pendingDelete,      setPendingDelete]      = useState<'segmento' | 'pared' | null>(null)
 
   const {
     tableros, segmentos, conjuntos, paredes,
@@ -51,11 +53,9 @@ export default function RuteoPage() {
   }, [activeConjuntoId])
 
   const isParedVisible = useCallback((p: Pared) => {
-    if (activeConjuntoId === null) return true
-    const conjunto = conjuntos.find(c => c.id === activeConjuntoId)
-    if (!conjunto) return false
-    return conjunto.arquitecturas.some(tp => tp.id === p.tabla_pared_id)
-  }, [activeConjuntoId, conjuntos])
+    if (activaArquitecturaId === null) return false
+    return p.tabla_pared_id === activaArquitecturaId
+  }, [activaArquitecturaId])
 
   // ── Endpoint snap ──────────────────────────────────────
   const findNearestEndpoint = useCallback((x: number, y: number, excludeId: number) => {
@@ -81,19 +81,25 @@ export default function RuteoPage() {
 
   // ── Keyboard ───────────────────────────────────────────
   const handleDelete = useCallback(() => {
-    if (selectedId)           { removeSegmento(selectedId);      setSelectedId(null) }
-    else if (selectedParedId) { removePared(selectedParedId);    setSelectedParedId(null) }
+    if (selectedId)           setPendingDelete('segmento')
+    else if (selectedParedId) setPendingDelete('pared')
+  }, [selectedId, selectedParedId])
+
+  const confirmDelete = useCallback(() => {
+    if (selectedId)           { removeSegmento(selectedId);   setSelectedId(null) }
+    else if (selectedParedId) { removePared(selectedParedId); setSelectedParedId(null) }
+    setPendingDelete(null)
   }, [selectedId, selectedParedId, removeSegmento, removePared])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setDrawStart(null); setSelectedId(null); setActiveCircId(null) }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId &&
+      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedId || selectedParedId) &&
           document.activeElement?.tagName !== 'INPUT') handleDelete()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, handleDelete])
+  }, [selectedId, selectedParedId, handleDelete])
 
   // ── Canvas event handlers ──────────────────────────────
   const handleStageClick = useCallback((isBackground: boolean, rawPos: { x: number; y: number }) => {
@@ -189,6 +195,13 @@ export default function RuteoPage() {
       </div>
       {showConjuntosModal && <ConjuntosModal onClose={() => setShowConjuntosModal(false)} />}
       {showParedesModal   && <ArquitecturasModal onClose={() => setShowParedesModal(false)} />}
+      {pendingDelete && (
+        <ConfirmModal
+          mensaje={pendingDelete === 'segmento' ? '¿Eliminar este segmento?' : '¿Eliminar esta pared?'}
+          onConfirmar={confirmDelete}
+          onCancelar={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   )
 }

@@ -70,6 +70,16 @@ export async function updateDescripcionCircuito(id: number, descripcion: string 
   return res.json()
 }
 
+export async function updateTipoTensionCircuito(id: number, tipo_tension: string | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/tipo_tension`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tipo_tension }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar el tipo de tensión')
+  return res.json()
+}
+
 export async function updateNombreCircuito(id: number, circuito: string) {
   const res = await fetch(`${API_URL}/circuitos/${id}/nombre`, {
     method: 'PATCH',
@@ -103,7 +113,6 @@ export async function duplicarCircuito(circuitoId: number) {
 
 export type FormacionPatch = {
   cable_id: number
-  nombre: string
   cond_por_fase: number
   Nfases: number
   Nneutro: number

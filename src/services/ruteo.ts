@@ -105,6 +105,29 @@ export async function createSegmento(data: CreateSegmentoInput): Promise<Segment
   return res.json()
 }
 
+export async function createSegmentosBulk(
+  items: Omit<CreateSegmentoInput, 'conjunto_ids'>[],
+  conjunto_ids: number[]
+): Promise<Segmento[]> {
+  const res = await fetch(`${API}/segmentos/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items, conjunto_ids }),
+  })
+  if (!res.ok) throw new Error('Error al importar segmentos en masa')
+  return res.json()
+}
+
+export async function createParedesBulk(items: CreateParedInput[]): Promise<Pared[]> {
+  const res = await fetch(`${API}/paredes/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  })
+  if (!res.ok) throw new Error('Error al importar paredes en masa')
+  return res.json()
+}
+
 export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>): Promise<Segmento> {
   const res = await fetch(`${API}/segmentos/${id}`, {
     method: 'PUT',

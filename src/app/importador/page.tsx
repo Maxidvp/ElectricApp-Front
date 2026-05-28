@@ -125,7 +125,7 @@ function DestSelector({
 // ── Page ─────────────────────────────────────────────────
 
 export default function ImportadorPage() {
-  const { canios, bandejas, conjuntos, tablaParedes, proyectoActivo } = useProyectos()
+  const { canios, bandejas, conjuntos, tablaParedes, proyectoActivo, appendSegmentos, appendParedes } = useProyectos()
 
   const [textCanios,    setTextCanios]    = useState('')
   const [textBandejas,  setTextBandejas]  = useState('')
@@ -198,30 +198,35 @@ export default function ImportadorPage() {
     if (!canImport || status === 'importing') return
     setStatus('importing')
     let count = 0
-    for (const seg of [...parsedCanios, ...parsedBandejas]) {
-      try {
-        await api.createSegmento({
-          tipo: seg.tipo,
-          x1: seg.x1, y1: seg.y1, z1: seg.z1,
-          x2: seg.x2, y2: seg.y2, z2: seg.z2,
-          canio_id: seg.canio_id,
-          bandeja_id: seg.bandeja_id,
-          conjunto_ids: conjuntoId !== null ? [conjuntoId] : [],
-        })
-        count++
-      } catch (e) { console.error('Error al importar segmento', e) }
-    }
-    for (const seg of parsedParedes) {
-      try {
-        await api.createPared({
-          x1: seg.x1, y1: seg.y1, z1: seg.z1,
-          x2: seg.x2, y2: seg.y2, z2: seg.z2,
-          nombre: null, color: null,
-          tabla_pared_id: layoutId,
-        })
-        count++
-      } catch (e) { console.error('Error al importar pared', e) }
-    }
+    try {
+      const segs = [...parsedCanios, ...parsedBandejas]
+      if (segs.length > 0) {
+        const created = await api.createSegmentosBulk(
+          segs.map(s => ({
+            tipo: s.tipo,
+            x1: s.x1, y1: s.y1, z1: s.z1,
+            x2: s.x2, y2: s.y2, z2: s.z2,
+            canio_id: s.canio_id,
+            bandeja_id: s.bandeja_id,
+          })),
+          conjuntoId !== null ? [conjuntoId] : []
+        )
+        appendSegmentos(created)
+        count += created.length
+      }
+      if (parsedParedes.length > 0) {
+        const created = await api.createParedesBulk(
+          parsedParedes.map(s => ({
+            x1: s.x1, y1: s.y1, z1: s.z1,
+            x2: s.x2, y2: s.y2, z2: s.z2,
+            nombre: null, color: null,
+            tabla_pared_id: layoutId,
+          }))
+        )
+        appendParedes(created)
+        count += created.length
+      }
+    } catch (e) { console.error('Error al importar', e) }
     setImported(count)
     setStatus('done')
   }

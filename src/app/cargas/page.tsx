@@ -9,7 +9,9 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } 
 import { CSS } from '@dnd-kit/utilities'
 import FormacionModal from '@/components/FormacionModal'
 import TableroModal from '@/components/TableroModal'
+import ConfirmModal from '@/components/ConfirmModal'
 import { useProyectos } from '@/context/ProyectosContext'
+import { generarFormacion, calcularAreaFormacion } from '@/utils/electricidad'
 
 type CircuitoAPI = {
   id: number
@@ -17,6 +19,7 @@ type CircuitoAPI = {
   descripcion: string | null
   FP: number | null
   Largo: number | null
+  tipo_tension: string | null
   formacion: {
     nombre: string
     cond_por_fase: number
@@ -33,7 +36,6 @@ type CircuitoAPI = {
 
 type FormacionData = {
   familia_id: string
-  nombre: string
   cable_fase_id: string
   cond_por_fase: string
   Nfases: string
@@ -49,19 +51,13 @@ type CircuitoRow = {
   descripcion: string | null
   FP: number | null
   Largo: number | null
+  tipo_tension: string | null
   seccion: string
   formacion: string
   area: string
   formacionData: FormacionData | null
 }
 
-function calcularArea(formacion: NonNullable<CircuitoAPI['formacion']>): string {
-  const area = (d: number | null) => d ? Math.PI * Math.pow(d / 2, 2) : 0
-  const areaFases  = formacion.Nfases * formacion.cond_por_fase * area(formacion.cable.diametro)
-  const areaNeutro = formacion.Nneutro * area(formacion.cable_neutro?.diametro ?? null)
-  const areaTierra = area(formacion.cable_tierra?.diametro ?? null)
-  return (areaFases + areaNeutro + areaTierra).toFixed(2)
-}
 
 function CeldaEditable({ valor, onGuardar }: { valor: string; onGuardar: (v: string) => void }) {
   const [editando, setEditando] = useState(false)
@@ -103,12 +99,12 @@ function mapearCircuitos(data: CircuitoAPI[]): CircuitoRow[] {
     descripcion: c.descripcion,
     FP:        c.FP,
     Largo:     c.Largo,
+    tipo_tension: c.tipo_tension,
     seccion:   c.formacion ? `${c.formacion.cable.seccion_f} ${c.formacion.cable.calibre_tipo}` : '—',
-    formacion: c.formacion?.nombre ?? '—',
-    area:      c.formacion ? calcularArea(c.formacion) : '—',
+    formacion: c.formacion ? generarFormacion(c.formacion) : '—',
+    area:      c.formacion ? calcularAreaFormacion(c.formacion).toFixed(2) : '—',
     formacionData: c.formacion ? {
       familia_id:        String(c.formacion.cable.familia_id),
-      nombre:            c.formacion.nombre,
       cable_fase_id:     String(c.formacion.cable_id),
       cond_por_fase:     String(c.formacion.cond_por_fase),
       Nfases:            String(c.formacion.Nfases),
@@ -127,7 +123,7 @@ export default function TablaCargas() {
     tableros, getTablero, loading, error,
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
-    actualizarFP, actualizarLargo,
+    actualizarFP, actualizarLargo, actualizarTipoTension,
   } = useProyectos()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -139,8 +135,18 @@ export default function TablaCargas() {
   const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
   const [rowSeleccionada, setRowSeleccionada]           = useState<number | null>(null)
   const [draggingId,      setDraggingId]               = useState<string | null>(null)
+  const [confirmEliminar, setConfirmEliminar]          = useState(false)
   const idEfectivo = tableroId ?? tableros[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
+
+  const tensionesDisponibles = useMemo(() => {
+    if (!tablero) return []
+    const opts: { tipo: string; value: number }[] = []
+    if (tablero.tension_mono != null) opts.push({ tipo: 'mono', value: tablero.tension_mono })
+    if (tablero.tension_bi   != null) opts.push({ tipo: 'bi',   value: tablero.tension_bi   })
+    if (tablero.tension_tri  != null) opts.push({ tipo: 'tri',  value: tablero.tension_tri  })
+    return opts
+  }, [tablero])
 
   const cambiarTablero = (id: number) => {
     setTableroId(id)
@@ -161,7 +167,7 @@ export default function TablaCargas() {
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
   if (displayData.length !== contextData.length ||
-      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo)) {
+      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.formacion !== contextData[i]?.formacion || r.seccion !== contextData[i]?.seccion)) {
     setDisplayData(contextData)
   }
 
@@ -189,8 +195,7 @@ export default function TablaCargas() {
 
   const handleEliminar = () => {
     if (!rowSeleccionada) return
-    eliminarCircuito(rowSeleccionada)
-    setRowSeleccionada(null)
+    setConfirmEliminar(true)
   }
 
   const columns = useMemo(() => [
@@ -214,6 +219,33 @@ export default function TablaCargas() {
         />
       )
     }),
+    columnHelper.display({
+      id: 'tension',
+      header: 'Tensión (V)',
+      size: 110,
+      cell: info => {
+        const { id, tipo_tension } = info.row.original
+        if (tensionesDisponibles.length === 0) {
+          return <span className="text-surface-tonal-a40 text-xs">—</span>
+        }
+        if (tensionesDisponibles.length === 1) {
+          return <span className="text-xs">{tensionesDisponibles[0].value}</span>
+        }
+        return (
+          <select
+            value={tipo_tension ?? ''}
+            onChange={e => actualizarTipoTension(id, e.target.value || null)}
+            onClick={e => e.stopPropagation()}
+            className="w-full h-7 px-1 text-xs rounded-sm bg-surface-a10 text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+          >
+            <option value="">—</option>
+            {tensionesDisponibles.map(t => (
+              <option key={t.tipo} value={t.tipo}>{t.value}</option>
+            ))}
+          </select>
+        )
+      },
+    }),
     columnHelper.accessor('seccion', { header: 'Sección', size: 120 }),
     columnHelper.accessor('formacion', {
       header: 'Formación',
@@ -224,7 +256,7 @@ export default function TablaCargas() {
           e.stopPropagation()
           setCircuitoEditando(info.row.original.id)
           setFormacionSeleccionada(fd ?? {
-            familia_id: '', nombre: '', cable_fase_id: '', cond_por_fase: '1',
+            familia_id: '', cable_fase_id: '', cond_por_fase: '1',
             Nfases: '3', cable_neutro_id: '', Nneutro: '1', familia_tierra_id: '', cable_tierra_id: '',
           })
           setModalAbierto(true)
@@ -262,7 +294,7 @@ export default function TablaCargas() {
       )
     }),
     columnHelper.accessor('area', { header: 'Área (mm²)', size: 140 }),
-  ], [renombrarCircuito, actualizarFP, actualizarLargo])
+  ], [renombrarCircuito, actualizarFP, actualizarLargo, actualizarTipoTension, tensionesDisponibles])
 
   const table = useReactTable({
     data: displayData,
@@ -397,23 +429,33 @@ export default function TablaCargas() {
       {modalAbierto && formacionSeleccionada && (
         <FormacionModal
           formacionInicial={formacionSeleccionada}
-          onGuardar={(data) => {
+          onGuardar={(data, cables) => {
             if (!circuitoEditando) return
             actualizarFormacion(circuitoEditando, {
               cable_id:        Number(data.cable_fase_id),
-              nombre:          data.nombre,
               cond_por_fase:   Number(data.cond_por_fase),
               Nfases:          Number(data.Nfases),
               Nneutro:         Number(data.Nneutro),
               cable_neutro_id: data.cable_neutro_id ? Number(data.cable_neutro_id) : null,
               cable_tierra_id: data.cable_tierra_id ? Number(data.cable_tierra_id) : null,
-            })
+            }, cables)
             setModalAbierto(false)
           }}
           onCerrar={() => setModalAbierto(false)}
         />
       )}
 
+      {confirmEliminar && (
+        <ConfirmModal
+          mensaje="¿Eliminar este circuito?"
+          onConfirmar={() => {
+            eliminarCircuito(rowSeleccionada!)
+            setRowSeleccionada(null)
+            setConfirmEliminar(false)
+          }}
+          onCancelar={() => setConfirmEliminar(false)}
+        />
+      )}
       {modalTableroAbierto && (
         <TableroModal
           onGuardar={handleCrearTablero}

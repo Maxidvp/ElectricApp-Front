@@ -3,21 +3,21 @@ import { useState } from 'react'
 
 type TableroForm = {
   tag: string
-  sistema_tension: string
   nombre: string
   ubicacion: string
-  tension_fase: string
-  tension_neutro: string
+  tension_mono: string
+  tension_bi: string
+  tension_tri: string
   frecuencia: string
 }
 
 const initialState: TableroForm = {
   tag: '',
-  sistema_tension: '',
   nombre: '',
   ubicacion: '',
-  tension_fase: '',
-  tension_neutro: '',
+  tension_mono: '',
+  tension_bi: '',
+  tension_tri: '',
   frecuencia: '',
 }
 
@@ -47,8 +47,8 @@ export default function TableroModal({ onGuardar, onCerrar }: Props) {
   }
 
   const handleGuardar = async () => {
-    if (!form.tag || !form.sistema_tension) {
-      setError('Tag y sistema de tensión son obligatorios')
+    if (!form.tag) {
+      setError('El tag es obligatorio')
       return
     }
     setLoading(true)
@@ -86,14 +86,10 @@ export default function TableroModal({ onGuardar, onCerrar }: Props) {
                 <input className={cx.input} name="tag" type="text" value={form.tag} onChange={handleChange} placeholder="ej. TG-01" />
               </div>
               <div className={cx.field}>
-                <label className={cx.label}>Sistema de tensión <span className="text-danger-a10 ml-0.5">*</span></label>
-                <input className={cx.input} name="sistema_tension" type="text" value={form.sistema_tension} onChange={handleChange} placeholder="ej. 230/400V" />
-              </div>
-              <div className={cx.field}>
                 <label className={cx.label}>Nombre</label>
                 <input className={cx.input} name="nombre" type="text" value={form.nombre} onChange={handleChange} placeholder="ej. Tablero general" />
               </div>
-              <div className={cx.field}>
+              <div className={`${cx.field} col-span-2`}>
                 <label className={cx.label}>Ubicación</label>
                 <input className={cx.input} name="ubicacion" type="text" value={form.ubicacion} onChange={handleChange} placeholder="ej. Planta baja" />
               </div>
@@ -105,14 +101,18 @@ export default function TableroModal({ onGuardar, onCerrar }: Props) {
               <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-warning-a10" />
               <span>Sistema eléctrico</span>
             </div>
-            <div className={`${cx.grid} grid-cols-3`}>
+            <div className={`${cx.grid} grid-cols-4`}>
               <div className={cx.field}>
-                <label className={cx.label}>Tensión fase (V)</label>
-                <input className={cx.input} name="tension_fase" type="number" value={form.tension_fase} onChange={handleChange} placeholder="ej. 220" />
+                <label className={cx.label}>Tensión mono (V)</label>
+                <input className={cx.input} name="tension_mono" type="number" value={form.tension_mono} onChange={handleChange} placeholder="ej. 220" />
               </div>
               <div className={cx.field}>
-                <label className={cx.label}>Tensión neutro (V)</label>
-                <input className={cx.input} name="tension_neutro" type="number" value={form.tension_neutro} onChange={handleChange} placeholder="ej. 127" />
+                <label className={cx.label}>Tensión bi (V)</label>
+                <input className={cx.input} name="tension_bi" type="number" value={form.tension_bi} onChange={handleChange} placeholder="ej. 220" />
+              </div>
+              <div className={cx.field}>
+                <label className={cx.label}>Tensión tri (V)</label>
+                <input className={cx.input} name="tension_tri" type="number" value={form.tension_tri} onChange={handleChange} placeholder="ej. 380" />
               </div>
               <div className={cx.field}>
                 <label className={cx.label}>Frecuencia (Hz)</label>

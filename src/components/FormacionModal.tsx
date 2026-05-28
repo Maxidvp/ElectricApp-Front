@@ -1,15 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useCables } from '@/context/CablesContext'
-
-type Cable = {
-  id: number
-  nombre: string
-}
+import { useCables, type CableItem } from '@/context/CablesContext'
 
 type FormacionForm = {
   familia_id: string
-  nombre: string
   cable_fase_id: string
   cond_por_fase: string
   Nfases: string
@@ -19,9 +13,14 @@ type FormacionForm = {
   cable_tierra_id: string
 }
 
+export type FormacionCables = {
+  fase: CableItem
+  neutro: CableItem | null
+  tierra: CableItem | null
+}
+
 const initialState: FormacionForm = {
   familia_id: '',
-  nombre: '',
   cable_fase_id: '', cond_por_fase: '1', Nfases: '3',
   cable_neutro_id: '', Nneutro: '1',
   familia_tierra_id: '', cable_tierra_id: '',
@@ -29,7 +28,7 @@ const initialState: FormacionForm = {
 
 type Props = {
   formacionInicial?: FormacionForm
-  onGuardar: (data: FormacionForm) => void | Promise<void>
+  onGuardar: (data: FormacionForm, cables: FormacionCables) => void | Promise<void>
   onCerrar: () => void
 }
 
@@ -48,129 +47,71 @@ const cx = {
 
 export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }: Props) {
   const { familias, getCablesDeFamilia } = useCables()
-  const [cablesFase, setCablesFase] = useState<Cable[]>([])
-  const [cablesNeutro, setCablesNeutro] = useState<Cable[]>([])
-  const [cablesTierra, setCablesTierra] = useState<Cable[]>([])
+  const [cablesFase,   setCablesFase]   = useState<CableItem[]>([])
+  const [cablesNeutro, setCablesNeutro] = useState<CableItem[]>([])
+  const [cablesTierra, setCablesTierra] = useState<CableItem[]>([])
   const [form, setForm] = useState<FormacionForm>(formacionInicial ?? initialState)
   const [loading, setLoading] = useState(false)
-  const [nombreEditado, setNombreEditado] = useState(false)
   const [clipboardSnapshot, setClipboardSnapshot] = useState<FormacionForm | null>(globalClipboard)
   const [copiadoReciente, setCopiadoReciente] = useState(false)
 
   const handleCopiar = () => {
-    const copia = { ...form }
-    globalClipboard = copia
-    setClipboardSnapshot(copia)
+    globalClipboard = { ...form }
+    setClipboardSnapshot(globalClipboard)
     setCopiadoReciente(true)
     setTimeout(() => setCopiadoReciente(false), 1500)
   }
 
-  const handlePegar = () => {
+  const handlePegar = async () => {
     if (!clipboardSnapshot) return
-    setForm({ ...clipboardSnapshot })
-    setNombreEditado(!!clipboardSnapshot.nombre)
-    handleGuardar()
+    const snap = clipboardSnapshot
+    setForm({ ...snap })
+    if (!snap.cable_fase_id || !snap.familia_id) return
+    const cablesF = snap.familia_id ? await getCablesDeFamilia(Number(snap.familia_id)) : []
+    const fase    = cablesF.find(c => String(c.id) === snap.cable_fase_id)
+    if (!fase) return
+    const neutro  = cablesF.find(c => String(c.id) === snap.cable_neutro_id) ?? null
+    const cablesT = snap.familia_tierra_id ? await getCablesDeFamilia(Number(snap.familia_tierra_id)) : []
+    const tierra  = cablesT.find(c => String(c.id) === snap.cable_tierra_id) ?? null
+    await onGuardar(snap, { fase, neutro, tierra })
     onCerrar()
   }
 
-  // Cables de fase y neutro comparten familia
   useEffect(() => {
-    if (!form.familia_id) {
-      setCablesFase([])
-      setCablesNeutro([])
-      return
-    }
-    getCablesDeFamilia(Number(form.familia_id)).then((cables) => {
+    if (!form.familia_id) { setCablesFase([]); setCablesNeutro([]); return }
+    getCablesDeFamilia(Number(form.familia_id)).then(cables => {
       setCablesFase(cables)
       setCablesNeutro(cables)
     })
   }, [form.familia_id])
 
-  // Cables de tierra tienen su propia familia
   useEffect(() => {
-    if (!form.familia_tierra_id) {
-      setCablesTierra([])
-      return
-    }
+    if (!form.familia_tierra_id) { setCablesTierra([]); return }
     getCablesDeFamilia(Number(form.familia_tierra_id)).then(setCablesTierra)
   }, [form.familia_tierra_id])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
-
-    if (name === 'nombre') {
-      setNombreEditado(true)
-      setForm({ ...form, nombre: value })
-      return
-    }
-
     if (name === 'familia_id') {
-      setForm(prev => ({
-        ...prev,
-        familia_id: value,
-        cable_fase_id: '',
-        cable_neutro_id: '',
-        nombre: nombreEditado ? prev.nombre : ''
-      }))
+      setForm(prev => ({ ...prev, familia_id: value, cable_fase_id: '', cable_neutro_id: '' }))
       return
     }
-
     if (name === 'familia_tierra_id') {
-      setForm(prev => ({
-        ...prev,
-        familia_tierra_id: value,
-        cable_tierra_id: '',
-      }))
+      setForm(prev => ({ ...prev, familia_tierra_id: value, cable_tierra_id: '' }))
       return
     }
-
-    setForm(prev => {
-      const nuevo = { ...prev, [name]: value }
-      if (!nombreEditado) {
-        nuevo.nombre = generarNombre(nuevo, cablesFase, cablesNeutro, cablesTierra)
-      }
-      return nuevo
-    })
-  }
-
-  function generarNombre(
-    form: FormacionForm,
-    cablesFase: Cable[],
-    cablesNeutro: Cable[],
-    cablesTierra: Cable[]
-  ): string {
-    const fase = cablesFase.find(c => String(c.id) === form.cable_fase_id)
-    const neutro = cablesNeutro.find(c => String(c.id) === form.cable_neutro_id)
-    const tierra = cablesTierra.find(c => String(c.id) === form.cable_tierra_id)
-
-    const partes: string[] = []
-
-    if (fase) {
-      const conductores = Number(form.cond_por_fase) > 1
-        ? `${form.Nfases}x(${form.cond_por_fase}x${fase.nombre})`
-        : `${form.Nfases}x${fase.nombre}`
-      partes.push(conductores)
-    }
-
-    if (neutro && Number(form.Nneutro) > 0) {
-      const n = Number(form.Nneutro) > 1
-        ? `${form.Nneutro}x${neutro.nombre}N`
-        : `${neutro.nombre}N`
-      partes.push(n)
-    }
-
-    if (tierra) {
-      partes.push(`${tierra.nombre}(G)`)
-    }
-
-    return partes.join('+')
+    setForm(prev => ({ ...prev, [name]: value }))
   }
 
   const handleGuardar = async () => {
     if (!form.cable_fase_id || !form.familia_id) return
+    const fase   = cablesFase.find(c => String(c.id) === form.cable_fase_id)
+    if (!fase) return
+    const neutro = cablesNeutro.find(c => String(c.id) === form.cable_neutro_id) ?? null
+    const tierra = cablesTierra.find(c => String(c.id) === form.cable_tierra_id) ?? null
     setLoading(true)
     try {
-      await onGuardar(form)
+      await onGuardar(form, { fase, neutro, tierra })
     } finally {
       setLoading(false)
     }
@@ -195,7 +136,6 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
 
         <div className="p-4 flex flex-col gap-3 bg-surface-a0">
 
-          {/* Fase y Neutro agrupados — comparten familia */}
           <div className={cx.section}>
             <div className={cx.sectionHdr}>
               <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#378ADD' }} />
@@ -261,7 +201,6 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
             </div>
           </div>
 
-          {/* Tierra — familia propia */}
           <div className={cx.section}>
             <div className={cx.sectionHdr}>
               <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#888780' }} />
@@ -289,45 +228,6 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
             </div>
           </div>
 
-          {/* Nombre de la formación */}
-          <div className={cx.section}>
-            <div className={cx.sectionHdr}>
-              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#6f68b8' }} />
-              <span>Nombre</span>
-            </div>
-            <div className={cx.grid}>
-              <div className={`${cx.field} col-span-full`}>
-                <label className={cx.label}>
-                  Nombre de la formación
-                  {!nombreEditado && (
-                    <span className="text-surface-tonal-a40 ml-2 text-[11px]">generado automáticamente</span>
-                  )}
-                  {nombreEditado && (
-                    <button
-                      onClick={() => {
-                        setNombreEditado(false)
-                        setForm(prev => ({
-                          ...prev,
-                          nombre: generarNombre(prev, cablesFase, cablesNeutro, cablesTierra)
-                        }))
-                      }}
-                      className="ml-2 text-[11px] bg-transparent border-none cursor-pointer text-info-a10 underline"
-                    >
-                      restaurar automático
-                    </button>
-                  )}
-                </label>
-                <input
-                  className={cx.input}
-                  name="nombre"
-                  type="text"
-                  value={form.nombre}
-                  onChange={handleChange}
-                  placeholder="ej: 3x10AWG+10AWGN+10AWGT"
-                />
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="px-4 py-3 border-t border-surface-tonal-a20 flex gap-2 justify-end bg-surface-tonal-a0 rounded-b-xl">

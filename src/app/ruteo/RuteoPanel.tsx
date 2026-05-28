@@ -3,6 +3,7 @@ import { useProyectos } from '@/context/ProyectosContext'
 import { COLORS } from './_constants'
 import type { ToolType } from './_constants'
 import { DeferredInput } from './DeferredInput'
+import { calcOcupacionCanio, calcOcupacionBandeja } from '@/utils/electricidad'
 
 interface Props {
   tool: ToolType
@@ -34,9 +35,18 @@ export function RuteoPanel({
     tableros, segmentos, canios, bandejas, conjuntos,
     previewSegmento, editSegmento, quitarCircuito,
     addSegmentoToConjunto, removeSegmentoFromConjunto,
+    getCircuito,
   } = useProyectos()
 
   const selectedSeg      = segmentos.find(s => s.id === selectedId) ?? null
+  const canalSegmentos   = segmentos.filter(s => s.tipo === 'canio' || s.tipo === 'bandeja')
+  const getF             = (id: number) => getCircuito(id)?.formacion
+  const ocupacion        = selectedSeg?.tipo === 'canio' && selectedSeg.canio?.diametro_interno
+    ? calcOcupacionCanio(selectedSeg.canio.diametro_interno, selectedSeg.circuitos, getF)
+    : selectedSeg?.tipo === 'bandeja' && selectedSeg.bandeja?.ancho
+    ? calcOcupacionBandeja(selectedSeg.bandeja.ancho, selectedSeg.circuitos, getF)
+    : null
+  const selectedSegIdx   = selectedSeg ? canalSegmentos.findIndex(s => s.id === selectedSeg.id) + 1 : 0
   const updateProp       = (field: string, value: unknown) => { if (selectedId) editSegmento(selectedId, { [field]: value } as never) }
   const handleQuitar     = (circId: number) => { if (selectedId) quitarCircuito(selectedId, circId) }
   const asignarTablero   = tableros.find(t => t.id === asignarTableroId)
@@ -93,9 +103,12 @@ export function RuteoPanel({
 
   return (
     <div className={cx.panel}>
-      <div className="flex items-center gap-2 px-3.5 py-3 border-b border-surface-tonal-a20">
+      <div className="flex items-center gap-2 px-3.5 py-3 border-b border-surface-tonal-a20">        
         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: COLORS[selectedSeg.tipo] }} />
-        <span className="flex-1 text-[13px] font-medium text-font-a0 capitalize">{selectedSeg.tipo}</span>
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <span className="text-[13px] font-medium text-font-a0 capitalize">{selectedSeg.tipo}</span>
+          {selectedSegIdx > 0 && <span className="text-[11px] text-surface-tonal-a40 font-mono">#{selectedSegIdx}</span>}
+        </div>
         <button
           onClick={handleDelete}
           className="px-2 py-0.75 border border-danger-a0 rounded-sm bg-transparent text-danger-a10 text-xs cursor-pointer hover:bg-danger-a0 hover:text-font-a0"
@@ -174,6 +187,37 @@ export function RuteoPanel({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {ocupacion && (
+        <div className="px-3.5 py-3 border-b border-surface-tonal-a10 flex flex-col gap-1.5">
+          <label className={cx.sectionLabel}>Ocupación</label>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1.5 rounded-full bg-surface-tonal-a20 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-[width] duration-300"
+                style={{
+                  width: `${Math.min(ocupacion.pct, 100)}%`,
+                  background: ocupacion.pct > 40 ? 'var(--clr-danger-a10)'
+                    : ocupacion.pct > 30 ? 'var(--clr-warning-a10)'
+                    : 'var(--clr-success-a10)',
+                }}
+              />
+            </div>
+            <span className="text-[12px] font-medium tabular-nums" style={{
+              color: ocupacion.pct > 40 ? 'var(--clr-danger-a10)'
+                : ocupacion.pct > 30 ? 'var(--clr-warning-a10)'
+                : 'var(--clr-success-a10)',
+            }}>
+              {ocupacion.pct.toFixed(1)}%
+            </span>
+          </div>
+          <span className="text-[11px] text-surface-tonal-a40">
+            {'areaOcupada' in ocupacion
+              ? `${ocupacion.areaOcupada.toFixed(1)} / ${ocupacion.areaTotal.toFixed(1)} mm²`
+              : `${ocupacion.anchoOcupado.toFixed(1)} / ${ocupacion.anchoTotal.toFixed(1)} mm`}
+          </span>
         </div>
       )}
 

@@ -2,62 +2,26 @@
 import { useState, useMemo, useCallback } from 'react'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
+import { generarFormacion, calcDrops as calcDropsUtil, type CaidaInput } from '@/utils/electricidad'
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type CaidaInput = {
-  tension: string   // V — EFN para monofásico 2 hilos, EFF para trifásico y bifásico
-  fp:      string   // cos θ (0–1)
-  in_:     string   // A — corriente nominal
-  cf:      string   // conductores por fase (override; si vacío usa el de la formación)
-  l:       string   // km — longitud del conductor
-  r:       string   // Ω/km — resistencia a 90°C
-  x:       string   // Ω/km — reactancia
-}
-
 type CaidaRow = {
-  id:       number
-  circuito: string
-  formacion: string
-  nfases:   number
-  cfAuto:   number | null   // cond_por_fase de la formación
-  fpAuto:   number | null   // FP del circuito
-  largoAuto: number | null  // Largo del circuito en km (Largo[m] / 1000)
-  input:    CaidaInput
-  ev:       number | null
-  epct:     number | null
+  id:          number
+  circuito:    string
+  formacion:   string
+  nfases:      number
+  cfAuto:      number | null
+  fpAuto:      number | null
+  largoAuto:   number | null
+  tensionAuto: number | null
+  input:       CaidaInput
+  ev:          number | null
+  epct:        number | null
 }
 
 const DEFAULT_INPUT: CaidaInput = {
   tension: '', fp: '', in_: '', cf: '', l: '', r: '', x: '',
-}
-
-// ── Calculation ───────────────────────────────────────────────────
-// Monofásico 2 hilos:  e[V] = 2   × (In/CF) × L × (R·cosθ + X·sinθ),  %e = e[V]/EFN × 100
-// Trifásico:           e[V] = √3  × (In/CF) × L × (R·cosθ + X·sinθ),  %e = e[V]/EFF × 100
-// Bifásico 3 hilos:    e[V] = 2   × (In/CF) × L × (R·cosθ + X·sinθ),  %e = e[V]/EFF × 100
-
-function calcDrops(
-  input: CaidaInput,
-  nfases: number,
-  cfAuto: number | null,
-  fpAuto: number,
-  largoAuto: number | null,
-) {
-  const fp  = parseFloat(input.fp)  || fpAuto
-  const in_ = parseFloat(input.in_)
-  const cf  = parseFloat(input.cf)  || cfAuto || NaN
-  const l   = parseFloat(input.l)   || largoAuto || NaN
-  const r   = parseFloat(input.r)
-  const x   = parseFloat(input.x)
-  if ([fp, in_, cf, l, r, x].some(isNaN) || cf <= 0) return { ev: null, epct: null }
-  const cosφ   = Math.min(1, Math.max(0, fp))
-  const sinφ   = Math.sqrt(Math.max(0, 1 - cosφ * cosφ))
-  const factor = nfases >= 3 ? Math.sqrt(3) : 2
-  const ev     = factor * (in_ / cf) * l * (r * cosφ + x * sinφ)
-  const tension = parseFloat(input.tension)
-  const epct   = !isNaN(tension) && tension > 0 ? (ev / tension) * 100 : null
-  return { ev, epct }
 }
 
 // ── Editable number cell ──────────────────────────────────────────
@@ -141,12 +105,18 @@ export default function CaidaTension() {
     const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
     return sorted.map(c => {
       const input     = inputs[c.id] ?? DEFAULT_INPUT
-      const nfases    = (c.formacion as any)?.Nfases ?? 3
-      const cfAuto    = (c.formacion as any)?.cond_por_fase ?? null
-      const fpAuto    = (c as any).FP ?? 0.8
-      const largoAuto = (c as any).Largo ?? null
-      const { ev, epct } = calcDrops(input, nfases, cfAuto, fpAuto, largoAuto)
-      return { id: c.id, circuito: c.circuito, formacion: c.formacion?.nombre ?? '—', nfases, cfAuto, fpAuto, largoAuto, input, ev, epct }
+      const nfases    = c.formacion?.Nfases ?? 3
+      const cfAuto    = c.formacion?.cond_por_fase ?? null
+      const fpAuto    = c.FP ?? 0.8
+      const largoAuto = c.Largo ?? null
+      const tipo      = c.tipo_tension
+      const tensionAuto = tipo === 'mono' ? (tablero as any).tension_mono
+                        : tipo === 'bi'   ? (tablero as any).tension_bi
+                        : tipo === 'tri'  ? (tablero as any).tension_tri
+                        : null
+      const formacion = c.formacion ? generarFormacion(c.formacion) : '—'
+      const { ev, epct } = calcDropsUtil(input, nfases, cfAuto, fpAuto, largoAuto, tensionAuto)
+      return { id: c.id, circuito: c.circuito, formacion, nfases, cfAuto, fpAuto, largoAuto, tensionAuto, input, ev, epct }
     })
   }, [tablero, inputs])
 
@@ -163,7 +133,10 @@ export default function CaidaTension() {
     }),
     columnHelper.display({
       id: 'tension', header: 'E (V)', size: 90,
-      cell: info => <NumCell value={info.row.original.input.tension} onChange={v => setField(info.row.original.id, 'tension', v)} />,
+      cell: info => {
+        const { id, input, tensionAuto } = info.row.original
+        return <NumCell value={input.tension} onChange={v => setField(id, 'tension', v)} hint={tensionAuto !== null ? String(tensionAuto) : undefined} />
+      },
     }),
     columnHelper.display({
       id: 'fp', header: 'F.P.', size: 70,
@@ -227,12 +200,16 @@ export default function CaidaTension() {
 
   return (
     <div className="subcontainer">
-      <div className="tablero-tabs">
+      <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
         {tableros.map(t => (
           <button
             key={t.id}
-            className={`tablero-tab${idEfectivo === t.id ? ' activo' : ''}`}
             onClick={() => setTableroId(t.id)}
+            className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
+              idEfectivo === t.id
+                ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
+                : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'
+            }`}
           >
             {t.nombre || t.tag}
           </button>
@@ -243,44 +220,30 @@ export default function CaidaTension() {
         <p style={{ padding: 24, color: 'var(--clr-surface-tonal-a40)' }}>Sin tablero activo.</p>
       ) : (
         <div className="datatable-container">
-          <div style={{
-            padding: '10px 14px 8px',
-            borderBottom: '1px solid var(--dt-border-color)',
-            textAlign: 'center',
-          }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--clr-font-a0)' }}>
-              {tablero.tag}
-            </span>
+          <div className="flex items-center justify-center gap-2.5 px-3.5 py-2.5 border-b border-[var(--dt-border-color)]">
+            <span className="text-[14px] font-semibold text-font-a0">{tablero.tag}</span>
             {tablero.nombre && (
-              <span style={{ fontSize: 13, color: 'var(--clr-surface-tonal-a40)', marginLeft: 10 }}>
-                {tablero.nombre}
-              </span>
+              <span className="text-[13px] text-surface-tonal-a40">{tablero.nombre}</span>
             )}
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table
+            className="datatable"
+            style={{ width: table.getTotalSize(), tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}
+          >
             <thead>
               {table.getHeaderGroups().map(hg => (
                 <tr key={hg.id}>
-                  {hg.headers.map(header => (
+                  {hg.headers.map((header, hi) => (
                     <th
                       key={header.id}
-                      style={{
-                        width: header.getSize(), position: 'relative',
-                        padding: '8px 10px', textAlign: 'right',
-                        fontSize: 11, fontWeight: 600, color: 'var(--clr-font-a0)',
-                        borderBottom: '1px solid var(--dt-border-color)',
-                        userSelect: 'none', whiteSpace: 'nowrap',
-                      }}
+                      style={{ width: header.getSize(), position: 'relative', textAlign: hi < 2 ? 'left' : 'right' }}
                     >
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       {header.column.getCanResize() && (
                         <div
                           onMouseDown={header.getResizeHandler()}
                           onTouchStart={header.getResizeHandler()}
-                          style={{
-                            position: 'absolute', right: 0, top: 0,
-                            height: '100%', width: 4, cursor: 'col-resize', userSelect: 'none',
-                          }}
+                          className="resizer"
                         />
                       )}
                     </th>
@@ -289,17 +252,12 @@ export default function CaidaTension() {
               ))}
             </thead>
             <tbody>
-              {table.getRowModel().rows.map((row, i) => (
-                <tr key={row.id} style={{ background: i % 2 === 1 ? 'var(--dt-even-row-color)' : undefined }}>
+              {table.getRowModel().rows.map(row => (
+                <tr key={row.id}>
                   {row.getVisibleCells().map((cell, ci) => (
                     <td
                       key={cell.id}
-                      style={{
-                        width: cell.column.getSize(), padding: '4px 10px',
-                        textAlign: ci < 2 ? 'left' : 'right',
-                        borderBottom: '1px solid var(--dt-border-color)',
-                        verticalAlign: 'middle',
-                      }}
+                      style={{ width: cell.column.getSize(), textAlign: ci < 2 ? 'left' : 'right', verticalAlign: 'middle' }}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>

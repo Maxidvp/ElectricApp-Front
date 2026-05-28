@@ -24,7 +24,6 @@ type Cable = {
 
 type Formacion = {
   id: number
-  nombre: string
   cable_id: number
   cond_por_fase: number
   Nfases: number
@@ -45,17 +44,18 @@ type Circuito = {
   formacion: Formacion | null
   FP: number | null
   Largo: number | null
+  tipo_tension: string | null
 }
 
 type Tablero = {
   id: number
   tag: string
-  sistema_tension: string
   nombre: string | null
   ubicacion: string | null
   tipo: string | null
-  tension_fase: number | null
-  tension_neutro: number | null
+  tension_mono: number | null
+  tension_bi: number | null
+  tension_tri: number | null
   frecuencia: number | null
   corriente_nom: number | null
   corriente_cc: number | null
@@ -123,7 +123,10 @@ type ProyectosContextType = {
   actualizarDescripcion: (id: number, descripcion: string | null) => void
   actualizarFP: (id: number, fp: number | null) => void
   actualizarLargo: (id: number, largo: number | null) => void
-  actualizarFormacion: (circuitoId: number, data: FormacionPatch) => void
+  actualizarTipoTension: (id: number, tipo: string | null) => void
+  appendSegmentos: (segs: Segmento[]) => void
+  appendParedes: (paredes: Pared[]) => void
+  actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
   agregarTablero: (data: any) => Promise<Tablero>
 
   // Segmentos & conjuntos
@@ -325,7 +328,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!tablero) return
     const tempId = nextTempId()
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null }
+    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null }
     setTableros(prev => addCirc(prev, tableroId, temp))
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(real => {
@@ -371,27 +374,69 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   function actualizarDescripcion(id: number, descripcion: string | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, descripcion })))
-    circuitosApi.updateDescripcionCircuito(id, descripcion).catch(console.error)
+    const fire = (rid: number) => circuitosApi.updateDescripcionCircuito(rid, descripcion).catch(console.error)
+    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
+    else fire(id)
   }
 
   function actualizarFP(id: number, fp: number | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, FP: fp })))
-    circuitosApi.updateFPCircuito(id, fp).catch(console.error)
+    const fire = (rid: number) => circuitosApi.updateFPCircuito(rid, fp).catch(console.error)
+    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
+    else fire(id)
   }
 
   function actualizarLargo(id: number, largo: number | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, Largo: largo })))
-    circuitosApi.updateLargoCircuito(id, largo).catch(console.error)
+    const fire = (rid: number) => circuitosApi.updateLargoCircuito(rid, largo).catch(console.error)
+    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
+    else fire(id)
   }
 
-  function actualizarFormacion(circuitoId: number, data: FormacionPatch) {
+  function actualizarTipoTension(id: number, tipo: string | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo_tension: tipo })))
+    const fire = (rid: number) => circuitosApi.updateTipoTensionCircuito(rid, tipo).catch(console.error)
+    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
+    else fire(id)
+  }
+
+  function appendSegmentos(segs: Segmento[]) {
+    setSegmentos(prev => [...prev, ...segs])
+  }
+
+  function appendParedes(nuevasParedes: Pared[]) {
+    setParedes(prev => [...prev, ...nuevasParedes])
+    setArquitecturaes(prev => prev.map(tp => {
+      const extras = nuevasParedes.filter(p => p.tabla_pared_id === tp.id)
+      return extras.length ? { ...tp, paredes: [...tp.paredes, ...extras] } : tp
+    }))
+  }
+
+  function actualizarFormacion(circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) {
     setTableros(prev => mapCirc(prev, circuitoId, c => ({
       ...c,
-      formacion: c.formacion ? { ...c.formacion, ...data } : c.formacion,
+      formacion: {
+        id: c.formacion?.id ?? 0,
+        cable_id:        data.cable_id,
+        cond_por_fase:   data.cond_por_fase,
+        Nfases:          data.Nfases,
+        Nneutro:         data.Nneutro,
+        cable_neutro_id: data.cable_neutro_id,
+        cable_tierra_id: data.cable_tierra_id,
+        cable:        cables.fase,
+        cable_neutro: cables.neutro,
+        cable_tierra: cables.tierra,
+      },
     })))
-    circuitosApi.updateFormacion(circuitoId, data)
-      .then(real => setTableros(prev => mapCirc(prev, circuitoId, () => real as Circuito)))
-      .catch(console.error)
+    const fire = (realId: number) =>
+      circuitosApi.updateFormacion(realId, data)
+        .then(real => setTableros(prev => mapCirc(prev, realId, () => real as Circuito)))
+        .catch(console.error)
+    if (circuitoId < 0 && pendingCircuitos.current.has(circuitoId)) {
+      pendingCircuitos.current.get(circuitoId)!.then(real => fire(real.id))
+    } else {
+      fire(circuitoId)
+    }
   }
 
   async function agregarTablero(data: any): Promise<Tablero> {
@@ -654,7 +699,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarFormacion, agregarTablero,
+      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFormacion, agregarTablero,
       segmentos, canios, bandejas, conjuntos, activeConjuntoId, setActiveConjuntoId,
       addSegmento, previewSegmento, editSegmento, removeSegmento,
       asignarCircuito, quitarCircuito,
@@ -665,6 +710,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tablaParedes, activaArquitecturaId, setActivaArquitecturaId,
       addArquitectura, renameArquitectura, deleteArquitectura,
       addArquitecturaToConjunto, removeArquitecturaFromConjunto,
+      appendSegmentos, appendParedes,
     }}>
       {children}
     </ProyectosContext.Provider>
