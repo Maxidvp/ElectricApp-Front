@@ -128,6 +128,7 @@ export type FormacionPatch = {
   Nneutro: number
   cable_neutro_id: number | null
   cable_tierra_id: number | null
+  disposicion: string | null
 }
 
 export async function reordenarCircuitos(ordenes: { id: number; orden: number }[]) {

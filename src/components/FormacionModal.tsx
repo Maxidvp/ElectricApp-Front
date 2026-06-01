@@ -11,6 +11,7 @@ type FormacionForm = {
   Nneutro: string
   familia_tierra_id: string
   cable_tierra_id: string
+  disposicion: string
 }
 
 export type FormacionCables = {
@@ -24,6 +25,7 @@ const initialState: FormacionForm = {
   cable_fase_id: '', cond_por_fase: '1', Nfases: '3',
   cable_neutro_id: '', Nneutro: '1',
   familia_tierra_id: '', cable_tierra_id: '',
+  disposicion: '',
 }
 
 type Props = {
@@ -84,6 +86,18 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
       setCablesNeutro(cables)
     })
   }, [form.familia_id])
+
+  // Auto-setea disposición según tipo de cable seleccionado
+  useEffect(() => {
+    if (!form.cable_fase_id) return
+    const cable = cablesFase.find(c => String(c.id) === form.cable_fase_id)
+    if (!cable) return
+    if (cable.Nfases > 1) {
+      setForm(prev => ({ ...prev, disposicion: 'multipolar' }))
+    } else if (!form.disposicion || form.disposicion === 'multipolar') {
+      setForm(prev => ({ ...prev, disposicion: 'trefoil' }))
+    }
+  }, [form.cable_fase_id, cablesFase])
 
   useEffect(() => {
     if (!form.familia_tierra_id) { setCablesTierra([]); return }
@@ -197,6 +211,35 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
                     <option key={c.id} value={c.id}>{c.nombre}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+          </div>
+
+          <div className={cx.section}>
+            <div className={cx.sectionHdr}>
+              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#7D6B9E' }} />
+              <span>Disposición</span>
+            </div>
+            <div className={cx.grid}>
+              <div className={`${cx.field} col-span-full`}>
+                <label className={cx.label}>Disposición de los conductores</label>
+                {(() => {
+                  const cable = cablesFase.find(c => String(c.id) === form.cable_fase_id)
+                  const isUnipolar = !cable || cable.Nfases === 1
+                  return (
+                    <select className={cx.input} name="disposicion" value={form.disposicion} onChange={handleChange} disabled={!form.cable_fase_id}>
+                      <option value="">— Sin especificar —</option>
+                      {isUnipolar ? <>
+                        <option value="trefoil">Trébol compacto — cables tocando, equilátero</option>
+                        <option value="trefoil_sep">Trébol espaciado — 1 diámetro de separación</option>
+                        <option value="plana">Plana compacta — cables tocando en línea</option>
+                        <option value="plana_sep">Plana espaciada — 1 diámetro de separación</option>
+                      </> : (
+                        <option value="multipolar">Multipolar — geometría interna del cable</option>
+                      )}
+                    </select>
+                  )
+                })()}
               </div>
             </div>
           </div>

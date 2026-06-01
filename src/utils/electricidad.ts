@@ -15,13 +15,14 @@ export interface FormacionInfo {
 }
 
 export interface CaidaInput {
-  tension: string  // V — tensión de fase (EFN mono, EFF tri/bi)
-  fp:      string  // cos θ
-  in_:     string  // A — corriente nominal
-  cf:      string  // conductores por fase (override)
-  l:       string  // m — longitud
-  r:       string  // Ω/km — resistencia a 90°C
-  x:       string  // Ω/km — reactancia
+  tension:  string  // V — tensión de fase (EFN mono, EFF tri/bi)
+  fp:       string  // cos θ
+  in_:      string  // A — corriente nominal
+  cf:       string  // conductores por fase (override)
+  l:        string  // m — longitud
+  r:        string  // Ω/km — resistencia a 90°C
+  x:        string  // Ω/km — reactancia
+  cable_id: string  // id del cable seleccionado (override de sección)
 }
 
 // ── Formación ─────────────────────────────────────────────────────────────
@@ -49,6 +50,128 @@ export function generarFormacion(f: FormacionInfo): string {
   }
 
   return partes.join('+')
+}
+
+// ── Reactancia inductiva ──────────────────────────────────────────────────
+
+/**
+ * Calcula la reactancia inductiva de secuencia positiva a 50 Hz [Ω/km].
+ *
+ * Fórmula base:  X = 2πf · (μ₀/2π) · ln(GMD/GMR) · 1000
+ *              = 0.0628 · ln(GMD/GMR)   [Ω/km]
+ *
+ * GMR (radio medio geométrico del conductor):
+ *   - Para calibre mm²: GMR = 0.77 · √(A/π)   (conductor trenzado)
+ *   - Para AWG/kcmil o sin sección: GMR = 0.25 · d_cable  (estimación)
+ *
+ * GMD (distancia media geométrica) según disposición:
+ *   unipolar  trefoil      → GMD = d                 (trébol compacto, cables tocando)
+ *   unipolar  trefoil_sep  → GMD = 2·d               (trébol, 1 diámetro de separación)
+ *   unipolar  plana        → GMD = ∛2 · d ≈ 1.26·d  (plana compacta)
+ *   unipolar  plana_sep    → GMD = ∛2 · 2·d ≈ 2.52·d (plana separada)
+ *   multipolar             → GMD = 2.5·√(A/π)        (geometría interna estimada)
+ */
+export function calcReactancia(
+  diametro:   number | null,
+  seccionF:   string | null,
+  calibre:    string | null,
+  disposicion: string | null,
+  cableNfases: number,
+): number | null {
+  if (!diametro || diametro <= 0 || !disposicion) return null
+
+  const d = diametro  // mm — diámetro exterior del cable
+
+  // GMR del conductor
+  let GMR: number
+  if (calibre === 'mm²' && seccionF) {
+    const A = parseFloat(seccionF)
+    GMR = (!isNaN(A) && A > 0) ? 0.77 * Math.sqrt(A / Math.PI) : 0.25 * d
+  } else {
+    GMR = 0.25 * d
+  }
+
+  // GMD según disposición
+  let GMD: number
+  if (cableNfases === 1) {
+    // Cables unipolares: la disposición la elige el instalador
+    switch (disposicion) {
+      case 'trefoil':     GMD = d;                         break
+      case 'trefoil_sep': GMD = 2 * d;                    break
+      case 'plana':       GMD = Math.cbrt(2) * d;         break
+      case 'plana_sep':   GMD = Math.cbrt(2) * 2 * d;     break
+      default: return null
+    }
+  } else {
+    // Cable multipolar: geometría interna
+    if (disposicion !== 'multipolar') return null
+    if (calibre === 'mm²' && seccionF) {
+      const A = parseFloat(seccionF)
+      GMD = (!isNaN(A) && A > 0) ? 2.5 * Math.sqrt(A / Math.PI) : 0.35 * d
+    } else {
+      GMD = 0.35 * d
+    }
+  }
+
+  if (GMD <= GMR) return null
+  // X = 0.0628 · ln(GMD/GMR)  [Ω/km a 50 Hz]
+  return 0.0628 * Math.log(GMD / GMR)
+}
+
+// ── Resistencia ───────────────────────────────────────────────────────────
+
+// Tabla de conversión AWG → mm² (conductores de cobre, clase 2 IEC)
+const AWG_MM2: Record<string, number> = {
+  '14': 2.08,  '12': 3.31,  '10': 5.26,  '8': 8.37,   '6': 13.30,
+  '4': 21.15,  '3': 26.67,  '2': 33.63,  '1': 42.41,
+  '1/0': 53.49, '2/0': 67.43, '3/0': 85.01, '4/0': 107.2,
+  '250': 126.7, '300': 152.0, '350': 177.4, '400': 202.7, '500': 253.4,
+}
+
+/**
+ * Calcula la resistencia del conductor a la temperatura de servicio [Ω/km].
+ * Soporta mm² (IEC 60228 clase 2), AWG y kcmil.
+ *
+ * Resistividades base a 20 °C:
+ *   Cobre    → ρ₂₀ = 18.34 Ω·mm²/km   α = 0.00393 /°C
+ *   Aluminio → ρ₂₀ = 30.40 Ω·mm²/km   α = 0.00403 /°C
+ *
+ * Corrección: R(T) = (ρ₂₀ / A) × (1 + α × (T − 20))
+ */
+export function calcResistencia(
+  seccionF:    string | null,
+  calibre:     string | null,
+  material?:   string | null,
+  temperatura?: number | null,
+): number | null {
+  if (!seccionF) return null
+
+  // Normalizar calibre: 'mm²', 'mm2', 'MM2', etc. → 'mm2'
+  const cal = (calibre ?? '').toLowerCase().replace('²', '2').trim()
+
+  let A: number
+  if (cal === 'mm2') {
+    A = parseFloat(seccionF)
+    if (isNaN(A) || A <= 0) return null
+  } else if (cal === 'awg') {
+    const a = AWG_MM2[seccionF.trim()]
+    if (!a) return null
+    A = a
+  } else if (cal === 'kcmil') {
+    const k = parseFloat(seccionF)
+    if (isNaN(k) || k <= 0) return null
+    A = k * 0.5067  // 1 kcmil = 0.5067 mm²
+  } else {
+    return null
+  }
+
+  const mat = (material ?? '').toLowerCase()
+  const isAlu = mat.includes('alum') || mat === 'al'
+  const rho20 = isAlu ? 30.40 : 18.34
+  const alpha = isAlu ? 0.00403 : 0.00393
+
+  const T = temperatura ?? 90
+  return (rho20 / A) * (1 + alpha * (T - 20))
 }
 
 // ── Corriente ─────────────────────────────────────────────────────────────
@@ -105,13 +228,16 @@ export function calcDrops(
   fpAuto:      number | null,
   largoAuto:   number | null,
   tensionAuto: number | null,
+  xAuto:       number | null = null,
+  inAuto:      number | null = null,
+  rAuto:       number | null = null,
 ): { ev: number | null; epct: number | null } {
-  const fp  = parseFloat(input.fp)  || (fpAuto ?? NaN)
-  const in_ = parseFloat(input.in_)
-  const cf  = parseFloat(input.cf)  || cfAuto || NaN
+  const fp  = parseFloat(input.fp)  || (fpAuto  ?? NaN)
+  const in_ = parseFloat(input.in_) || (inAuto  ?? NaN)
+  const cf  = parseFloat(input.cf)  || cfAuto   || NaN
   const l   = parseFloat(input.l)   || largoAuto || NaN
-  const r   = parseFloat(input.r)
-  const x   = parseFloat(input.x)
+  const r   = parseFloat(input.r)   || (rAuto   ?? NaN)
+  const x   = parseFloat(input.x)   || (xAuto   ?? NaN)
 
   if ([fp, in_, cf, l, r, x].some(isNaN) || cf <= 0) return { ev: null, epct: null }
 

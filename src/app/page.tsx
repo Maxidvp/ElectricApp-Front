@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 const ROUTES = [
   { href: '/cargas',      label: 'Cargas',      desc: 'Tableros, circuitos y formaciones de cable' },
-  { href: '/caida',       label: 'Caída',       desc: 'Caída de tensión por circuito'               },
+  { href: '/caidas',       label: 'Caídas',       desc: 'Caída de tensión por circuito'               },
   { href: '/ruteo',       label: 'Ruteo',       desc: 'Plano de rutas, caños y bandejas'            },
   { href: '/ocupaciones', label: 'Ocupaciones', desc: 'Ocupación de caños y bandejas por tramo'     },
   { href: '/importador',  label: 'Importador',  desc: 'Importar segmentos desde archivos externos'  },

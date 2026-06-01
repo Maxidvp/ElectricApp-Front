@@ -11,7 +11,7 @@ import FormacionModal from '@/components/FormacionModal'
 import TableroModal from '@/components/TableroModal'
 import ConfirmModal from '@/components/ConfirmModal'
 import { useProyectos } from '@/context/ProyectosContext'
-import { generarFormacion, calcularAreaFormacion, calcCorriente } from '@/utils/electricidad'
+import { generarFormacion, calcCorriente } from '@/utils/electricidad'
 
 type CircuitoAPI = {
   id: number
@@ -29,6 +29,7 @@ type CircuitoAPI = {
     cable_id: number
     cable_neutro_id: number | null
     cable_tierra_id: number | null
+    disposicion: string | null
     cable: { nombre: string; seccion_f: string; diametro: number | null; calibre_tipo: string; familia_id: number }
     cable_neutro: { nombre: string; diametro: number | null } | null
     cable_tierra: { nombre: string; diametro: number | null } | null
@@ -44,7 +45,10 @@ type FormacionData = {
   Nneutro: string
   familia_tierra_id: string
   cable_tierra_id: string
+  disposicion: string
 }
+
+type ColMeta = { colType: 'editable' | 'result' | 'display' }
 
 type CircuitoRow = {
   id: number
@@ -55,9 +59,7 @@ type CircuitoRow = {
   tipo_tension: string | null
   potencia: number | null
   corriente: number | null
-  seccion: string
   formacion: string
-  area: string
   formacionData: FormacionData | null
 }
 
@@ -112,9 +114,7 @@ function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow
     tipo_tension: c.tipo_tension,
     potencia:  c.potencia ?? null,
     corriente: calcCorriente(c.potencia ?? null, c.tipo_tension, tension_v, c.FP),
-    seccion:   c.formacion ? `${c.formacion.cable.seccion_f} ${c.formacion.cable.calibre_tipo}` : '—',
     formacion: c.formacion ? generarFormacion(c.formacion) : '—',
-    area:      c.formacion ? calcularAreaFormacion(c.formacion).toFixed(2) : '—',
     formacionData: c.formacion ? {
       familia_id:        String(c.formacion.cable.familia_id),
       cable_fase_id:     String(c.formacion.cable_id),
@@ -124,6 +124,7 @@ function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow
       Nneutro:           String(c.formacion.Nneutro),
       familia_tierra_id: c.formacion.cable_tierra_id ? String(c.formacion.cable.familia_id) : '',
       cable_tierra_id:   c.formacion.cable_tierra_id ? String(c.formacion.cable_tierra_id) : '',
+      disposicion:       c.formacion.disposicion ?? '',
     } : null,
   }})
 }
@@ -185,7 +186,7 @@ export default function TablaCargas() {
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
   if (displayData.length !== contextData.length ||
-      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion || r.seccion !== contextData[i]?.seccion)) {
+      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion)) {
     setDisplayData(contextData)
   }
 
@@ -220,6 +221,7 @@ export default function TablaCargas() {
     columnHelper.accessor('circuito', {
       header: 'Circuito',
       size: 120,
+      meta: { colType: 'editable' } as ColMeta,
       cell: (info) => (
         <CeldaEditable
           valor={info.getValue()}
@@ -230,6 +232,7 @@ export default function TablaCargas() {
     columnHelper.accessor('descripcion', {
       header: 'Descripción',
       size: 200,
+      meta: { colType: 'editable' } as ColMeta,
       cell: (info) => (
         <CeldaEditable
           valor={info.getValue() ?? ''}
@@ -241,6 +244,7 @@ export default function TablaCargas() {
       id: 'tension',
       header: 'Tensión (V)',
       size: 110,
+      meta: { colType: 'editable' } as ColMeta,
       cell: info => {
         const { id, tipo_tension } = info.row.original
         if (tensionesDisponibles.length === 0) {
@@ -267,6 +271,7 @@ export default function TablaCargas() {
     columnHelper.accessor('potencia', {
       header: 'Potencia (kW)',
       size: 110,
+      meta: { colType: 'editable' } as ColMeta,
       cell: (info) => (
         <CeldaEditable
           valor={info.getValue() !== null ? String(info.getValue()) : ''}
@@ -277,16 +282,17 @@ export default function TablaCargas() {
     columnHelper.accessor('corriente', {
       header: 'Corriente (A)',
       size: 110,
+      meta: { colType: 'result' } as ColMeta,
       cell: (info) => {
         const v = info.getValue()
         if (v === null) return <span className="text-surface-tonal-a40 text-xs">—</span>
         return <span className="text-xs">{v.toFixed(2)}</span>
       }
     }),
-    columnHelper.accessor('seccion', { header: 'Sección', size: 120 }),
     columnHelper.accessor('formacion', {
       header: 'Formación',
       size: 180,
+      meta: { colType: 'editable' } as ColMeta,
       cell: (info) => {
         const fd = info.row.original.formacionData
         const openModal = (e: React.MouseEvent) => {
@@ -294,7 +300,7 @@ export default function TablaCargas() {
           setCircuitoEditando(info.row.original.id)
           setFormacionSeleccionada(fd ?? {
             familia_id: '', cable_fase_id: '', cond_por_fase: '1',
-            Nfases: '3', cable_neutro_id: '', Nneutro: '1', familia_tierra_id: '', cable_tierra_id: '',
+            Nfases: '3', cable_neutro_id: '', Nneutro: '1', familia_tierra_id: '', cable_tierra_id: '', disposicion: '',
           })
           setModalAbierto(true)
         }
@@ -313,6 +319,7 @@ export default function TablaCargas() {
     columnHelper.accessor('FP', {
       header: 'FP',
       size: 70,
+      meta: { colType: 'editable' } as ColMeta,
       cell: (info) => (
         <CeldaEditable
           valor={info.getValue() !== null ? String(info.getValue()) : ''}
@@ -323,6 +330,7 @@ export default function TablaCargas() {
     columnHelper.accessor('Largo', {
       header: 'Largo (m)',
       size: 90,
+      meta: { colType: 'editable' } as ColMeta,
       cell: (info) => (
         <CeldaEditable
           valor={info.getValue() !== null ? String(info.getValue()) : ''}
@@ -330,8 +338,11 @@ export default function TablaCargas() {
         />
       )
     }),
-    columnHelper.accessor('area', { header: 'Área (mm²)', size: 140 }),
   ], [renombrarCircuito, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia, tensionesDisponibles])
+
+  const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('ea_col_cargas') ?? '{}') } catch { return {} }
+  })
 
   const table = useReactTable({
     data: displayData,
@@ -340,6 +351,12 @@ export default function TablaCargas() {
     columnResizeMode: 'onChange',
     columnResizeDirection: 'ltr',
     enableColumnResizing: true,
+    state: { columnSizing: colSizing },
+    onColumnSizingChange: upd => {
+      const next = typeof upd === 'function' ? upd(colSizing) : upd
+      setColSizing(next)
+      localStorage.setItem('ea_col_cargas', JSON.stringify(next))
+    },
   })
 
   if (loading && !tablero) return <p>Cargando...</p>
@@ -420,7 +437,7 @@ export default function TablaCargas() {
                     <th
                       key={header.id}
                       colSpan={header.colSpan}
-                      style={{ width: header.getSize(), position: 'relative' }}
+                      style={{ width: header.getSize(), position: 'relative', textAlign: 'center' }}
                     >
                       {header.isPlaceholder
                         ? null
@@ -449,11 +466,19 @@ export default function TablaCargas() {
                       isAnyDragging={draggingId !== null}
                       onClick={() => { setRowSeleccionada(isSelected ? null : row.original.id) }}
                     >
-                      {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} style={{ width: cell.column.getSize() }}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
+                      {row.getVisibleCells().map((cell) => {
+                        const colType = (cell.column.columnDef.meta as ColMeta | undefined)?.colType
+                        return (
+                          <td key={cell.id} style={{
+                            width: cell.column.getSize(),
+                            background: colType === 'editable' ? 'color-mix(in srgb, #4A8FD4 4%, transparent)'
+                                      : colType === 'result'   ? 'color-mix(in srgb, #6aab6a 6%, transparent)'
+                                      : undefined,
+                          }}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        )
+                      })}
                     </SortableRow>
                   )
                 })}
@@ -475,6 +500,7 @@ export default function TablaCargas() {
               Nneutro:         Number(data.Nneutro),
               cable_neutro_id: data.cable_neutro_id ? Number(data.cable_neutro_id) : null,
               cable_tierra_id: data.cable_tierra_id ? Number(data.cable_tierra_id) : null,
+              disposicion:     data.disposicion || null,
             }, cables)
             setModalAbierto(false)
           }}

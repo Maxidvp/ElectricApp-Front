@@ -21,6 +21,7 @@ type Cable = {
   calibre_tipo: string
   familia_id: number
   Nfases: number
+  familia?: { material: string | null; temperatura: number | null } | null
 }
 
 type Formacion = {
@@ -31,6 +32,7 @@ type Formacion = {
   Nneutro: number
   cable_neutro_id: number | null
   cable_tierra_id: number | null
+  disposicion: string | null
   cable: Cable
   cable_neutro: Cable | null
   cable_tierra: Cable | null
@@ -131,6 +133,7 @@ type ProyectosContextType = {
   appendParedes: (paredes: Pared[]) => void
   actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
   agregarTablero: (data: any) => Promise<Tablero>
+  actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) => Promise<void>
 
   // Segmentos & conjuntos
   segmentos: Segmento[]
@@ -433,6 +436,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         Nneutro:         data.Nneutro,
         cable_neutro_id: data.cable_neutro_id,
         cable_tierra_id: data.cable_tierra_id,
+        disposicion:     data.disposicion ?? null,
         cable:        cables.fase,
         cable_neutro: cables.neutro,
         cable_tierra: cables.tierra,
@@ -447,6 +451,11 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     } else {
       fire(circuitoId)
     }
+  }
+
+  async function actualizarTablero(id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) {
+    setTableros(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
+    await tablerosApi.updateTablero(id, data).catch(console.error)
   }
 
   async function agregarTablero(data: any): Promise<Tablero> {
@@ -709,7 +718,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia, actualizarFormacion, agregarTablero,
+      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia, actualizarFormacion, agregarTablero, actualizarTablero,
       segmentos, canios, bandejas, conjuntos, activeConjuntoId, setActiveConjuntoId,
       addSegmento, previewSegmento, editSegmento, removeSegmento,
       asignarCircuito, quitarCircuito,

@@ -5,8 +5,9 @@ import { usePathname } from 'next/navigation'
 import { useProyectos } from '@/context/ProyectosContext'
 
 const NAV_LINKS = [
+  { href: '/tableros',    label: 'Tableros'    },
   { href: '/cargas',      label: 'Cargas'      },
-  { href: '/caida',       label: 'Caída'       },
+  { href: '/caidas',       label: 'Caídas'       },
   { href: '/ruteo',       label: 'Ruteo'       },
   { href: '/ocupaciones', label: 'Ocupaciones' },
   { href: '/cables',      label: 'Cables'      },
