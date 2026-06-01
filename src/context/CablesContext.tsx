@@ -4,7 +4,7 @@ import { getFamiliasCables } from '@/services/familiasCables'
 import { getCablesPorFamilia } from '@/services/cables'
 
 type FamiliaCable = { id: number; nombre: string }
-export type CableItem = { id: number; nombre: string; seccion_f: string; calibre_tipo: string; diametro: number | null; familia_id: number }
+export type CableItem = { id: number; nombre: string; seccion_f: string; calibre_tipo: string; diametro: number | null; familia_id: number; Nfases: number }
 
 type CablesContextType = {
   familias: FamiliaCable[]

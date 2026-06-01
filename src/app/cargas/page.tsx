@@ -11,7 +11,7 @@ import FormacionModal from '@/components/FormacionModal'
 import TableroModal from '@/components/TableroModal'
 import ConfirmModal from '@/components/ConfirmModal'
 import { useProyectos } from '@/context/ProyectosContext'
-import { generarFormacion, calcularAreaFormacion } from '@/utils/electricidad'
+import { generarFormacion, calcularAreaFormacion, calcCorriente } from '@/utils/electricidad'
 
 type CircuitoAPI = {
   id: number
@@ -20,6 +20,7 @@ type CircuitoAPI = {
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
+  potencia: number | null
   formacion: {
     nombre: string
     cond_por_fase: number
@@ -52,6 +53,8 @@ type CircuitoRow = {
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
+  potencia: number | null
+  corriente: number | null
   seccion: string
   formacion: string
   area: string
@@ -92,14 +95,23 @@ function CeldaEditable({ valor, onGuardar }: { valor: string; onGuardar: (v: str
   )
 }
 
-function mapearCircuitos(data: CircuitoAPI[]): CircuitoRow[] {
-  return data.map((c) => ({
+type Tensiones = { mono: number | null; bi: number | null; tri: number | null }
+
+function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow[] {
+  return data.map((c) => {
+    const tension_v = c.tipo_tension === 'mono' ? tensiones.mono
+                    : c.tipo_tension === 'bi'   ? tensiones.bi
+                    : c.tipo_tension === 'tri'  ? tensiones.tri
+                    : null
+    return {
     id:        c.id,
     circuito:  c.circuito,
     descripcion: c.descripcion,
     FP:        c.FP,
     Largo:     c.Largo,
     tipo_tension: c.tipo_tension,
+    potencia:  c.potencia ?? null,
+    corriente: calcCorriente(c.potencia ?? null, c.tipo_tension, tension_v, c.FP),
     seccion:   c.formacion ? `${c.formacion.cable.seccion_f} ${c.formacion.cable.calibre_tipo}` : '—',
     formacion: c.formacion ? generarFormacion(c.formacion) : '—',
     area:      c.formacion ? calcularAreaFormacion(c.formacion).toFixed(2) : '—',
@@ -113,7 +125,7 @@ function mapearCircuitos(data: CircuitoAPI[]): CircuitoRow[] {
       familia_tierra_id: c.formacion.cable_tierra_id ? String(c.formacion.cable.familia_id) : '',
       cable_tierra_id:   c.formacion.cable_tierra_id ? String(c.formacion.cable_tierra_id) : '',
     } : null,
-  }))
+  }})
 }
 
 const columnHelper = createColumnHelper<CircuitoRow>()
@@ -123,7 +135,7 @@ export default function TablaCargas() {
     tableros, getTablero, loading, error,
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
-    actualizarFP, actualizarLargo, actualizarTipoTension,
+    actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia,
   } = useProyectos()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -167,12 +179,13 @@ export default function TablaCargas() {
   const contextData = useMemo(() => {
     if (!tablero) return []
     const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
-    return mapearCircuitos(sorted as any)
+    const tensiones: Tensiones = { mono: tablero.tension_mono, bi: tablero.tension_bi, tri: tablero.tension_tri }
+    return mapearCircuitos(sorted as any, tensiones)
   }, [tablero])
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
   if (displayData.length !== contextData.length ||
-      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.formacion !== contextData[i]?.formacion || r.seccion !== contextData[i]?.seccion)) {
+      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion || r.seccion !== contextData[i]?.seccion)) {
     setDisplayData(contextData)
   }
 
@@ -251,6 +264,25 @@ export default function TablaCargas() {
         )
       },
     }),
+    columnHelper.accessor('potencia', {
+      header: 'Potencia (kW)',
+      size: 110,
+      cell: (info) => (
+        <CeldaEditable
+          valor={info.getValue() !== null ? String(info.getValue()) : ''}
+          onGuardar={(v) => actualizarPotencia(info.row.original.id, v.trim() ? Number(v) : null)}
+        />
+      )
+    }),
+    columnHelper.accessor('corriente', {
+      header: 'Corriente (A)',
+      size: 110,
+      cell: (info) => {
+        const v = info.getValue()
+        if (v === null) return <span className="text-surface-tonal-a40 text-xs">—</span>
+        return <span className="text-xs">{v.toFixed(2)}</span>
+      }
+    }),
     columnHelper.accessor('seccion', { header: 'Sección', size: 120 }),
     columnHelper.accessor('formacion', {
       header: 'Formación',
@@ -299,7 +331,7 @@ export default function TablaCargas() {
       )
     }),
     columnHelper.accessor('area', { header: 'Área (mm²)', size: 140 }),
-  ], [renombrarCircuito, actualizarFP, actualizarLargo, actualizarTipoTension, tensionesDisponibles])
+  ], [renombrarCircuito, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia, tensionesDisponibles])
 
   const table = useReactTable({
     data: displayData,

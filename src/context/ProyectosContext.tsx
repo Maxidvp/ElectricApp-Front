@@ -46,6 +46,7 @@ type Circuito = {
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
+  potencia: number | null
 }
 
 type Tablero = {
@@ -124,6 +125,7 @@ type ProyectosContextType = {
   actualizarDescripcion: (id: number, descripcion: string | null) => void
   actualizarFP: (id: number, fp: number | null) => void
   actualizarLargo: (id: number, largo: number | null) => void
+  actualizarPotencia: (id: number, potencia: number | null) => void
   actualizarTipoTension: (id: number, tipo: string | null) => void
   appendSegmentos: (segs: Segmento[]) => void
   appendParedes: (paredes: Pared[]) => void
@@ -329,7 +331,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!tablero) return
     const tempId = nextTempId()
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null }
+    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, potencia: null }
     setTableros(prev => addCirc(prev, tableroId, temp))
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(real => {
@@ -390,6 +392,13 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   function actualizarLargo(id: number, largo: number | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, Largo: largo })))
     const fire = (rid: number) => circuitosApi.updateLargoCircuito(rid, largo).catch(console.error)
+    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
+    else fire(id)
+  }
+
+  function actualizarPotencia(id: number, potencia: number | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, potencia })))
+    const fire = (rid: number) => circuitosApi.updatePotenciaCircuito(rid, potencia).catch(console.error)
     if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
     else fire(id)
   }
@@ -700,7 +709,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFormacion, agregarTablero,
+      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia, actualizarFormacion, agregarTablero,
       segmentos, canios, bandejas, conjuntos, activeConjuntoId, setActiveConjuntoId,
       addSegmento, previewSegmento, editSegmento, removeSegmento,
       asignarCircuito, quitarCircuito,

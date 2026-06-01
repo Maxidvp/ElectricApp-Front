@@ -80,6 +80,16 @@ export async function updateTipoTensionCircuito(id: number, tipo_tension: string
   return res.json()
 }
 
+export async function updatePotenciaCircuito(id: number, potencia: number | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/potencia`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ potencia }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar la potencia')
+  return res.json()
+}
+
 export async function updateNombreCircuito(id: number, circuito: string) {
   const res = await fetch(`${API_URL}/circuitos/${id}/nombre`, {
     method: 'PATCH',

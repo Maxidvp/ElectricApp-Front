@@ -51,6 +51,27 @@ export function generarFormacion(f: FormacionInfo): string {
   return partes.join('+')
 }
 
+// ── Corriente ─────────────────────────────────────────────────────────────
+
+/**
+ * Calcula la corriente nominal a partir de la potencia activa.
+ *
+ * Mono  : I = P / (V_FN × FP)
+ * Bi    : I = P / (V_FF × FP)
+ * Tri   : I = P / (√3 × V_FF × FP)
+ */
+export function calcCorriente(
+  potencia_kW: number | null,
+  tipo:        string | null,
+  tension:     number | null,
+  fp:          number | null,
+): number | null {
+  if (potencia_kW === null || !tipo || tension === null || tension <= 0 || !fp || fp <= 0) return null
+  const p = potencia_kW * 1000
+  const factor = tipo === 'tri' ? Math.sqrt(3) : 1
+  return p / (factor * tension * fp)
+}
+
 // ── Área de ocupación ──────────────────────────────────────────────────────
 
 /**
