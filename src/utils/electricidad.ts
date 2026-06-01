@@ -81,11 +81,11 @@ export function calcDrops(
   input:       CaidaInput,
   nfases:      number,
   cfAuto:      number | null,
-  fpAuto:      number,
+  fpAuto:      number | null,
   largoAuto:   number | null,
   tensionAuto: number | null,
 ): { ev: number | null; epct: number | null } {
-  const fp  = parseFloat(input.fp)  || fpAuto
+  const fp  = parseFloat(input.fp)  || (fpAuto ?? NaN)
   const in_ = parseFloat(input.in_)
   const cf  = parseFloat(input.cf)  || cfAuto || NaN
   const l   = parseFloat(input.l)   || largoAuto || NaN

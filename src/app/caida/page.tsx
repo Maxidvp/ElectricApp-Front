@@ -110,8 +110,8 @@ export default function CaidaTension() {
     return sorted.map(c => {
       const input     = inputs[c.id] ?? DEFAULT_INPUT
       const nfases    = c.formacion?.Nfases ?? 3
-      const cfAuto    = c.formacion?.cond_por_fase ?? null
-      const fpAuto    = c.FP ?? 0.8
+      const cfAuto    = c.formacion?.cable?.Nfases ?? null
+      const fpAuto    = c.FP ?? null
       const largoAuto = c.Largo ?? null
       const tipo      = c.tipo_tension
       const tensionAuto = tipo === 'mono' ? (tablero as any).tension_mono
@@ -146,7 +146,7 @@ export default function CaidaTension() {
       id: 'fp', header: 'F.P.', size: 70,
       cell: info => {
         const { id, input, fpAuto } = info.row.original
-        return <NumCell value={input.fp} onChange={v => setField(id, 'fp', v)} hint={String(fpAuto)} />
+        return <NumCell value={input.fp} onChange={v => setField(id, 'fp', v)} hint={fpAuto !== null ? String(fpAuto) : undefined} />
       },
     }),
     columnHelper.display({
@@ -154,10 +154,11 @@ export default function CaidaTension() {
       cell: info => <NumCell value={info.row.original.input.in_} onChange={v => setField(info.row.original.id, 'in_', v)} />,
     }),
     columnHelper.display({
-      id: 'cf', header: 'CF', size: 60,
+      id: 'cf', header: 'N° conductores', size: 100,
       cell: info => {
-        const { id, input, cfAuto } = info.row.original
-        return <NumCell value={input.cf} onChange={v => setField(id, 'cf', v)} hint={cfAuto !== null ? String(cfAuto) : undefined} />
+        const { cfAuto } = info.row.original
+        if (cfAuto === null) return <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'right' }}>—</span>
+        return <span style={{ fontSize: 12, display: 'block', textAlign: 'right' }}>{cfAuto}</span>
       },
     }),
     columnHelper.display({

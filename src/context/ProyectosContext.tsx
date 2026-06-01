@@ -20,6 +20,7 @@ type Cable = {
   diametro: number | null
   calibre_tipo: string
   familia_id: number
+  Nfases: number
 }
 
 type Formacion = {

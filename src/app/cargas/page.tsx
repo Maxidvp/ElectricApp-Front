@@ -86,8 +86,8 @@ function CeldaEditable({ valor, onGuardar }: { valor: string; onGuardar: (v: str
   }
 
   return (
-    <span onClick={() => { setTexto(valor); setEditando(true) }} className="cursor-text block w-full min-h-5">
-      {valor}
+    <span onClick={() => { setTexto(valor); setEditando(true) }} className={`cursor-text block w-full min-h-5 ${!valor ? 'text-surface-tonal-a40' : ''}`}>
+      {valor || '—'}
     </span>
   )
 }
