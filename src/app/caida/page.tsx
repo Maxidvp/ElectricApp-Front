@@ -2,22 +2,23 @@
 import { useState, useMemo, useCallback } from 'react'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
-import { generarFormacion, calcDrops as calcDropsUtil, type CaidaInput } from '@/utils/electricidad'
+import { generarFormacion, calcDrops as calcDropsUtil, calcCorriente, type CaidaInput } from '@/utils/electricidad'
 
 // ── Types ─────────────────────────────────────────────────────────
 
 type CaidaRow = {
-  id:          number
-  circuito:    string
-  formacion:   string
-  nfases:      number
-  cfAuto:      number | null
-  fpAuto:      number | null
-  largoAuto:   number | null
-  tensionAuto: number | null
-  input:       CaidaInput
-  ev:          number | null
-  epct:        number | null
+  id:            number
+  circuito:      string
+  formacion:     string
+  nfases:        number
+  cfAuto:        number | null
+  fpAuto:        number | null
+  largoAuto:     number | null
+  tensionAuto:   number | null
+  corrienteAuto: number | null
+  input:         CaidaInput
+  ev:            number | null
+  epct:          number | null
 }
 
 const DEFAULT_INPUT: CaidaInput = {
@@ -55,11 +56,11 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
   const display = value || hint
   return (
     <span
-      onClick={() => { setDraft(value); setEditing(true) }}
+      onClick={() => { setDraft(value || hint || ''); setEditing(true) }}
       style={{
         display: 'block', width: '100%', textAlign: 'right',
         cursor: 'text', minHeight: 20, fontSize: 12,
-        color: value ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
+        color: display ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
       }}
     >
       {display || '—'}
@@ -118,9 +119,10 @@ export default function CaidaTension() {
                         : tipo === 'bi'   ? (tablero as any).tension_bi
                         : tipo === 'tri'  ? (tablero as any).tension_tri
                         : null
+      const corrienteAuto = calcCorriente(c.potencia ?? null, tipo, tensionAuto, fpAuto)
       const formacion = c.formacion ? generarFormacion(c.formacion) : '—'
       const { ev, epct } = calcDropsUtil(input, nfases, cfAuto, fpAuto, largoAuto, tensionAuto)
-      return { id: c.id, circuito: c.circuito, formacion, nfases, cfAuto, fpAuto, largoAuto, tensionAuto, input, ev, epct }
+      return { id: c.id, circuito: c.circuito, formacion, nfases, cfAuto, fpAuto, largoAuto, tensionAuto, corrienteAuto, input, ev, epct }
     })
   }, [tablero, inputs])
 
@@ -138,8 +140,9 @@ export default function CaidaTension() {
     columnHelper.display({
       id: 'tension', header: 'E (V)', size: 90,
       cell: info => {
-        const { id, input, tensionAuto } = info.row.original
-        return <NumCell value={input.tension} onChange={v => setField(id, 'tension', v)} hint={tensionAuto !== null ? String(tensionAuto) : undefined} />
+        const { tensionAuto } = info.row.original
+        if (tensionAuto === null) return <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'right' }}>—</span>
+        return <span style={{ fontSize: 12, display: 'block', textAlign: 'right' }}>{tensionAuto}</span>
       },
     }),
     columnHelper.display({
@@ -151,7 +154,10 @@ export default function CaidaTension() {
     }),
     columnHelper.display({
       id: 'in_', header: 'In (A)', size: 80,
-      cell: info => <NumCell value={info.row.original.input.in_} onChange={v => setField(info.row.original.id, 'in_', v)} />,
+      cell: info => {
+        const { id, input, corrienteAuto } = info.row.original
+        return <NumCell value={input.in_} onChange={v => setField(id, 'in_', v)} hint={corrienteAuto !== null ? corrienteAuto.toFixed(2) : undefined} />
+      },
     }),
     columnHelper.display({
       id: 'cf', header: 'N° conductores', size: 100,
