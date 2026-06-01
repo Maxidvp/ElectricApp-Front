@@ -87,7 +87,11 @@ const columnHelper = createColumnHelper<CaidaRow>()
 export default function CaidaTension() {
   const { tableros, getTablero, loading, error } = useProyectos()
 
-  const [tableroId, setTableroId] = useState<number | null>(null)
+  const [tableroId, setTableroId] = useState<number | null>(() => {
+    if (typeof document === 'undefined') return null
+    const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
+    return m ? Number(m[1]) : null
+  })
   const [inputs,    setInputs]    = useState<Record<number, CaidaInput>>({})
 
   const idEfectivo = tableroId ?? tableros[0]?.id ?? null
@@ -204,7 +208,7 @@ export default function CaidaTension() {
         {tableros.map(t => (
           <button
             key={t.id}
-            onClick={() => setTableroId(t.id)}
+            onClick={() => { document.cookie = `last_tablero_id=${t.id};path=/;max-age=31536000`; setTableroId(t.id) }}
             className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
               idEfectivo === t.id
                 ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'

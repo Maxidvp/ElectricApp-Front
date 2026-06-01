@@ -28,9 +28,9 @@ type CircuitoAPI = {
     cable_id: number
     cable_neutro_id: number | null
     cable_tierra_id: number | null
-    cable: { seccion_f: string; diametro: number | null; calibre_tipo: string; familia_id: number }
-    cable_neutro: { diametro: number | null } | null
-    cable_tierra: { diametro: number | null } | null
+    cable: { nombre: string; seccion_f: string; diametro: number | null; calibre_tipo: string; familia_id: number }
+    cable_neutro: { nombre: string; diametro: number | null } | null
+    cable_tierra: { nombre: string; diametro: number | null } | null
   } | null
 }
 
@@ -128,7 +128,11 @@ export default function TablaCargas() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  const [tableroId, setTableroId]                       = useState<number | null>(null)
+  const [tableroId, setTableroId]                       = useState<number | null>(() => {
+    if (typeof document === 'undefined') return null
+    const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
+    return m ? Number(m[1]) : null
+  })
   const [modalTableroAbierto, setModalTableroAbierto]   = useState(false)
   const [modalAbierto, setModalAbierto]                 = useState(false)
   const [circuitoEditando, setCircuitoEditando]         = useState<number | null>(null)
@@ -149,6 +153,7 @@ export default function TablaCargas() {
   }, [tablero])
 
   const cambiarTablero = (id: number) => {
+    document.cookie = `last_tablero_id=${id};path=/;max-age=31536000`
     setTableroId(id)
     setRowSeleccionada(null)
   }
