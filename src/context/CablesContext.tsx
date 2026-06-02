@@ -15,17 +15,23 @@ const CablesContext = createContext<CablesContextType | null>(null)
 
 export function CablesProvider({ children }: { children: React.ReactNode }) {
   const [familias, setFamilias] = useState<FamiliaCable[]>([])
-  const cache = useRef<Record<number, CableItem[]>>({})
+  const cache    = useRef<Record<number, CableItem[]>>({})
+  const pending  = useRef<Record<number, Promise<CableItem[]>>>({})
 
   useEffect(() => {
     getFamiliasCables().then(setFamilias)
   }, [])
 
-  const getCablesDeFamilia = useCallback(async (familiaId: number): Promise<CableItem[]> => {
-    if (cache.current[familiaId]) return cache.current[familiaId]
-    const cables = await getCablesPorFamilia(familiaId)
-    cache.current[familiaId] = cables
-    return cables
+  const getCablesDeFamilia = useCallback((familiaId: number): Promise<CableItem[]> => {
+    if (cache.current[familiaId]) return Promise.resolve(cache.current[familiaId])
+    if (pending.current[familiaId]) return pending.current[familiaId]
+    const promise = getCablesPorFamilia(familiaId).then(cables => {
+      cache.current[familiaId] = cables
+      delete pending.current[familiaId]
+      return cables
+    })
+    pending.current[familiaId] = promise
+    return promise
   }, [])
 
   return (

@@ -70,6 +70,16 @@ export async function updateDescripcionCircuito(id: number, descripcion: string 
   return res.json()
 }
 
+export async function updateFaseCircuito(id: number, fase: string | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/fase`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fase }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar la fase')
+  return res.json()
+}
+
 export async function updateTipoTensionCircuito(id: number, tipo_tension: string | null) {
   const res = await fetch(`${API_URL}/circuitos/${id}/tipo_tension`, {
     method: 'PATCH',

@@ -48,6 +48,7 @@ type Circuito = {
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
+  fase: string | null
   potencia: number | null
 }
 
@@ -129,11 +130,13 @@ type ProyectosContextType = {
   actualizarLargo: (id: number, largo: number | null) => void
   actualizarPotencia: (id: number, potencia: number | null) => void
   actualizarTipoTension: (id: number, tipo: string | null) => void
+  actualizarFase: (id: number, fase: string | null) => void
   appendSegmentos: (segs: Segmento[]) => void
   appendParedes: (paredes: Pared[]) => void
   actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
   agregarTablero: (data: any) => Promise<Tablero>
   actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) => Promise<void>
+  eliminarTablero: (id: number) => Promise<void>
 
   // Segmentos & conjuntos
   segmentos: Segmento[]
@@ -258,7 +261,17 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/proyectos/${p.id}`)
       .then(r => r.json())
       .then(data => {
-        setTableros(data.tableros ?? [])
+        const tablerosList = data.tableros ?? []
+        setTableros(tablerosList)
+
+        // Auto-seleccionar primer tablero si el cookie no apunta a uno de este proyecto
+        if (tablerosList.length > 0) {
+          const cookieMatch = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
+          const cookieId = cookieMatch ? Number(cookieMatch[1]) : null
+          if (!cookieId || !tablerosList.find((t: any) => t.id === cookieId)) {
+            document.cookie = `last_tablero_id=${tablerosList[0].id};path=/;max-age=31536000`
+          }
+        }
 
         const conjs: Conjunto[] = (data.conjuntos ?? []).map((c: any) => ({
           id: c.id,
@@ -334,7 +347,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!tablero) return
     const tempId = nextTempId()
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, potencia: null }
+    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, fase: null, potencia: null }
     setTableros(prev => addCirc(prev, tableroId, temp))
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(real => {
@@ -413,6 +426,13 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     else fire(id)
   }
 
+  function actualizarFase(id: number, fase: string | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, fase })))
+    const fire = (rid: number) => circuitosApi.updateFaseCircuito(rid, fase).catch(console.error)
+    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
+    else fire(id)
+  }
+
   function appendSegmentos(segs: Segmento[]) {
     setSegmentos(prev => [...prev, ...segs])
   }
@@ -456,6 +476,11 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   async function actualizarTablero(id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) {
     setTableros(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
     await tablerosApi.updateTablero(id, data).catch(console.error)
+  }
+
+  async function eliminarTablero(id: number) {
+    setTableros(prev => prev.filter(t => t.id !== id))
+    await tablerosApi.deleteTablero(id).catch(console.error)
   }
 
   async function agregarTablero(data: any): Promise<Tablero> {
@@ -718,7 +743,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia, actualizarFormacion, agregarTablero, actualizarTablero,
+      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFormacion, agregarTablero, actualizarTablero, eliminarTablero,
       segmentos, canios, bandejas, conjuntos, activeConjuntoId, setActiveConjuntoId,
       addSegmento, previewSegmento, editSegmento, removeSegmento,
       asignarCircuito, quitarCircuito,

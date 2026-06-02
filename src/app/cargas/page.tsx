@@ -20,6 +20,7 @@ type CircuitoAPI = {
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
+  fase: string | null
   potencia: number | null
   formacion: {
     nombre: string
@@ -57,6 +58,7 @@ type CircuitoRow = {
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
+  fase: string | null
   potencia: number | null
   corriente: number | null
   formacion: string
@@ -112,6 +114,7 @@ function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow
     FP:        c.FP,
     Largo:     c.Largo,
     tipo_tension: c.tipo_tension,
+    fase:      c.fase,
     potencia:  c.potencia ?? null,
     corriente: calcCorriente(c.potencia ?? null, c.tipo_tension, tension_v, c.FP),
     formacion: c.formacion ? generarFormacion(c.formacion) : '—',
@@ -136,7 +139,7 @@ export default function TablaCargas() {
     tableros, getTablero, loading, error,
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
-    actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia,
+    actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia,
   } = useProyectos()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -186,7 +189,7 @@ export default function TablaCargas() {
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
   if (displayData.length !== contextData.length ||
-      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion)) {
+      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.fase !== contextData[i]?.fase || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion)) {
     setDisplayData(contextData)
   }
 
@@ -268,6 +271,29 @@ export default function TablaCargas() {
         )
       },
     }),
+    columnHelper.display({
+      id: 'fase',
+      header: 'Fase',
+      size: 80,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: info => {
+        const { id, tipo_tension, fase } = info.row.original
+        if (!tipo_tension) return <span className="text-surface-tonal-a40 text-xs">—</span>
+        if (tipo_tension === 'tri') return <span className="text-xs text-font-a20">RST</span>
+        const opciones = tipo_tension === 'mono' ? ['R', 'S', 'T'] : ['RS', 'ST', 'TR']
+        return (
+          <select
+            value={fase ?? ''}
+            onChange={e => actualizarFase(id, e.target.value || null)}
+            onClick={e => e.stopPropagation()}
+            className="w-full h-7 px-1 text-xs rounded-sm bg-surface-a10 text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+          >
+            <option value="">—</option>
+            {opciones.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+        )
+      },
+    }),
     columnHelper.accessor('potencia', {
       header: 'Potencia (kW)',
       size: 110,
@@ -275,7 +301,13 @@ export default function TablaCargas() {
       cell: (info) => (
         <CeldaEditable
           valor={info.getValue() !== null ? String(info.getValue()) : ''}
-          onGuardar={(v) => actualizarPotencia(info.row.original.id, v.trim() ? Number(v) : null)}
+          onGuardar={(v) => {
+            const s = v.trim()
+            if (!s) return actualizarPotencia(info.row.original.id, null)
+            const isHp = /hp$/i.test(s)
+            const num = Number(s.replace(/hp$/i, '').trim())
+            actualizarPotencia(info.row.original.id, isNaN(num) ? null : isHp ? num * 0.7457 : num)
+          }}
         />
       )
     }),
@@ -338,7 +370,7 @@ export default function TablaCargas() {
         />
       )
     }),
-  ], [renombrarCircuito, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarPotencia, tensionesDisponibles])
+  ], [renombrarCircuito, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia, tensionesDisponibles])
 
   const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
     try { return JSON.parse(localStorage.getItem('ea_col_cargas') ?? '{}') } catch { return {} }

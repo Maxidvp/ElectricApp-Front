@@ -105,7 +105,7 @@ function Campo({ label, name, value, onChange, placeholder, required, type = 'te
 // ── Página ────────────────────────────────────────────────────────
 
 export default function TablaTableros() {
-  const { tableros, getTablero, loading, error, actualizarTablero } = useProyectos()
+  const { tableros, getTablero, loading, error, actualizarTablero, eliminarTablero } = useProyectos()
 
   const [tableroId, setTableroId] = useState<number | null>(() => {
     if (typeof document === 'undefined') return null
@@ -116,6 +116,7 @@ export default function TablaTableros() {
   const [dirty,      setDirty]      = useState(false)
   const [guardando,  setGuardando]  = useState(false)
   const [guardado,   setGuardado]   = useState(false)
+  const [confirm,    setConfirm]    = useState(false)
 
   const idEfectivo = tableroId ?? tableros[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
@@ -245,18 +246,43 @@ export default function TablaTableros() {
             </div>
           </div>
 
-          {/* Botón guardar */}
-          <div className="flex items-center justify-end gap-3 pt-1">
-            {guardado && (
-              <span className="text-[13px] text-[#6aab6a]">Guardado</span>
+          {/* Botón guardar / eliminar */}
+          <div className="flex items-center justify-between pt-1">
+            {confirm ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] text-surface-tonal-a40">¿Eliminar tablero?</span>
+                <button
+                  onClick={async () => { await eliminarTablero(tablero.id); setConfirm(false) }}
+                  className="h-[34px] px-4 rounded-[7px] text-[13px] font-medium cursor-pointer border border-danger-a10 bg-danger-a0 text-white transition-colors hover:opacity-85"
+                >
+                  Confirmar
+                </button>
+                <button
+                  onClick={() => setConfirm(false)}
+                  className="h-[34px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-surface-tonal-a30 bg-transparent text-font-a10 transition-colors hover:bg-surface-tonal-a20"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirm(true)}
+                className="h-[34px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-red-500 bg-transparent text-red-400 transition-[background,color] hover:bg-red-500/10"
+              >
+                Eliminar tablero
+              </button>
             )}
-            <button
-              onClick={handleGuardar}
-              disabled={!dirty || guardando || !form.tag.trim()}
-              className="h-[34px] px-5 rounded-[7px] text-[13px] font-medium cursor-pointer border border-info-a0 bg-info-a0 text-font-a0 transition-colors hover:bg-info-a10 hover:border-info-a10 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {guardando ? 'Guardando...' : 'Guardar cambios'}
-            </button>
+
+            <div className="flex items-center gap-3">
+              {guardado && <span className="text-[13px] text-[#6aab6a]">Guardado</span>}
+              <button
+                onClick={handleGuardar}
+                disabled={!dirty || guardando || !form.tag.trim()}
+                className="h-[34px] px-5 rounded-[7px] text-[13px] font-medium cursor-pointer border border-info-a0 bg-info-a0 text-font-a0 transition-colors hover:bg-info-a10 hover:border-info-a10 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {guardando ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </div>
           </div>
 
         </div>
