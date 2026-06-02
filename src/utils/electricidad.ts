@@ -118,6 +118,54 @@ export function calcReactancia(
   return 0.0628 * Math.log(GMD / GMR)
 }
 
+// ── Cortocircuito ─────────────────────────────────────────────────────────
+
+/**
+ * Corriente mínima de cortocircuito al final del circuito [A] (IEC 60364).
+ * Considera una falla fase-neutro con ambos conductores de la misma sección.
+ *
+ *   Icc_min = (0.8 × U₀) / (2 × R_km × L/1000)
+ *
+ * U₀ = tensión fase-neutro, R_km = resistencia a temperatura máxima [Ω/km].
+ * El factor 0.8 contempla variaciones de tensión y resistencia de arco.
+ */
+export function calcIccExtremo(
+  U0:   number,   // V — tensión fase-neutro
+  R_km: number,   // Ω/km — resistencia del conductor a temp. máxima
+  L:    number,   // m — longitud del circuito
+): number | null {
+  if (!U0 || !R_km || !L || L <= 0) return null
+  const R_loop = 2 * R_km * (L / 1000)  // Ω — lazo fase + neutro
+  return (0.8 * U0) / R_loop
+}
+
+/**
+ * Sección mínima del conductor para soportar la corriente de cortocircuito
+ * durante el tiempo de despeje [mm²] (IEC 60364-5-54, fórmula adiabática).
+ *
+ *   S_mín = I_cc × √t / k
+ *
+ * Factores k:
+ *   Cu / PVC (70 °C)  → 115
+ *   Cu / XLPE (90 °C) → 143
+ *   Al / PVC          → 74
+ *   Al / XLPE         → 87
+ */
+export function calcSminCable(
+  Icc_A:       number,         // A — corriente de CC
+  t_s:         number,         // s — tiempo de despeje
+  material?:   string | null,  // 'Cobre' | 'Aluminio'
+  aislamiento?: string | null, // 'PVC' | 'XLPE' | 'EPR' | 'LSZH' …
+): number | null {
+  if (!Icc_A || Icc_A <= 0 || !t_s || t_s <= 0) return null
+  const mat  = (material    ?? '').toLowerCase()
+  const ais  = (aislamiento ?? '').toLowerCase()
+  const isAlu  = mat.includes('alum') || mat === 'al'
+  const isXLPE = ais.includes('xlpe') || ais.includes('epr')
+  const k = isAlu ? (isXLPE ? 87 : 74) : (isXLPE ? 143 : 115)
+  return (Icc_A * Math.sqrt(t_s)) / k
+}
+
 // ── Resistencia ───────────────────────────────────────────────────────────
 
 // Tabla de conversión AWG → mm² (conductores de cobre, clase 2 IEC)
@@ -126,6 +174,27 @@ const AWG_MM2: Record<string, number> = {
   '4': 21.15,  '3': 26.67,  '2': 33.63,  '1': 42.41,
   '1/0': 53.49, '2/0': 67.43, '3/0': 85.01, '4/0': 107.2,
   '250': 126.7, '300': 152.0, '350': 177.4, '400': 202.7, '500': 253.4,
+}
+
+/**
+ * Convierte la sección de un conductor a mm² sin importar el sistema de calibres.
+ * Devuelve null si el calibre no es reconocido o la sección no es parseable.
+ */
+export function seccionEnMm2(seccionF: string | null, calibre: string | null): number | null {
+  if (!seccionF) return null
+  const cal = (calibre ?? '').toLowerCase().replace('²', '2').trim()
+  if (cal === 'mm2') {
+    const A = parseFloat(seccionF)
+    return isNaN(A) || A <= 0 ? null : A
+  }
+  if (cal === 'awg') {
+    return AWG_MM2[seccionF.trim()] ?? null
+  }
+  if (cal === 'kcmil') {
+    const k = parseFloat(seccionF)
+    return isNaN(k) || k <= 0 ? null : k * 0.5067
+  }
+  return null
 }
 
 /**

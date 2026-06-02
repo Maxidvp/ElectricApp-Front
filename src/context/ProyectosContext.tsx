@@ -21,7 +21,7 @@ type Cable = {
   calibre_tipo: string
   familia_id: number
   Nfases: number
-  familia?: { material: string | null; temperatura: number | null } | null
+  familia?: { material: string | null; temperatura: number | null; aislamiento: string | null } | null
 }
 
 type Formacion = {

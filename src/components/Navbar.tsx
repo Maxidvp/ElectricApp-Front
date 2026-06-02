@@ -7,7 +7,8 @@ import { useProyectos } from '@/context/ProyectosContext'
 const NAV_LINKS = [
   { href: '/tableros',    label: 'Tableros'    },
   { href: '/cargas',      label: 'Cargas'      },
-  { href: '/caidas',       label: 'Caídas'       },
+  { href: '/caidas',          label: 'Caídas'          },
+  { href: '/cortocircuitos',  label: 'Cortocircuitos'  },
   { href: '/ruteo',       label: 'Ruteo'       },
   { href: '/ocupaciones', label: 'Ocupaciones' },
   { href: '/cables',      label: 'Cables'      },
