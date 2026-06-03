@@ -217,6 +217,33 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
 
           <div className={cx.section}>
             <div className={cx.sectionHdr}>
+              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#888780' }} />
+              <span>Tierra</span>
+            </div>
+            <div className={cx.grid}>
+              <div className={cx.field}>
+                <label className={cx.label}>Familia</label>
+                <select className={cx.input} name="familia_tierra_id" value={form.familia_tierra_id} onChange={handleChange}>
+                  <option value="">— Sin tierra —</option>
+                  {familias.map((f) => (
+                    <option key={f.id} value={f.id}>{f.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div className={cx.field}>
+                <label className={cx.label}>Cable</label>
+                <select className={cx.input} name="cable_tierra_id" value={form.cable_tierra_id} onChange={handleChange} disabled={!form.familia_tierra_id}>
+                  <option value="">— Sin tierra —</option>
+                  {cablesTierra.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className={cx.section}>
+            <div className={cx.sectionHdr}>
               <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#7D6B9E' }} />
               <span>Disposición</span>
             </div>
@@ -240,33 +267,6 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
                     </select>
                   )
                 })()}
-              </div>
-            </div>
-          </div>
-
-          <div className={cx.section}>
-            <div className={cx.sectionHdr}>
-              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#888780' }} />
-              <span>Tierra</span>
-            </div>
-            <div className={cx.grid}>
-              <div className={cx.field}>
-                <label className={cx.label}>Familia</label>
-                <select className={cx.input} name="familia_tierra_id" value={form.familia_tierra_id} onChange={handleChange}>
-                  <option value="">— Sin tierra —</option>
-                  {familias.map((f) => (
-                    <option key={f.id} value={f.id}>{f.nombre}</option>
-                  ))}
-                </select>
-              </div>
-              <div className={cx.field}>
-                <label className={cx.label}>Cable</label>
-                <select className={cx.input} name="cable_tierra_id" value={form.cable_tierra_id} onChange={handleChange} disabled={!form.familia_tierra_id}>
-                  <option value="">— Sin tierra —</option>
-                  {cablesTierra.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nombre}</option>
-                  ))}
-                </select>
               </div>
             </div>
           </div>

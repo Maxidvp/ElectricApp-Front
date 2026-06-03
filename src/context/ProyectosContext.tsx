@@ -44,6 +44,7 @@ type Circuito = {
   orden: number
   circuito: string
   descripcion: string | null
+  tipo: string | null
   tablero_id: number
   formacion_id: number | null
   formacion: Formacion | null
@@ -133,6 +134,7 @@ type ProyectosContextType = {
   actualizarPotencia: (id: number, potencia: number | null) => void
   actualizarTipoTension: (id: number, tipo: string | null) => void
   actualizarFase: (id: number, fase: string | null) => void
+  actualizarTipo: (id: number, tipo: string | null) => void
   actualizarEsAlimentador: (id: number, val: boolean) => void
   agregarAlimentador: (tableroId: number, nombre: string, insertIndex: number) => void
   appendSegmentos: (segs: Segmento[]) => void
@@ -363,7 +365,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
     const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
     const idx = insertIndex ?? sorted.length
-    const temp: Circuito = { id: tempId, orden: idx, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null }
+    const temp: Circuito = { id: tempId, orden: idx, circuito: tag, descripcion: null, tipo: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null }
     sorted.splice(idx, 0, temp)
     setTableros(prev => prev.map(t => t.id === tableroId
       ? { ...t, circuitos: sorted.map((c, i) => ({ ...c, orden: i })) }
@@ -462,6 +464,14 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     else fire(id)
   }
 
+  function actualizarTipo(id: number, tipo: string | null) {
+    const esAlimentador = tipo === 'ALIMENTADOR'
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo, es_alimentador: esAlimentador })))
+    const fire = (rid: number) => circuitosApi.updateTipoCircuito(rid, tipo).catch(console.error)
+    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
+    else fire(id)
+  }
+
   function actualizarEsAlimentador(id: number, val: boolean) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, es_alimentador: val })))
     const fire = (rid: number) => circuitosApi.updateEsAlimentadorCircuito(rid, val).catch(console.error)
@@ -474,7 +484,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!tablero) return
     const tempId = nextTempId()
     const temp: Circuito = {
-      id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tablero_id: tableroId,
+      id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tipo: 'ALIMENTADOR', tablero_id: tableroId,
       formacion_id: null, formacion: null, FP: null, Largo: null,
       tipo_tension: null, fase: null, es_alimentador: true, potencia: null,
     }
@@ -817,7 +827,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarEsAlimentador, agregarAlimentador, actualizarPotencia, actualizarFormacion, agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
+      reordenarCircuitos, actualizarDescripcion, actualizarTipo, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarEsAlimentador, agregarAlimentador, actualizarPotencia, actualizarFormacion, agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
       segmentos, canios, bandejas, conjuntos, activeConjuntoId, setActiveConjuntoId,
       addSegmento, previewSegmento, editSegmento, removeSegmento,
       asignarCircuito, quitarCircuito,

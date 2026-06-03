@@ -12,10 +12,13 @@ import ConfirmModal from '@/components/ConfirmModal'
 import { useProyectos } from '@/context/ProyectosContext'
 import { generarFormacion, calcCorriente } from '@/utils/electricidad'
 
+const TIPOS_CIRCUITO = ['ACU', 'MOTOR', 'VDF', 'IUG', 'TUG', 'IUE', 'TUE', 'APM', 'ALIMENTADOR'] as const
+
 type CircuitoAPI = {
   id: number
   circuito: string
   descripcion: string | null
+  tipo: string | null
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
@@ -55,6 +58,7 @@ type CircuitoRow = {
   id: number
   circuito: string
   descripcion: string | null
+  tipo: string | null
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
@@ -130,7 +134,7 @@ function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow
       const fp = sumPot > 0 ? conFP.reduce((s, x) => s + x.FP! * x.potencia!, 0) / sumPot : null
       const tension_v = tipoTablero === 'tri' ? tensiones.tri : tipoTablero === 'bi' ? tensiones.bi : tensiones.mono
       return {
-        id: c.id, circuito: c.circuito, descripcion: c.descripcion,
+        id: c.id, circuito: c.circuito, descripcion: c.descripcion, tipo: c.tipo,
         FP: fp ?? null, Largo: c.Largo, tipo_tension: tipoTablero, fase: c.fase,
         es_alimentador: true,
         potencia,
@@ -145,7 +149,7 @@ function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow
                     : c.tipo_tension === 'tri'  ? tensiones.tri
                     : null
     return {
-      id: c.id, circuito: c.circuito, descripcion: c.descripcion,
+      id: c.id, circuito: c.circuito, descripcion: c.descripcion, tipo: c.tipo,
       FP: c.FP, Largo: c.Largo, tipo_tension: c.tipo_tension, fase: c.fase,
       es_alimentador: false,
       potencia: c.potencia ?? null,
@@ -156,63 +160,6 @@ function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow
   })
 }
 
-function AlimentadorModal({ circuits, onConfirm, onClose }: {
-  circuits: CircuitoRow[]
-  onConfirm: (nombre: string, insertIndex: number) => void
-  onClose: () => void
-}) {
-  const [nombre,      setNombre]      = useState('Alimentador')
-  const [insertIndex, setInsertIndex] = useState(circuits.length)
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-surface-tonal-a0 border border-surface-tonal-a20 rounded-[12px] p-6 w-[340px] flex flex-col gap-4 shadow-[0_16px_40px_rgba(0,0,0,0.6)]" onClick={e => e.stopPropagation()}>
-        <div className="text-[15px] font-semibold text-font-a0">Agregar alimentador</div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs text-font-a20">Nombre</label>
-          <input
-            autoFocus
-            value={nombre}
-            onChange={e => setNombre(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && onConfirm(nombre, insertIndex)}
-            className="h-[34px] border border-surface-tonal-a30 rounded-[7px] px-[10px] text-[13px] bg-surface-a10 text-font-a0 outline-none focus:border-info-a10 w-full"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs text-font-a20">Insertar</label>
-          <select
-            value={insertIndex}
-            onChange={e => setInsertIndex(Number(e.target.value))}
-            className="h-[34px] border border-surface-tonal-a30 rounded-[7px] px-[10px] text-[13px] bg-surface-a10 text-font-a0 outline-none cursor-pointer w-full"
-          >
-            {circuits.map((c, i) => (
-              <option key={c.id} value={i}>Antes de {c.circuito}</option>
-            ))}
-            <option value={circuits.length}>Al final</option>
-          </select>
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={() => onConfirm(nombre, insertIndex)}
-            disabled={!nombre.trim()}
-            className="flex-1 h-[34px] rounded-[7px] text-[13px] font-medium cursor-pointer border-none bg-amber-500 text-white hover:opacity-85 transition-opacity disabled:opacity-40"
-          >
-            Agregar
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 h-[34px] rounded-[7px] text-[13px] cursor-pointer bg-transparent border border-surface-tonal-a30 text-font-a10 hover:bg-surface-tonal-a20 transition-colors"
-          >
-            Cancelar
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 const columnHelper = createColumnHelper<CircuitoRow>()
 
@@ -220,9 +167,8 @@ export default function TablaCargas() {
   const {
     tableros, getTablero, loading, error,
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-    reordenarCircuitos, actualizarDescripcion, actualizarFormacion,
+    reordenarCircuitos, actualizarDescripcion, actualizarTipo, actualizarFormacion,
     actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia,
-    agregarAlimentador,
   } = useProyectos()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -238,7 +184,7 @@ export default function TablaCargas() {
   const [rowSeleccionada, setRowSeleccionada]           = useState<number | null>(null)
   const [draggingId,      setDraggingId]               = useState<string | null>(null)
   const [confirmEliminar,      setConfirmEliminar]      = useState(false)
-  const [modalAlimentador,     setModalAlimentador]     = useState(false)
+  const [pendingTipo, setPendingTipo] = useState<{ id: number; nuevoTipo: string | null } | null>(null)
   const idEfectivo = tableroId ?? tableros[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
@@ -267,7 +213,7 @@ export default function TablaCargas() {
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
   if (displayData.length !== contextData.length ||
-      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.fase !== contextData[i]?.fase || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion)) {
+      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.tipo !== contextData[i]?.tipo || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.fase !== contextData[i]?.fase || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion)) {
     setDisplayData(contextData)
   }
 
@@ -322,6 +268,32 @@ export default function TablaCargas() {
           onGuardar={(v) => actualizarDescripcion(info.row.original.id, v.trim() || null)}
         />
       )
+    }),
+    columnHelper.accessor('tipo', {
+      header: 'Tipo',
+      size: 110,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: (info) => {
+        const { id, tipo } = info.row.original
+        return (
+          <select
+            value={tipo ?? ''}
+            onChange={e => {
+              const nuevo = e.target.value || null
+              if (nuevo === 'ALIMENTADOR' || tipo === 'ALIMENTADOR')
+                setPendingTipo({ id, nuevoTipo: nuevo })
+              else
+                actualizarTipo(id, nuevo)
+            }}
+            onClick={e => e.stopPropagation()}
+            className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+            style={{ background: 'var(--clr-surface-a10)' }}
+          >
+            <option value="">—</option>
+            {TIPOS_CIRCUITO.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )
+      }
     }),
     columnHelper.display({
       id: 'tension',
@@ -398,6 +370,23 @@ export default function TablaCargas() {
         )
       }
     }),
+    columnHelper.accessor('FP', {
+      header: 'FP',
+      size: 70,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: (info) => {
+        if (info.row.original.es_alimentador) {
+          const v = info.getValue()
+          return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
+        }
+        return (
+          <CeldaEditable
+            valor={info.getValue() !== null ? String(info.getValue()) : ''}
+            onGuardar={(v) => actualizarFP(info.row.original.id, v.trim() ? Number(v) : null)}
+          />
+        )
+      }
+    }),
     columnHelper.accessor('corriente', {
       header: 'Corriente (A)',
       size: 110,
@@ -435,23 +424,6 @@ export default function TablaCargas() {
         )
       }
     }),
-    columnHelper.accessor('FP', {
-      header: 'FP',
-      size: 70,
-      meta: { colType: 'editable' } as ColMeta,
-      cell: (info) => {
-        if (info.row.original.es_alimentador) {
-          const v = info.getValue()
-          return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
-        }
-        return (
-          <CeldaEditable
-            valor={info.getValue() !== null ? String(info.getValue()) : ''}
-            onGuardar={(v) => actualizarFP(info.row.original.id, v.trim() ? Number(v) : null)}
-          />
-        )
-      }
-    }),
     columnHelper.accessor('Largo', {
       header: 'Largo (m)',
       size: 90,
@@ -484,11 +456,6 @@ export default function TablaCargas() {
     },
   })
 
-  const handleAgregarAlimentador = (nombre: string, insertIndex: number) => {
-    if (!idEfectivo) return
-    agregarAlimentador(idEfectivo, nombre, insertIndex)
-    setModalAlimentador(false)
-  }
 
   if (loading && !tablero) return <p>Cargando...</p>
   if (error) return <p>Error: {error}</p>
@@ -535,14 +502,6 @@ export default function TablaCargas() {
               className="flex items-center px-3 py-[5px] border border-red-500 rounded-md bg-transparent text-red-400 text-[13px] cursor-pointer transition-[background,color] hover:bg-red-500/10 disabled:opacity-40"
             >
               Eliminar
-            </button>
-            <button
-              onClick={() => setModalAlimentador(true)}
-              disabled={!idEfectivo}
-              title="Agregar circuito alimentador"
-              className="flex items-center px-3 py-[5px] border border-amber-500 rounded-md bg-transparent text-amber-400 text-[13px] cursor-pointer transition-[background,color] hover:bg-amber-500/10 disabled:opacity-40"
-            >
-              Alimentador
             </button>
           </div>
           <div className="search ml-auto">
@@ -646,6 +605,22 @@ export default function TablaCargas() {
         />
       )}
 
+      {pendingTipo && (
+        <ConfirmModal
+          mensaje={
+            pendingTipo.nuevoTipo === 'ALIMENTADOR'
+              ? 'Convertir este circuito en ALIMENTADOR cambiará su comportamiento de cálculo. Se pueden perder datos ingresados manualmente. ¿Continuar?'
+              : 'Quitar el tipo ALIMENTADOR puede afectar los cálculos del tablero. Se pueden perder datos. ¿Continuar?'
+          }
+          labelConfirmar="Continuar"
+          onConfirmar={() => {
+            actualizarTipo(pendingTipo.id, pendingTipo.nuevoTipo)
+            setPendingTipo(null)
+          }}
+          onCancelar={() => setPendingTipo(null)}
+        />
+      )}
+
       {confirmEliminar && (
         <ConfirmModal
           mensaje="¿Eliminar este circuito?"
@@ -655,13 +630,6 @@ export default function TablaCargas() {
             setConfirmEliminar(false)
           }}
           onCancelar={() => setConfirmEliminar(false)}
-        />
-      )}
-      {modalAlimentador && (
-        <AlimentadorModal
-          circuits={displayData}
-          onConfirm={handleAgregarAlimentador}
-          onClose={() => setModalAlimentador(false)}
         />
       )}
     </div>

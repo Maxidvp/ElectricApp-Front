@@ -4,9 +4,10 @@ type Props = {
   mensaje: string
   onConfirmar: () => void
   onCancelar: () => void
+  labelConfirmar?: string
 }
 
-export default function ConfirmModal({ mensaje, onConfirmar, onCancelar }: Props) {
+export default function ConfirmModal({ mensaje, onConfirmar, onCancelar, labelConfirmar = 'Eliminar' }: Props) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200]" onClick={onCancelar}>
       <div
@@ -25,7 +26,7 @@ export default function ConfirmModal({ mensaje, onConfirmar, onCancelar }: Props
             onClick={onConfirmar}
             className="h-[32px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-danger-a0 bg-danger-a0 text-white hover:opacity-90"
           >
-            Eliminar
+            {labelConfirmar}
           </button>
         </div>
       </div>

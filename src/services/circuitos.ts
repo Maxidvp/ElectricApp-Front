@@ -141,6 +141,16 @@ export async function duplicarCircuito(circuitoId: number) {
   return res.json()
 }
 
+export async function updateTipoCircuito(id: number, tipo: string | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/tipo`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tipo }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar tipo')
+  return res.json()
+}
+
 export type FormacionPatch = {
   cable_id: number
   cond_por_fase: number

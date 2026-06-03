@@ -60,7 +60,7 @@ export default function Home() {
           return (
             <div
               key={p.id}
-              onClick={() => { if (!isEditing) setProyectoActivo(isActive ? null : p) }}
+              onClick={() => { if (!isEditing && !isActive) setProyectoActivo(p) }}
               className={`relative flex flex-col gap-3 rounded-[10px] border px-5 py-4 transition-[border-color,background] duration-150 select-none
                 ${isEditing ? 'cursor-default' : 'cursor-pointer'}
                 ${isActive
@@ -68,7 +68,7 @@ export default function Home() {
                   : 'bg-surface-tonal-a0 border-surface-tonal-a20 hover:bg-surface-tonal-a10 hover:border-surface-tonal-a30'
                 }`}
             >
-              {isActive && (
+              {isActive && !isEditing && (
                 <span className="absolute top-3 right-3 text-[10px] font-semibold text-primary-a30 bg-primary-a0/15 px-2 py-0.5 rounded-full">
                   activo
                 </span>
