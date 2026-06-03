@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { getFamiliasCables } from '@/services/familiasCables'
 import { getCablesPorFamilia } from '@/services/cables'
 
@@ -12,8 +12,8 @@ type CablesContextType = {
 }
 
 // ── Caché singleton a nivel de módulo ────────────────────────────
-const _cache:   Record<number, CableItem[]>           = {}
-const _pending: Record<number, Promise<CableItem[]>>  = {}
+const _cache:   Partial<Record<number, CableItem[]>>           = {}
+const _pending: Partial<Record<number, Promise<CableItem[]>>>  = {}
 
 function _fetchFamilia(familiaId: number): Promise<CableItem[]> {
   if (_cache[familiaId])   return Promise.resolve(_cache[familiaId])
