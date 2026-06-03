@@ -70,6 +70,16 @@ export async function updateDescripcionCircuito(id: number, descripcion: string 
   return res.json()
 }
 
+export async function updateEsAlimentadorCircuito(id: number, es_alimentador: boolean) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/es_alimentador`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ es_alimentador }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar es_alimentador')
+  return res.json()
+}
+
 export async function updateFaseCircuito(id: number, fase: string | null) {
   const res = await fetch(`${API_URL}/circuitos/${id}/fase`, {
     method: 'PATCH',

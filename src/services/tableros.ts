@@ -32,6 +32,12 @@ export async function updateTablero(id: number, data: any) {
   return res.json()
 }
 
+export async function duplicarTablero(id: number) {
+  const res = await fetch(`${API_URL}/tableros/duplicar/${id}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Error al duplicar el tablero')
+  return res.json()
+}
+
 export async function deleteTablero(id: number) {
   const res = await fetch(`${API_URL}/tableros/${id}`, {
     method: 'DELETE',

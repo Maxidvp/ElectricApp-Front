@@ -11,27 +11,38 @@ type CablesContextType = {
   getCablesDeFamilia: (familiaId: number) => Promise<CableItem[]>
 }
 
+// ── Caché singleton a nivel de módulo ────────────────────────────
+const _cache:   Record<number, CableItem[]>           = {}
+const _pending: Record<number, Promise<CableItem[]>>  = {}
+
+function _fetchFamilia(familiaId: number): Promise<CableItem[]> {
+  if (_cache[familiaId])   return Promise.resolve(_cache[familiaId])
+  if (_pending[familiaId]) return _pending[familiaId]
+  const promise = getCablesPorFamilia(familiaId).then(cables => {
+    _cache[familiaId] = cables
+    delete _pending[familiaId]
+    return cables
+  })
+  _pending[familiaId] = promise
+  return promise
+}
+
+export function prefetchCablesFamilias(ids: number[]) {
+  ids.forEach(id => _fetchFamilia(id))
+}
+
+// ── Contexto ──────────────────────────────────────────────────────
 const CablesContext = createContext<CablesContextType | null>(null)
 
 export function CablesProvider({ children }: { children: React.ReactNode }) {
   const [familias, setFamilias] = useState<FamiliaCable[]>([])
-  const cache    = useRef<Record<number, CableItem[]>>({})
-  const pending  = useRef<Record<number, Promise<CableItem[]>>>({})
 
   useEffect(() => {
     getFamiliasCables().then(setFamilias)
   }, [])
 
   const getCablesDeFamilia = useCallback((familiaId: number): Promise<CableItem[]> => {
-    if (cache.current[familiaId]) return Promise.resolve(cache.current[familiaId])
-    if (pending.current[familiaId]) return pending.current[familiaId]
-    const promise = getCablesPorFamilia(familiaId).then(cables => {
-      cache.current[familiaId] = cables
-      delete pending.current[familiaId]
-      return cables
-    })
-    pending.current[familiaId] = promise
-    return promise
+    return _fetchFamilia(familiaId)
   }, [])
 
   return (

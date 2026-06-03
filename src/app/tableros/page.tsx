@@ -5,7 +5,7 @@ import { useProyectos } from '@/context/ProyectosContext'
 // ── Tipos ─────────────────────────────────────────────────────────
 
 type Form = {
-  tag: string; nombre: string; ubicacion: string; tipo: string; alimentado_por: string
+  tag: string; nombre: string; ubicacion: string; tipo: string
   tension_mono: string; tension_bi: string; tension_tri: string; frecuencia: string
   corriente_nom: string; corriente_cc: string
   potencia_inst: string; potencia_dem: string
@@ -13,7 +13,7 @@ type Form = {
 }
 
 const EMPTY: Form = {
-  tag: '', nombre: '', ubicacion: '', tipo: '', alimentado_por: '',
+  tag: '', nombre: '', ubicacion: '', tipo: '',
   tension_mono: '', tension_bi: '', tension_tri: '', frecuencia: '',
   corriente_nom: '', corriente_cc: '',
   potencia_inst: '', potencia_dem: '',
@@ -27,7 +27,6 @@ function toForm(t: any): Form {
     nombre:           t.nombre           ?? '',
     ubicacion:        t.ubicacion        ?? '',
     tipo:             t.tipo             ?? '',
-    alimentado_por:   t.alimentado_por   ?? '',
     tension_mono:     n(t.tension_mono),
     tension_bi:       n(t.tension_bi),
     tension_tri:      n(t.tension_tri),
@@ -51,7 +50,6 @@ function fromForm(form: Form) {
     nombre:           str(form.nombre),
     ubicacion:        str(form.ubicacion),
     tipo:             str(form.tipo),
-    alimentado_por:   str(form.alimentado_por),
     tension_mono:     num(form.tension_mono),
     tension_bi:       num(form.tension_bi),
     tension_tri:      num(form.tension_tri),
@@ -105,30 +103,32 @@ function Campo({ label, name, value, onChange, placeholder, required, type = 'te
 // ── Página ────────────────────────────────────────────────────────
 
 export default function TablaTableros() {
-  const { tableros, getTablero, loading, error, actualizarTablero, eliminarTablero } = useProyectos()
+  const { tableros, getTablero, loading, error, agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero } = useProyectos()
 
   const [tableroId, setTableroId] = useState<number | null>(() => {
     if (typeof document === 'undefined') return null
     const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
     return m ? Number(m[1]) : null
   })
-  const [form,       setForm]       = useState<Form>(EMPTY)
-  const [dirty,      setDirty]      = useState(false)
-  const [guardando,  setGuardando]  = useState(false)
-  const [guardado,   setGuardado]   = useState(false)
-  const [confirm,    setConfirm]    = useState(false)
+  const [form,        setForm]       = useState<Form>(EMPTY)
+  const [dirty,       setDirty]      = useState(false)
+  const [guardando,   setGuardando]  = useState(false)
+  const [guardado,    setGuardado]   = useState(false)
+  const [confirm,     setConfirm]    = useState(false)
+  const [creandoNuevo, setCreandoNuevo] = useState(false)
 
   const idEfectivo = tableroId ?? tableros[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
-  // Sincronizar form con el tablero seleccionado
   useEffect(() => {
-    if (tablero) { setForm(toForm(tablero)); setDirty(false) }
-  }, [tablero?.id])
+    if (creandoNuevo) { setForm(EMPTY); setDirty(false) }
+    else if (tablero) { setForm(toForm(tablero)); setDirty(false) }
+  }, [tablero?.id, creandoNuevo])
 
   const cambiarTablero = (id: number) => {
     document.cookie = `last_tablero_id=${id};path=/;max-age=31536000`
     setTableroId(id)
+    setCreandoNuevo(false)
   }
 
   const handleChange = (field: keyof Form, value: string) => {
@@ -138,13 +138,30 @@ export default function TablaTableros() {
   }
 
   const handleGuardar = async () => {
-    if (!tablero || !form.tag.trim()) return
+    if (!form.tag.trim()) return
     setGuardando(true)
     try {
-      await actualizarTablero(tablero.id, fromForm(form) as any)
-      setDirty(false)
-      setGuardado(true)
-      setTimeout(() => setGuardado(false), 2000)
+      if (creandoNuevo) {
+        const nuevo = await agregarTablero(fromForm(form))
+        cambiarTablero(nuevo.id)
+      } else {
+        if (!tablero) return
+        await actualizarTablero(tablero.id, fromForm(form) as any)
+        setDirty(false)
+        setGuardado(true)
+        setTimeout(() => setGuardado(false), 2000)
+      }
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const handleDuplicar = async () => {
+    if (!tablero) return
+    setGuardando(true)
+    try {
+      const nuevo = await duplicarTablero(tablero.id)
+      cambiarTablero(nuevo.id)
     } finally {
       setGuardando(false)
     }
@@ -162,7 +179,7 @@ export default function TablaTableros() {
             key={t.id}
             onClick={() => cambiarTablero(t.id)}
             className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
-              idEfectivo === t.id
+              idEfectivo === t.id && !creandoNuevo
                 ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
                 : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'
             }`}
@@ -170,9 +187,19 @@ export default function TablaTableros() {
             {t.nombre || t.tag}
           </button>
         ))}
+        <button
+          onClick={() => setCreandoNuevo(true)}
+          className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
+            creandoNuevo
+              ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
+              : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'
+          }`}
+        >
+          + Nuevo
+        </button>
       </div>
 
-      {!tablero ? (
+      {!tablero && !creandoNuevo ? (
         <p className="p-6 text-surface-tonal-a40 text-sm">Sin tablero seleccionado.</p>
       ) : (
         <div className="max-w-3xl mx-auto p-5 flex flex-col gap-4">
@@ -188,9 +215,6 @@ export default function TablaTableros() {
               <Campo label="Nombre" name="nombre" value={form.nombre} onChange={v => handleChange('nombre', v)} placeholder="ej. Tablero general" />
               <Campo label="Ubicación" name="ubicacion" value={form.ubicacion} onChange={v => handleChange('ubicacion', v)} placeholder="ej. Sala eléctrica piso 2" />
               <Campo label="Tipo" name="tipo" value={form.tipo} onChange={v => handleChange('tipo', v)} placeholder="ej. Principal, Seccional" />
-              <div className="col-span-2">
-                <Campo label="Alimentado por" name="alimentado_por" value={form.alimentado_por} onChange={v => handleChange('alimentado_por', v)} placeholder="ej. TG-01" />
-              </div>
             </div>
           </div>
 
@@ -246,13 +270,20 @@ export default function TablaTableros() {
             </div>
           </div>
 
-          {/* Botón guardar / eliminar */}
+          {/* Botón guardar / duplicar / eliminar */}
           <div className="flex items-center justify-between pt-1">
-            {confirm ? (
+            {creandoNuevo ? (
+              <button
+                onClick={() => setCreandoNuevo(false)}
+                className="h-[34px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-surface-tonal-a30 bg-transparent text-font-a10 hover:bg-surface-tonal-a20 transition-colors"
+              >
+                Cancelar
+              </button>
+            ) : confirm ? (
               <div className="flex items-center gap-2">
                 <span className="text-[13px] text-surface-tonal-a40">¿Eliminar tablero?</span>
                 <button
-                  onClick={async () => { await eliminarTablero(tablero.id); setConfirm(false) }}
+                  onClick={async () => { const id = tablero?.id; if (id) { await eliminarTablero(id); setConfirm(false) } }}
                   className="h-[34px] px-4 rounded-[7px] text-[13px] font-medium cursor-pointer border border-danger-a10 bg-danger-a0 text-white transition-colors hover:opacity-85"
                 >
                   Confirmar
@@ -265,22 +296,31 @@ export default function TablaTableros() {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => setConfirm(true)}
-                className="h-[34px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-red-500 bg-transparent text-red-400 transition-[background,color] hover:bg-red-500/10"
-              >
-                Eliminar tablero
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDuplicar}
+                  disabled={guardando}
+                  className="h-[34px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-blue-500 bg-transparent text-blue-400 transition-[background,color] hover:bg-blue-500/10 disabled:opacity-40"
+                >
+                  Duplicar tablero
+                </button>
+                <button
+                  onClick={() => setConfirm(true)}
+                  className="h-[34px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-red-500 bg-transparent text-red-400 transition-[background,color] hover:bg-red-500/10"
+                >
+                  Eliminar tablero
+                </button>
+              </div>
             )}
 
             <div className="flex items-center gap-3">
               {guardado && <span className="text-[13px] text-[#6aab6a]">Guardado</span>}
               <button
                 onClick={handleGuardar}
-                disabled={!dirty || guardando || !form.tag.trim()}
+                disabled={(!dirty && !creandoNuevo) || guardando || !form.tag.trim()}
                 className="h-[34px] px-5 rounded-[7px] text-[13px] font-medium cursor-pointer border border-info-a0 bg-info-a0 text-font-a0 transition-colors hover:bg-info-a10 hover:border-info-a10 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {guardando ? 'Guardando...' : 'Guardar cambios'}
+                {guardando ? 'Guardando...' : creandoNuevo ? 'Crear tablero' : 'Guardar cambios'}
               </button>
             </div>
           </div>

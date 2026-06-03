@@ -8,7 +8,6 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import FormacionModal from '@/components/FormacionModal'
-import TableroModal from '@/components/TableroModal'
 import ConfirmModal from '@/components/ConfirmModal'
 import { useProyectos } from '@/context/ProyectosContext'
 import { generarFormacion, calcCorriente } from '@/utils/electricidad'
@@ -21,6 +20,7 @@ type CircuitoAPI = {
   Largo: number | null
   tipo_tension: string | null
   fase: string | null
+  es_alimentador: boolean
   potencia: number | null
   formacion: {
     nombre: string
@@ -59,6 +59,7 @@ type CircuitoRow = {
   Largo: number | null
   tipo_tension: string | null
   fase: string | null
+  es_alimentador: boolean
   potencia: number | null
   corriente: number | null
   formacion: string
@@ -101,35 +102,116 @@ function CeldaEditable({ valor, onGuardar }: { valor: string; onGuardar: (v: str
 
 type Tensiones = { mono: number | null; bi: number | null; tri: number | null }
 
+function formacionData(c: CircuitoAPI): FormacionData | null {
+  if (!c.formacion) return null
+  return {
+    familia_id:        String(c.formacion.cable.familia_id),
+    cable_fase_id:     String(c.formacion.cable_id),
+    cond_por_fase:     String(c.formacion.cond_por_fase),
+    Nfases:            String(c.formacion.Nfases),
+    cable_neutro_id:   c.formacion.cable_neutro_id ? String(c.formacion.cable_neutro_id) : '',
+    Nneutro:           String(c.formacion.Nneutro),
+    familia_tierra_id: c.formacion.cable_tierra_id ? String(c.formacion.cable.familia_id) : '',
+    cable_tierra_id:   c.formacion.cable_tierra_id ? String(c.formacion.cable_tierra_id) : '',
+    disposicion:       c.formacion.disposicion ?? '',
+  }
+}
+
 function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow[] {
-  return data.map((c) => {
+  // Tipo predominante del tablero para alimentadores: tri > bi > mono
+  const tipoTablero = tensiones.tri != null ? 'tri' : tensiones.bi != null ? 'bi' : tensiones.mono != null ? 'mono' : null
+
+  return data.map((c, idx) => {
+    if (c.es_alimentador) {
+      const above = data.slice(0, idx).filter(x => !x.es_alimentador)
+      const potencia = above.reduce((s, x) => s + (x.potencia ?? 0), 0) || null
+      const conFP = above.filter(x => x.FP != null && (x.potencia ?? 0) > 0)
+      const sumPot = conFP.reduce((s, x) => s + x.potencia!, 0)
+      const fp = sumPot > 0 ? conFP.reduce((s, x) => s + x.FP! * x.potencia!, 0) / sumPot : null
+      const tension_v = tipoTablero === 'tri' ? tensiones.tri : tipoTablero === 'bi' ? tensiones.bi : tensiones.mono
+      return {
+        id: c.id, circuito: c.circuito, descripcion: c.descripcion,
+        FP: fp ?? null, Largo: c.Largo, tipo_tension: tipoTablero, fase: c.fase,
+        es_alimentador: true,
+        potencia,
+        corriente: calcCorriente(potencia, tipoTablero, tension_v, fp ?? null),
+        formacion: c.formacion ? generarFormacion(c.formacion) : '—',
+        formacionData: formacionData(c),
+      }
+    }
+
     const tension_v = c.tipo_tension === 'mono' ? tensiones.mono
                     : c.tipo_tension === 'bi'   ? tensiones.bi
                     : c.tipo_tension === 'tri'  ? tensiones.tri
                     : null
     return {
-    id:        c.id,
-    circuito:  c.circuito,
-    descripcion: c.descripcion,
-    FP:        c.FP,
-    Largo:     c.Largo,
-    tipo_tension: c.tipo_tension,
-    fase:      c.fase,
-    potencia:  c.potencia ?? null,
-    corriente: calcCorriente(c.potencia ?? null, c.tipo_tension, tension_v, c.FP),
-    formacion: c.formacion ? generarFormacion(c.formacion) : '—',
-    formacionData: c.formacion ? {
-      familia_id:        String(c.formacion.cable.familia_id),
-      cable_fase_id:     String(c.formacion.cable_id),
-      cond_por_fase:     String(c.formacion.cond_por_fase),
-      Nfases:            String(c.formacion.Nfases),
-      cable_neutro_id:   c.formacion.cable_neutro_id ? String(c.formacion.cable_neutro_id) : '',
-      Nneutro:           String(c.formacion.Nneutro),
-      familia_tierra_id: c.formacion.cable_tierra_id ? String(c.formacion.cable.familia_id) : '',
-      cable_tierra_id:   c.formacion.cable_tierra_id ? String(c.formacion.cable_tierra_id) : '',
-      disposicion:       c.formacion.disposicion ?? '',
-    } : null,
-  }})
+      id: c.id, circuito: c.circuito, descripcion: c.descripcion,
+      FP: c.FP, Largo: c.Largo, tipo_tension: c.tipo_tension, fase: c.fase,
+      es_alimentador: false,
+      potencia: c.potencia ?? null,
+      corriente: calcCorriente(c.potencia ?? null, c.tipo_tension, tension_v, c.FP),
+      formacion: c.formacion ? generarFormacion(c.formacion) : '—',
+      formacionData: formacionData(c),
+    }
+  })
+}
+
+function AlimentadorModal({ circuits, onConfirm, onClose }: {
+  circuits: CircuitoRow[]
+  onConfirm: (nombre: string, insertIndex: number) => void
+  onClose: () => void
+}) {
+  const [nombre,      setNombre]      = useState('Alimentador')
+  const [insertIndex, setInsertIndex] = useState(circuits.length)
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-surface-tonal-a0 border border-surface-tonal-a20 rounded-[12px] p-6 w-[340px] flex flex-col gap-4 shadow-[0_16px_40px_rgba(0,0,0,0.6)]" onClick={e => e.stopPropagation()}>
+        <div className="text-[15px] font-semibold text-font-a0">Agregar alimentador</div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-font-a20">Nombre</label>
+          <input
+            autoFocus
+            value={nombre}
+            onChange={e => setNombre(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && onConfirm(nombre, insertIndex)}
+            className="h-[34px] border border-surface-tonal-a30 rounded-[7px] px-[10px] text-[13px] bg-surface-a10 text-font-a0 outline-none focus:border-info-a10 w-full"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-font-a20">Insertar</label>
+          <select
+            value={insertIndex}
+            onChange={e => setInsertIndex(Number(e.target.value))}
+            className="h-[34px] border border-surface-tonal-a30 rounded-[7px] px-[10px] text-[13px] bg-surface-a10 text-font-a0 outline-none cursor-pointer w-full"
+          >
+            {circuits.map((c, i) => (
+              <option key={c.id} value={i}>Antes de {c.circuito}</option>
+            ))}
+            <option value={circuits.length}>Al final</option>
+          </select>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => onConfirm(nombre, insertIndex)}
+            disabled={!nombre.trim()}
+            className="flex-1 h-[34px] rounded-[7px] text-[13px] font-medium cursor-pointer border-none bg-amber-500 text-white hover:opacity-85 transition-opacity disabled:opacity-40"
+          >
+            Agregar
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 h-[34px] rounded-[7px] text-[13px] cursor-pointer bg-transparent border border-surface-tonal-a30 text-font-a10 hover:bg-surface-tonal-a20 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 const columnHelper = createColumnHelper<CircuitoRow>()
@@ -138,8 +220,9 @@ export default function TablaCargas() {
   const {
     tableros, getTablero, loading, error,
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-    reordenarCircuitos, actualizarDescripcion, actualizarFormacion, agregarTablero,
+    reordenarCircuitos, actualizarDescripcion, actualizarFormacion,
     actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia,
+    agregarAlimentador,
   } = useProyectos()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -149,13 +232,13 @@ export default function TablaCargas() {
     const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
     return m ? Number(m[1]) : null
   })
-  const [modalTableroAbierto, setModalTableroAbierto]   = useState(false)
   const [modalAbierto, setModalAbierto]                 = useState(false)
   const [circuitoEditando, setCircuitoEditando]         = useState<number | null>(null)
   const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
   const [rowSeleccionada, setRowSeleccionada]           = useState<number | null>(null)
   const [draggingId,      setDraggingId]               = useState<string | null>(null)
-  const [confirmEliminar, setConfirmEliminar]          = useState(false)
+  const [confirmEliminar,      setConfirmEliminar]      = useState(false)
+  const [modalAlimentador,     setModalAlimentador]     = useState(false)
   const idEfectivo = tableroId ?? tableros[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
@@ -174,11 +257,6 @@ export default function TablaCargas() {
     setRowSeleccionada(null)
   }
 
-  const handleCrearTablero = async (data: any) => {
-    const nuevo = await agregarTablero(data)
-    cambiarTablero(nuevo.id)
-    setModalTableroAbierto(false)
-  }
 
   const contextData = useMemo(() => {
     if (!tablero) return []
@@ -207,7 +285,9 @@ export default function TablaCargas() {
 
   const handleAgregar = () => {
     if (!idEfectivo) return
-    agregarCircuito(idEfectivo)
+    // Insertar antes del último alimentador para que entre en su cálculo
+    const lastFeederIdx = displayData.reduceRight((found, r, i) => found === -1 && r.es_alimentador ? i : found, -1)
+    agregarCircuito(idEfectivo, lastFeederIdx >= 0 ? lastFeederIdx : undefined)
   }
 
   const handleDuplicar = () => {
@@ -249,19 +329,19 @@ export default function TablaCargas() {
       size: 110,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, tipo_tension } = info.row.original
-        if (tensionesDisponibles.length === 0) {
-          return <span className="text-surface-tonal-a40 text-xs">—</span>
+        const { id, tipo_tension, es_alimentador } = info.row.original
+        if (es_alimentador) {
+          const v = tensionesDisponibles.find(t => t.tipo === tipo_tension)?.value
+          return <span className="text-xs text-font-a20 block text-right pr-1">{v ?? '—'}</span>
         }
-        if (tensionesDisponibles.length === 1) {
-          return <span className="text-xs">{tensionesDisponibles[0].value}</span>
-        }
+        if (tensionesDisponibles.length === 0) return <span className="text-surface-tonal-a40 text-xs">—</span>
+        if (tensionesDisponibles.length === 1) return <span className="text-xs">{tensionesDisponibles[0].value}</span>
         return (
           <select
             value={tipo_tension ?? ''}
             onChange={e => actualizarTipoTension(id, e.target.value || null)}
             onClick={e => e.stopPropagation()}
-            className="w-full h-7 px-1 text-xs rounded-sm bg-surface-a10 text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+            className="w-full h-7 px-1 text-xs rounded-sm bg-transparent text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
           >
             <option value="">—</option>
             {tensionesDisponibles.map(t => (
@@ -277,7 +357,8 @@ export default function TablaCargas() {
       size: 80,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, tipo_tension, fase } = info.row.original
+        const { id, tipo_tension, fase, es_alimentador } = info.row.original
+        if (es_alimentador) return <span className="text-xs text-font-a20 block text-center">—</span>
         if (!tipo_tension) return <span className="text-surface-tonal-a40 text-xs">—</span>
         if (tipo_tension === 'tri') return <span className="text-xs text-font-a20">RST</span>
         const opciones = tipo_tension === 'mono' ? ['R', 'S', 'T'] : ['RS', 'ST', 'TR']
@@ -286,7 +367,7 @@ export default function TablaCargas() {
             value={fase ?? ''}
             onChange={e => actualizarFase(id, e.target.value || null)}
             onClick={e => e.stopPropagation()}
-            className="w-full h-7 px-1 text-xs rounded-sm bg-surface-a10 text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+            className="w-full h-7 px-1 text-xs rounded-sm bg-transparent text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
           >
             <option value="">—</option>
             {opciones.map(f => <option key={f} value={f}>{f}</option>)}
@@ -298,18 +379,24 @@ export default function TablaCargas() {
       header: 'Potencia (kW)',
       size: 110,
       meta: { colType: 'editable' } as ColMeta,
-      cell: (info) => (
-        <CeldaEditable
-          valor={info.getValue() !== null ? String(info.getValue()) : ''}
-          onGuardar={(v) => {
-            const s = v.trim()
-            if (!s) return actualizarPotencia(info.row.original.id, null)
-            const isHp = /hp$/i.test(s)
-            const num = Number(s.replace(/hp$/i, '').trim())
-            actualizarPotencia(info.row.original.id, isNaN(num) ? null : isHp ? num * 0.7457 : num)
-          }}
-        />
-      )
+      cell: (info) => {
+        if (info.row.original.es_alimentador) {
+          const v = info.getValue()
+          return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
+        }
+        return (
+          <CeldaEditable
+            valor={info.getValue() !== null ? String(info.getValue()) : ''}
+            onGuardar={(v) => {
+              const s = v.trim()
+              if (!s) return actualizarPotencia(info.row.original.id, null)
+              const isHp = /hp$/i.test(s)
+              const num = Number(s.replace(/hp$/i, '').trim())
+              actualizarPotencia(info.row.original.id, isNaN(num) ? null : isHp ? num * 0.7457 : num)
+            }}
+          />
+        )
+      }
     }),
     columnHelper.accessor('corriente', {
       header: 'Corriente (A)',
@@ -352,12 +439,18 @@ export default function TablaCargas() {
       header: 'FP',
       size: 70,
       meta: { colType: 'editable' } as ColMeta,
-      cell: (info) => (
-        <CeldaEditable
-          valor={info.getValue() !== null ? String(info.getValue()) : ''}
-          onGuardar={(v) => actualizarFP(info.row.original.id, v.trim() ? Number(v) : null)}
-        />
-      )
+      cell: (info) => {
+        if (info.row.original.es_alimentador) {
+          const v = info.getValue()
+          return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
+        }
+        return (
+          <CeldaEditable
+            valor={info.getValue() !== null ? String(info.getValue()) : ''}
+            onGuardar={(v) => actualizarFP(info.row.original.id, v.trim() ? Number(v) : null)}
+          />
+        )
+      }
     }),
     columnHelper.accessor('Largo', {
       header: 'Largo (m)',
@@ -391,6 +484,12 @@ export default function TablaCargas() {
     },
   })
 
+  const handleAgregarAlimentador = (nombre: string, insertIndex: number) => {
+    if (!idEfectivo) return
+    agregarAlimentador(idEfectivo, nombre, insertIndex)
+    setModalAlimentador(false)
+  }
+
   if (loading && !tablero) return <p>Cargando...</p>
   if (error) return <p>Error: {error}</p>
 
@@ -410,11 +509,6 @@ export default function TablaCargas() {
             {t.nombre || t.tag}
           </button>
         ))}
-        <button
-          onClick={() => setModalTableroAbierto(true)}
-          title="Agregar tablero"
-          className="px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85"
-        >+</button>
       </div>
       <div className="datatable-container">
         <div className="header-tools sticky top-12 z-50 bg-surface-tonal-a10">
@@ -441,6 +535,14 @@ export default function TablaCargas() {
               className="flex items-center px-3 py-[5px] border border-red-500 rounded-md bg-transparent text-red-400 text-[13px] cursor-pointer transition-[background,color] hover:bg-red-500/10 disabled:opacity-40"
             >
               Eliminar
+            </button>
+            <button
+              onClick={() => setModalAlimentador(true)}
+              disabled={!idEfectivo}
+              title="Agregar circuito alimentador"
+              className="flex items-center px-3 py-[5px] border border-amber-500 rounded-md bg-transparent text-amber-400 text-[13px] cursor-pointer transition-[background,color] hover:bg-amber-500/10 disabled:opacity-40"
+            >
+              Alimentador
             </button>
           </div>
           <div className="search ml-auto">
@@ -500,12 +602,16 @@ export default function TablaCargas() {
                     >
                       {row.getVisibleCells().map((cell) => {
                         const colType = (cell.column.columnDef.meta as ColMeta | undefined)?.colType
+                        const isFeeder = row.original.es_alimentador
                         return (
                           <td key={cell.id} style={{
                             width: cell.column.getSize(),
-                            background: colType === 'editable' ? 'color-mix(in srgb, #4A8FD4 4%, transparent)'
-                                      : colType === 'result'   ? 'color-mix(in srgb, #6aab6a 6%, transparent)'
-                                      : undefined,
+                            background: isFeeder
+                              ? 'color-mix(in srgb, #E0A040 10%, transparent)'
+                              : colType === 'editable' ? 'color-mix(in srgb, #4A8FD4 4%, transparent)'
+                              : colType === 'result'   ? 'color-mix(in srgb, #6aab6a 6%, transparent)'
+                              : undefined,
+                            borderTop: isFeeder ? '1px solid color-mix(in srgb, #E0A040 40%, transparent)' : undefined,
                           }}>
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </td>
@@ -551,10 +657,11 @@ export default function TablaCargas() {
           onCancelar={() => setConfirmEliminar(false)}
         />
       )}
-      {modalTableroAbierto && (
-        <TableroModal
-          onGuardar={handleCrearTablero}
-          onCerrar={() => setModalTableroAbierto(false)}
+      {modalAlimentador && (
+        <AlimentadorModal
+          circuits={displayData}
+          onConfirm={handleAgregarAlimentador}
+          onClose={() => setModalAlimentador(false)}
         />
       )}
     </div>

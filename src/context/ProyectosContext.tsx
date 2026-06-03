@@ -7,6 +7,7 @@ import * as proyectosApi from '@/services/proyectos'
 import type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura } from '@/services/ruteo'
 import type { FormacionPatch } from '@/services/circuitos'
 import type { Proyecto as ProyectoMeta } from '@/services/proyectos'
+import { prefetchCablesFamilias } from '@/context/CablesContext'
 
 export type { ProyectoMeta }
 export type { Pared, Arquitectura }
@@ -49,6 +50,7 @@ type Circuito = {
   Largo: number | null
   tipo_tension: string | null
   fase: string | null
+  es_alimentador: boolean
   potencia: number | null
 }
 
@@ -70,7 +72,6 @@ type Tablero = {
   modelo: string | null
   norma: string | null
   grado_proteccion: string | null
-  alimentado_por: string | null
   circuitos: Circuito[]
 }
 
@@ -121,7 +122,7 @@ type ProyectosContextType = {
   getTablero: (id: number) => Tablero | undefined
   getCircuito: (id: number) => Circuito | undefined
   renombrarCircuito: (id: number, nombre: string) => void
-  agregarCircuito: (tableroId: number) => void
+  agregarCircuito: (tableroId: number, insertIndex?: number) => void
   duplicarCircuito: (circuitoId: number) => void
   eliminarCircuito: (id: number) => void
   reordenarCircuitos: (tableroId: number, orderedIds: number[]) => void
@@ -131,10 +132,13 @@ type ProyectosContextType = {
   actualizarPotencia: (id: number, potencia: number | null) => void
   actualizarTipoTension: (id: number, tipo: string | null) => void
   actualizarFase: (id: number, fase: string | null) => void
+  actualizarEsAlimentador: (id: number, val: boolean) => void
+  agregarAlimentador: (tableroId: number, nombre: string, insertIndex: number) => void
   appendSegmentos: (segs: Segmento[]) => void
   appendParedes: (paredes: Pared[]) => void
   actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
   agregarTablero: (data: any) => Promise<Tablero>
+  duplicarTablero: (id: number) => Promise<Tablero>
   actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) => Promise<void>
   eliminarTablero: (id: number) => Promise<void>
 
@@ -264,6 +268,15 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         const tablerosList = data.tableros ?? []
         setTableros(tablerosList)
 
+        const familiaIds = [...new Set<number>(
+          tablerosList.flatMap((t: any) =>
+            t.circuitos.flatMap((c: any) =>
+              c.formacion?.cable?.familia_id != null ? [c.formacion.cable.familia_id] : []
+            )
+          )
+        )]
+        prefetchCablesFamilias(familiaIds)
+
         // Auto-seleccionar primer tablero si el cookie no apunta a uno de este proyecto
         if (tablerosList.length > 0) {
           const cookieMatch = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
@@ -342,15 +355,25 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     circuitosApi.updateNombreCircuito(id, nombre).catch(console.error)
   }
 
-  function agregarCircuito(tableroId: number) {
+  function agregarCircuito(tableroId: number, insertIndex?: number) {
     const tablero = tableros.find(t => t.id === tableroId)
     if (!tablero) return
     const tempId = nextTempId()
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, fase: null, potencia: null }
-    setTableros(prev => addCirc(prev, tableroId, temp))
+    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null }
+    const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
+    const idx = insertIndex ?? sorted.length
+    sorted.splice(idx, 0, temp)
+    setTableros(prev => prev.map(t => t.id === tableroId
+      ? { ...t, circuitos: sorted.map((c, i) => ({ ...c, orden: i })) }
+      : t
+    ))
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
-      .then(real => {
+      .then(async real => {
+        if (insertIndex !== undefined) {
+          const newOrder = sorted.map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
+          await circuitosApi.reordenarCircuitos(newOrder)
+        }
         setTableros(prev => replaceCirc(prev, tempId, real as Circuito))
         pendingCircuitos.current.delete(tempId)
         return real as Circuito
@@ -433,6 +456,41 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     else fire(id)
   }
 
+  function actualizarEsAlimentador(id: number, val: boolean) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, es_alimentador: val })))
+    const fire = (rid: number) => circuitosApi.updateEsAlimentadorCircuito(rid, val).catch(console.error)
+    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
+    else fire(id)
+  }
+
+  function agregarAlimentador(tableroId: number, nombre: string, insertIndex: number) {
+    const tablero = tableros.find(t => t.id === tableroId)
+    if (!tablero) return
+    const tempId = nextTempId()
+    const temp: Circuito = {
+      id: tempId, circuito: nombre, descripcion: null, tablero_id: tableroId,
+      formacion_id: null, formacion: null, FP: null, Largo: null,
+      tipo_tension: null, fase: null, es_alimentador: true, potencia: null,
+    }
+    // Insertar en la posición correcta y reordenar
+    const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
+    sorted.splice(insertIndex, 0, temp)
+    setTableros(prev => prev.map(t => t.id === tableroId
+      ? { ...t, circuitos: sorted.map((c, i) => ({ ...c, orden: i })) }
+      : t
+    ))
+    const promise = circuitosApi.crearCircuitoVacio(tableroId)
+      .then(async real => {
+        await circuitosApi.updateEsAlimentadorCircuito(real.id, true)
+        await circuitosApi.updateNombreCircuito(real.id, nombre)
+        const newOrder = sorted.map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
+        await circuitosApi.reordenarCircuitos(newOrder)
+        setTableros(prev => replaceCirc(prev, tempId, { ...real, circuito: nombre, es_alimentador: true } as Circuito))
+        return real as Circuito
+      })
+    pendingCircuitos.current.set(tempId, promise)
+  }
+
   function appendSegmentos(segs: Segmento[]) {
     setSegmentos(prev => [...prev, ...segs])
   }
@@ -476,6 +534,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   async function actualizarTablero(id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) {
     setTableros(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
     await tablerosApi.updateTablero(id, data).catch(console.error)
+  }
+
+  async function duplicarTablero(id: number): Promise<Tablero> {
+    const real = await tablerosApi.duplicarTablero(id) as Tablero
+    setTableros(prev => [...prev, { ...real, circuitos: real.circuitos ?? [] }])
+    return real
   }
 
   async function eliminarTablero(id: number) {
@@ -743,7 +807,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFormacion, agregarTablero, actualizarTablero, eliminarTablero,
+      reordenarCircuitos, actualizarDescripcion, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarEsAlimentador, agregarAlimentador, actualizarPotencia, actualizarFormacion, agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
       segmentos, canios, bandejas, conjuntos, activeConjuntoId, setActiveConjuntoId,
       addSegmento, previewSegmento, editSegmento, removeSegmento,
       asignarCircuito, quitarCircuito,

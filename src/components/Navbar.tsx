@@ -4,14 +4,14 @@ import { usePathname } from 'next/navigation'
 
 const NAV_LINKS = [
   { href: '/tableros',    label: 'Tableros'    },
+  { href: '/locales',     label: 'Locales'     },
   { href: '/cargas',      label: 'Cargas'      },
   { href: '/caidas',          label: 'Caídas'          },
   { href: '/cortocircuitos',  label: 'Cortocircuitos'  },
   { href: '/ruteo',       label: 'Ruteo'       },
   { href: '/ocupaciones', label: 'Ocupaciones' },
-  { href: '/cables',      label: 'Cables'      },
-  { href: '/locales',     label: 'Locales'     },
   { href: '/importador',  label: 'Importador'  },
+  { href: '/cables',      label: 'Cables'      },
 ]
 
 export default function Navbar() {

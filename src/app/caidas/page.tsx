@@ -128,7 +128,7 @@ function CableSelect({ familiaId, value, defaultId, onChange }: {
       }}
       style={{
         width: '100%', height: 26, padding: '0 4px', fontSize: 12,
-        background: 'var(--clr-surface-a10)', color: 'var(--clr-font-a0)',
+        background: 'transparent', color: 'var(--clr-font-a0)',
         border: '1px solid transparent', borderRadius: 3, outline: 'none', cursor: 'pointer',
       }}
     >
