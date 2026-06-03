@@ -341,7 +341,7 @@ export default function TablaCargas() {
             value={tipo_tension ?? ''}
             onChange={e => actualizarTipoTension(id, e.target.value || null)}
             onClick={e => e.stopPropagation()}
-            className="w-full h-7 px-1 text-xs rounded-sm bg-transparent text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+            className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer" style={{ background: 'var(--clr-surface-a10)' }}
           >
             <option value="">—</option>
             {tensionesDisponibles.map(t => (
@@ -367,7 +367,7 @@ export default function TablaCargas() {
             value={fase ?? ''}
             onChange={e => actualizarFase(id, e.target.value || null)}
             onClick={e => e.stopPropagation()}
-            className="w-full h-7 px-1 text-xs rounded-sm bg-transparent text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+            className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer" style={{ background: 'var(--clr-surface-a10)' }}
           >
             <option value="">—</option>
             {opciones.map(f => <option key={f} value={f}>{f}</option>)}
@@ -695,7 +695,6 @@ function SortableRow({ id, isSelected, isAnyDragging, onClick, children }: {
     >
       <td
         className="w-8 text-center text-surface-tonal-a40 cursor-grab select-none"
-        onClick={e => e.stopPropagation()}
         {...attributes} {...listeners}
       >⠿</td>
       {children}

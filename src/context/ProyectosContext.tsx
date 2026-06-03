@@ -41,6 +41,7 @@ type Formacion = {
 
 type Circuito = {
   id: number
+  orden: number
   circuito: string
   descripcion: string | null
   tablero_id: number
@@ -360,9 +361,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!tablero) return
     const tempId = nextTempId()
     const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { id: tempId, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null }
     const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
     const idx = insertIndex ?? sorted.length
+    const temp: Circuito = { id: tempId, orden: idx, circuito: tag, descripcion: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null }
     sorted.splice(idx, 0, temp)
     setTableros(prev => prev.map(t => t.id === tableroId
       ? { ...t, circuitos: sorted.map((c, i) => ({ ...c, orden: i })) }
@@ -371,12 +372,16 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(async real => {
         if (insertIndex !== undefined) {
-          const newOrder = sorted.map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
+          const newOrder = sorted
+            .map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
+            .filter(({ id }) => id > 0)  // omitir otros circuitos pendientes (IDs temporales negativos)
           await circuitosApi.reordenarCircuitos(newOrder)
         }
-        setTableros(prev => replaceCirc(prev, tempId, real as Circuito))
-        pendingCircuitos.current.delete(tempId)
-        return real as Circuito
+        // Preservar el orden optimista (idx) para que el circuito no salte al final
+        const resolved = { ...(real as Circuito), orden: idx }
+        setTableros(prev => replaceCirc(prev, tempId, resolved))
+        pendingCircuitos.current.set(tempId, Promise.resolve(resolved))
+        return resolved
       })
       .catch(err => { console.error(err); return temp })
     pendingCircuitos.current.set(tempId, promise)
@@ -393,7 +398,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     const promise = circuitosApi.duplicarCircuito(circuitoId)
       .then(real => {
         setTableros(prev => replaceCirc(prev, tempId, real as Circuito))
-        pendingCircuitos.current.delete(tempId)
+        pendingCircuitos.current.set(tempId, Promise.resolve(real as Circuito))
         return real as Circuito
       })
       .catch(err => { console.error(err); return temp })
@@ -411,7 +416,8 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       const byId = new Map(t.circuitos.map(c => [c.id, c]))
       return { ...t, circuitos: orderedIds.map((id, i) => ({ ...byId.get(id)!, orden: i })) }
     }))
-    circuitosApi.reordenarCircuitos(orderedIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
+    const realIds = orderedIds.filter(id => id > 0)
+    circuitosApi.reordenarCircuitos(realIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
   }
 
   function actualizarDescripcion(id: number, descripcion: string | null) {
@@ -468,7 +474,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!tablero) return
     const tempId = nextTempId()
     const temp: Circuito = {
-      id: tempId, circuito: nombre, descripcion: null, tablero_id: tableroId,
+      id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tablero_id: tableroId,
       formacion_id: null, formacion: null, FP: null, Largo: null,
       tipo_tension: null, fase: null, es_alimentador: true, potencia: null,
     }
@@ -483,10 +489,14 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       .then(async real => {
         await circuitosApi.updateEsAlimentadorCircuito(real.id, true)
         await circuitosApi.updateNombreCircuito(real.id, nombre)
-        const newOrder = sorted.map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
+        const newOrder = sorted
+          .map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
+          .filter(({ id }) => id > 0)
         await circuitosApi.reordenarCircuitos(newOrder)
-        setTableros(prev => replaceCirc(prev, tempId, { ...real, circuito: nombre, es_alimentador: true } as Circuito))
-        return real as Circuito
+        const resolved = { ...real, circuito: nombre, es_alimentador: true } as Circuito
+        setTableros(prev => replaceCirc(prev, tempId, resolved))
+        pendingCircuitos.current.set(tempId, Promise.resolve(resolved))
+        return resolved
       })
     pendingCircuitos.current.set(tempId, promise)
   }

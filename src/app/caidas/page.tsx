@@ -128,7 +128,7 @@ function CableSelect({ familiaId, value, defaultId, onChange }: {
       }}
       style={{
         width: '100%', height: 26, padding: '0 4px', fontSize: 12,
-        background: 'transparent', color: 'var(--clr-font-a0)',
+        background: 'var(--clr-surface-a10)', color: 'var(--clr-font-a0)',
         border: '1px solid transparent', borderRadius: 3, outline: 'none', cursor: 'pointer',
       }}
     >
@@ -190,8 +190,8 @@ export default function CaidaTension() {
                         : tipo === 'tri'  ? (tablero as any).tension_tri
                         : null
       const corrienteAuto = calcCorriente(c.potencia ?? null, tipo, tensionAuto, fpAuto)
-      const mat  = (effectiveCable as any).familia?.material  ?? null
-      const temp = (effectiveCable as any).familia?.temperatura ?? null
+      const mat  = effectiveCable ? (effectiveCable as any).familia?.material   ?? null : null
+      const temp = effectiveCable ? (effectiveCable as any).familia?.temperatura ?? null : null
       const rAuto = effectiveCable ? calcResistencia(
         effectiveCable.seccion_f,
         effectiveCable.calibre_tipo,
