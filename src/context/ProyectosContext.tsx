@@ -1,283 +1,84 @@
 'use client'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import * as ruteoApi from '@/services/ruteo'
-import * as circuitosApi from '@/services/circuitos'
+import * as ruteoApi    from '@/services/ruteo'
 import * as tablerosApi from '@/services/tableros'
 import * as proyectosApi from '@/services/proyectos'
-import type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura } from '@/services/ruteo'
-import type { FormacionPatch } from '@/services/circuitos'
-import type { Proyecto as ProyectoMeta } from '@/services/proyectos'
+import type { Canio, Bandeja, Segmento, Conjunto, Arquitectura, Pared } from '@/services/ruteo'
 import { prefetchCablesFamilias } from '@/context/CablesContext'
+
+import type { Tablero, Circuito, ProyectosContextType, ProyectoMeta } from './types'
+import { deriveSegmentos } from './helpers'
+import { useCircuitosActions } from './useCircuitosActions'
+import { useRuteoActions } from './useRuteoActions'
 
 export type { ProyectoMeta }
 export type { Pared, Arquitectura }
 
-// ── Types ───────────────────────────────────────────────────────
-
-type Cable = {
-  id: number
-  nombre: string
-  seccion_f: string
-  diametro: number | null
-  calibre_tipo: string
-  familia_id: number
-  Nfases: number
-  familia?: { material: string | null; temperatura: number | null; aislamiento: string | null } | null
-}
-
-type Formacion = {
-  id: number
-  cable_id: number
-  cond_por_fase: number
-  Nfases: number
-  Nneutro: number
-  cable_neutro_id: number | null
-  cable_tierra_id: number | null
-  disposicion: string | null
-  cable: Cable
-  cable_neutro: Cable | null
-  cable_tierra: Cable | null
-}
-
-type Circuito = {
-  id: number
-  orden: number
-  circuito: string
-  descripcion: string | null
-  tipo: string | null
-  tablero_id: number
-  formacion_id: number | null
-  formacion: Formacion | null
-  FP: number | null
-  Largo: number | null
-  tipo_tension: string | null
-  fase: string | null
-  es_alimentador: boolean
-  potencia: number | null
-}
-
-// Fusiona el circuito real del back con el estado actual del temp,
-// preservando cualquier edición que el usuario haya hecho antes de que el back respondiera.
-function mergeWithTemp(real: Circuito, temp: Circuito | undefined): Circuito {
-  if (!temp) return real
-  return {
-    ...real,
-    circuito:     temp.circuito,
-    descripcion:  temp.descripcion  !== null ? temp.descripcion  : real.descripcion,
-    tipo:         temp.tipo         !== null ? temp.tipo         : real.tipo,
-    FP:           temp.FP           !== null ? temp.FP           : real.FP,
-    Largo:        temp.Largo        !== null ? temp.Largo        : real.Largo,
-    potencia:     temp.potencia     !== null ? temp.potencia     : real.potencia,
-    tipo_tension: temp.tipo_tension !== null ? temp.tipo_tension : real.tipo_tension,
-    fase:         temp.fase         !== null ? temp.fase         : real.fase,
-  }
-}
-
-type Tablero = {
-  id: number
-  tag: string
-  nombre: string | null
-  ubicacion: string | null
-  tipo: string | null
-  tension_mono: number | null
-  tension_bi: number | null
-  tension_tri: number | null
-  frecuencia: number | null
-  corriente_nom: number | null
-  corriente_cc: number | null
-  potencia_inst: number | null
-  potencia_dem: number | null
-  fabricante: string | null
-  modelo: string | null
-  norma: string | null
-  grado_proteccion: string | null
-  circuitos: Circuito[]
-}
-
-type SegPatch = Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>
-
-// ── Temp IDs ─────────────────────────────────────────────────────
-let _tempId = -1
-const nextTempId = () => _tempId--
-
-// ── Immutable helpers ─────────────────────────────────────────────
-function mapCirc(tableros: Tablero[], circId: number, fn: (c: Circuito) => Circuito): Tablero[] {
-  return tableros.map(t => ({ ...t, circuitos: t.circuitos.map(c => c.id === circId ? fn(c) : c) }))
-}
-function addCirc(tableros: Tablero[], tableroId: number, circ: Circuito): Tablero[] {
-  return tableros.map(t => t.id === tableroId ? { ...t, circuitos: [...t.circuitos, circ] } : t)
-}
-function removeCirc(tableros: Tablero[], circId: number): Tablero[] {
-  return tableros.map(t => ({ ...t, circuitos: t.circuitos.filter(c => c.id !== circId) }))
-}
-function replaceCirc(tableros: Tablero[], tempId: number, real: Circuito): Tablero[] {
-  return tableros.map(t => ({ ...t, circuitos: t.circuitos.map(c => c.id === tempId ? real : c) }))
-}
-function deriveSegmentos(conjuntos: (Conjunto & { segmentos?: Segmento[] })[]): Segmento[] {
-  const map = new Map<number, Segmento>()
-  for (const c of conjuntos) {
-    for (const s of (c as any).segmentos ?? []) {
-      if (!map.has(s.id)) map.set(s.id, s)
-    }
-  }
-  return Array.from(map.values())
-}
-
-// ── Context type ──────────────────────────────────────────────────
-type ProyectosContextType = {
-  // Project management
-  proyectos: ProyectoMeta[]
-  proyectoActivo: ProyectoMeta | null
-  setProyectoActivo: (p: ProyectoMeta | null) => void
-  crearProyecto: (data: { nombre: string; descripcion?: string | null }) => Promise<ProyectoMeta>
-  actualizarProyecto: (id: number, data: { nombre: string; descripcion?: string | null }) => Promise<void>
-  eliminarProyecto: (id: number) => Promise<void>
-
-  // Tableros & circuitos
-  tableros: Tablero[]
-  loading: boolean
-  error: string | null
-  recargar: () => void
-  getTablero: (id: number) => Tablero | undefined
-  getCircuito: (id: number) => Circuito | undefined
-  renombrarCircuito: (id: number, nombre: string) => void
-  agregarCircuito: (tableroId: number, insertIndex?: number) => void
-  duplicarCircuito: (circuitoId: number) => void
-  eliminarCircuito: (id: number) => void
-  reordenarCircuitos: (tableroId: number, orderedIds: number[]) => void
-  actualizarDescripcion: (id: number, descripcion: string | null) => void
-  actualizarFP: (id: number, fp: number | null) => void
-  actualizarLargo: (id: number, largo: number | null) => void
-  actualizarPotencia: (id: number, potencia: number | null) => void
-  actualizarTipoTension: (id: number, tipo: string | null) => void
-  actualizarFase: (id: number, fase: string | null) => void
-  actualizarTipo: (id: number, tipo: string | null) => void
-  actualizarEsAlimentador: (id: number, val: boolean) => void
-  agregarAlimentador: (tableroId: number, nombre: string, insertIndex: number) => void
-  appendSegmentos: (segs: Segmento[]) => void
-  appendParedes: (paredes: Pared[]) => void
-  actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
-  agregarTablero: (data: any) => Promise<Tablero>
-  duplicarTablero: (id: number) => Promise<Tablero>
-  actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) => Promise<void>
-  eliminarTablero: (id: number) => Promise<void>
-
-  // Segmentos & conjuntos
-  segmentos: Segmento[]
-  canios: Canio[]
-  bandejas: Bandeja[]
-  conjuntos: Conjunto[]
-  activeConjuntoId: number | null
-  setActiveConjuntoId: (id: number) => void
-  addSegmento: (data: CreateSegmentoInput) => void
-  previewSegmento: (id: number, patch: SegPatch) => void
-  editSegmento: (id: number, patch: SegPatch) => void
-  removeSegmento: (id: number) => void
-  asignarCircuito: (segId: number, circId: number, circ: SegmentoCircuito) => void
-  quitarCircuito: (segId: number, circId: number) => void
-  addConjunto: (nombre: string) => void
-  renameConjunto: (id: number, nombre: string) => void
-  deleteConjunto: (id: number) => void
-  addSegmentoToConjunto: (segId: number, conjuntoId: number) => void
-  removeSegmentoFromConjunto: (segId: number, conjuntoId: number) => void
-  addTableroToConjunto: (conjuntoId: number, tableroId: number) => void
-  removeTableroFromConjunto: (conjuntoId: number, tableroId: number) => void
-
-  // Paredes
-  paredes: Pared[]
-  addPared: (data: CreateParedInput) => void
-  editPared: (id: number, patch: Partial<Omit<Pared, 'id'>>) => void
-  removePared: (id: number) => void
-
-  // Tablas de paredes
-  tablaParedes: Arquitectura[]
-  activaArquitecturaId: number | null
-  setActivaArquitecturaId: (id: number | null) => void
-  addArquitectura: (nombre: string) => void
-  renameArquitectura: (id: number, nombre: string) => void
-  deleteArquitectura: (id: number) => void
-  addArquitecturaToConjunto: (tablaParedId: number, conjuntoId: number) => void
-  removeArquitecturaFromConjunto: (tablaParedId: number, conjuntoId: number) => void
-}
-
+// ── Context ───────────────────────────────────────────────────────
 const ProyectosContext = createContext<ProyectosContextType | null>(null)
 
 // ── Provider ──────────────────────────────────────────────────────
 export function ProyectosProvider({ children }: { children: React.ReactNode }) {
-  const [proyectos,      setProyectos]      = useState<ProyectoMeta[]>([])
-  const [proyectoActivo, setProyectoActivoState] = useState<ProyectoMeta | null>(null)
-
-  const [tableros,           setTableros]           = useState<Tablero[]>([])
-  const [conjuntos,          setConjuntos]          = useState<Conjunto[]>([])
-  const [segmentos,          setSegmentos]          = useState<Segmento[]>([])
-  const [canios,             setCanios]             = useState<Canio[]>([])
-  const [bandejas,           setBandejas]           = useState<Bandeja[]>([])
-  const [paredes,            setParedes]            = useState<Pared[]>([])
-  const [tablaParedes,       setArquitecturaes]       = useState<Arquitectura[]>([])
-  const [activeConjuntoId,   setActiveConjuntoIdState]   = useState<number | null>(null)
-  const [activaArquitecturaId, setActivaArquitecturaIdState] = useState<number | null>(null)
-  const [loading,            setLoading]            = useState(true)
-  const [error,              setError]              = useState<string | null>(null)
+  const [proyectos,           setProyectos]           = useState<ProyectoMeta[]>([])
+  const [proyectoActivo,      setProyectoActivoState] = useState<ProyectoMeta | null>(null)
+  const [tableros,            setTableros]            = useState<Tablero[]>([])
+  const [conjuntos,           setConjuntos]           = useState<Conjunto[]>([])
+  const [segmentos,           setSegmentos]           = useState<Segmento[]>([])
+  const [canios,              setCanios]              = useState<Canio[]>([])
+  const [bandejas,            setBandejas]            = useState<Bandeja[]>([])
+  const [paredes,             setParedes]             = useState<Pared[]>([])
+  const [tablaParedes,        setArquitecturaes]      = useState<Arquitectura[]>([])
+  const [activeConjuntoId,    setActiveConjuntoIdState]    = useState<number | null>(null)
+  const [activaArquitecturaId,setActivaArquitecturaIdState] = useState<number | null>(null)
+  const [loading,             setLoading]             = useState(true)
+  const [error,               setError]               = useState<string | null>(null)
 
   const pendingCircuitos = useRef<Map<number, Promise<Circuito>>>(new Map())
   const pendingSegmentos = useRef<Map<number, Promise<Segmento>>>(new Map())
   const editVer          = useRef<Map<number, number>>(new Map())
   const proyectoActivoRef = useRef<ProyectoMeta | null>(null)
 
-  const LS_PROYECTO   = 'ea_proyecto'
-  const lsConjunto    = (id: number) => `ea_conjunto_${id}`
-  const lsArquitectura  = (id: number) => `ea_tabla_pared_${id}`
+  const LS_PROYECTO    = 'ea_proyecto'
+  const lsConjunto     = (id: number) => `ea_conjunto_${id}`
+  const lsArquitectura = (id: number) => `ea_tabla_pared_${id}`
 
   const setActiveConjuntoId = (id: number) => {
     setActiveConjuntoIdState(id)
-    if (proyectoActivoRef.current) {
+    if (proyectoActivoRef.current)
       localStorage.setItem(lsConjunto(proyectoActivoRef.current.id), String(id))
-    }
   }
 
   const setActivaArquitecturaId = (id: number | null) => {
     setActivaArquitecturaIdState(id)
     if (proyectoActivoRef.current) {
       if (id !== null) localStorage.setItem(lsArquitectura(proyectoActivoRef.current.id), String(id))
-      else localStorage.removeItem(lsArquitectura(proyectoActivoRef.current.id))
+      else             localStorage.removeItem(lsArquitectura(proyectoActivoRef.current.id))
     }
   }
 
-  // ── Bootstrap: project list + catalog ────────────────────────
+  // ── Bootstrap ─────────────────────────────────────────────────
   useEffect(() => {
-    Promise.all([
-      proyectosApi.getProyectos(),
-      ruteoApi.getCanios(),
-      ruteoApi.getBandejas(),
-    ])
+    Promise.all([proyectosApi.getProyectos(), ruteoApi.getCanios(), ruteoApi.getBandejas()])
       .then(([projs, cans, bans]) => {
         setProyectos(projs)
         setCanios(cans)
         setBandejas(bans)
         const savedId  = Number(localStorage.getItem(LS_PROYECTO)) || null
         const lastProj = savedId ? (projs.find(p => p.id === savedId) ?? null) : null
-        if (lastProj) {
-          setProyectoActivo(lastProj) // su propio finally maneja setLoading(false)
-        } else {
-          setLoading(false)
-        }
+        if (lastProj) setProyectoActivo(lastProj)
+        else          setLoading(false)
       })
       .catch(err => { setError(err.message); setLoading(false) })
   }, [])
 
-  // ── Load full project data when active project changes ────────
+  // ── Carga del proyecto activo ─────────────────────────────────
   function setProyectoActivo(p: ProyectoMeta | null) {
     setProyectoActivoState(p)
     proyectoActivoRef.current = p
     if (!p) {
       localStorage.removeItem(LS_PROYECTO)
-      setTableros([])
-      setConjuntos([])
-      setSegmentos([])
-      setParedes([])
-      setArquitecturaes([])
-      setActiveConjuntoIdState(null)
-      setActivaArquitecturaIdState(null)
+      setTableros([]); setConjuntos([]); setSegmentos([]); setParedes([]); setArquitecturaes([])
+      setActiveConjuntoIdState(null); setActivaArquitecturaIdState(null)
       return
     }
     localStorage.setItem(LS_PROYECTO, String(p.id))
@@ -297,20 +98,15 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         )]
         prefetchCablesFamilias(familiaIds)
 
-        // Auto-seleccionar primer tablero si el cookie no apunta a uno de este proyecto
         if (tablerosList.length > 0) {
           const cookieMatch = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
           const cookieId = cookieMatch ? Number(cookieMatch[1]) : null
-          if (!cookieId || !tablerosList.find((t: any) => t.id === cookieId)) {
+          if (!cookieId || !tablerosList.find((t: any) => t.id === cookieId))
             document.cookie = `last_tablero_id=${tablerosList[0].id};path=/;max-age=31536000`
-          }
         }
 
         const conjs: Conjunto[] = (data.conjuntos ?? []).map((c: any) => ({
-          id: c.id,
-          nombre: c.nombre,
-          tableros: c.tableros ?? [],
-          arquitecturas: c.arquitecturas ?? [],
+          id: c.id, nombre: c.nombre, tableros: c.tableros ?? [], arquitecturas: c.arquitecturas ?? [],
         }))
         setConjuntos(conjs)
         setSegmentos(deriveSegmentos(data.conjuntos ?? []))
@@ -319,14 +115,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         setArquitecturaes(tablas)
         setParedes(tablas.flatMap((tp: Arquitectura) => tp.paredes))
 
-        // Restore active conjunto
         const availableConjIds: number[] = (data.conjuntos ?? []).map((c: any) => c.id)
         const savedConjId  = Number(localStorage.getItem(lsConjunto(p.id))) || null
         const resolvedConj = savedConjId && availableConjIds.includes(savedConjId)
           ? savedConjId : (availableConjIds[0] ?? null)
         setActiveConjuntoIdState(resolvedConj)
 
-        // Restore active tabla de paredes
         const availableTablaIds: number[] = tablas.map(tp => tp.id)
         const savedTablaId  = Number(localStorage.getItem(lsArquitectura(p.id))) || null
         const resolvedTabla = savedTablaId && availableTablaIds.includes(savedTablaId)
@@ -337,11 +131,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setLoading(false))
   }
 
-  const recargar = () => {
-    if (proyectoActivo) setProyectoActivo(proyectoActivo)
-  }
+  const recargar = () => { if (proyectoActivo) setProyectoActivo(proyectoActivo) }
 
-  // ── Project CRUD ─────────────────────────────────────────────
+  // ── Proyectos CRUD ────────────────────────────────────────────
   async function crearProyecto(data: { nombre: string; descripcion?: string | null }) {
     const nuevo = await proyectosApi.createProyecto(data)
     setProyectos(prev => [...prev, nuevo])
@@ -360,7 +152,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (proyectoActivo?.id === id) setProyectoActivo(null)
   }
 
-  // ── Getters ──────────────────────────────────────────────────
+  // ── Tableros CRUD ─────────────────────────────────────────────
   const getTablero  = (id: number) => tableros.find(t => t.id === id)
   const getCircuito = (id: number) => {
     for (const t of tableros) {
@@ -369,231 +161,10 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // ── Circuito mutations ───────────────────────────────────────
-  function renombrarCircuito(id: number, nombre: string) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, circuito: nombre })))
-    circuitosApi.updateNombreCircuito(id, nombre).catch(console.error)
-  }
-
-  function agregarCircuito(tableroId: number, insertIndex?: number) {
-    const tablero = tableros.find(t => t.id === tableroId)
-    if (!tablero) return
-    const tempId = nextTempId()
-    const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    // Capturamos idx desde el estado actual (sincrónico) para usarlo en la promesa
-    const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
-    const idx    = insertIndex ?? sorted.length
-    const temp: Circuito = { id: tempId, orden: idx, circuito: tag, descripcion: null, tipo: null, tablero_id: tableroId, formacion_id: null, formacion: null, FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null }
-    // Usamos prev para evitar pisar actualizaciones concurrentes
-    setTableros(prev => {
-      const t = prev.find(t => t.id === tableroId)
-      if (!t) return prev
-      const s = [...t.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
-      const i = insertIndex ?? s.length
-      s.splice(i, 0, { ...temp, orden: i })
-      return prev.map(t => t.id === tableroId ? { ...t, circuitos: s.map((c, j) => ({ ...c, orden: j })) } : t)
-    })
-    const promise = circuitosApi.crearCircuitoVacio(tableroId)
-      .then(async real => {
-        // Reordenar siempre en el back para garantizar consistencia
-        const currentSorted = tableros
-          .find(t => t.id === tableroId)?.circuitos
-          .slice().sort((a, b) => (a as any).orden - (b as any).orden) ?? []
-        const newOrder = currentSorted
-          .map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
-          .filter(({ id }) => id > 0)
-        if (newOrder.length > 0) await circuitosApi.reordenarCircuitos(newOrder)
-        const realCircuito = { ...(real as Circuito), orden: idx }
-        setTableros(prev => {
-          const currentTemp = prev.flatMap(t => t.circuitos).find(c => c.id === tempId)
-          return replaceCirc(prev, tempId, mergeWithTemp(realCircuito, currentTemp))
-        })
-        pendingCircuitos.current.set(tempId, Promise.resolve(realCircuito))
-        return realCircuito
-      })
-      .catch(err => { console.error(err); return temp })
-    pendingCircuitos.current.set(tempId, promise)
-  }
-
-  function duplicarCircuito(circuitoId: number) {
-    const tablero  = tableros.find(t => t.circuitos.find(c => c.id === circuitoId))
-    const original = tablero?.circuitos.find(c => c.id === circuitoId)
-    if (!tablero || !original) return
-    const tempId = nextTempId()
-    const numMatch = original.circuito.match(/^(.*?)(\d+)$/)
-    let tag: string
-    if (numMatch) {
-      const prefix = numMatch[1]
-      const nums = tablero.circuitos
-        .map(c => { const m = c.circuito.match(/^(.*?)(\d+)$/); return m && m[1] === prefix ? parseInt(m[2]) : null })
-        .filter((n): n is number => n !== null)
-      tag = `${prefix}${nums.length > 0 ? Math.max(...nums) + 1 : parseInt(numMatch[2]) + 1}`
-    } else {
-      tag = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    }
-    const temp: Circuito = { ...original, id: tempId, circuito: tag, orden: tablero.circuitos.length }
-    setTableros(prev => addCirc(prev, tablero.id, temp))
-    const promise = circuitosApi.duplicarCircuito(circuitoId)
-      .then(real => {
-        setTableros(prev => {
-          const currentTemp = prev.flatMap(t => t.circuitos).find(c => c.id === tempId)
-          return replaceCirc(prev, tempId, mergeWithTemp(real as Circuito, currentTemp))
-        })
-        pendingCircuitos.current.set(tempId, Promise.resolve(real as Circuito))
-        return real as Circuito
-      })
-      .catch(err => { console.error(err); return temp })
-    pendingCircuitos.current.set(tempId, promise)
-  }
-
-  function eliminarCircuito(circuitoId: number) {
-    setTableros(prev => removeCirc(prev, circuitoId))
-    circuitosApi.deleteCircuito(circuitoId).catch(err => { console.error(err); recargar() })
-  }
-
-  function reordenarCircuitos(tableroId: number, orderedIds: number[]) {
-    setTableros(prev => prev.map(t => {
-      if (t.id !== tableroId) return t
-      const byId = new Map(t.circuitos.map(c => [c.id, c]))
-      return { ...t, circuitos: orderedIds.map((id, i) => ({ ...byId.get(id)!, orden: i })) }
-    }))
-    const realIds = orderedIds.filter(id => id > 0)
-    circuitosApi.reordenarCircuitos(realIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
-  }
-
-  function actualizarDescripcion(id: number, descripcion: string | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, descripcion })))
-    const fire = (rid: number) => circuitosApi.updateDescripcionCircuito(rid, descripcion).catch(console.error)
-    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
-    else fire(id)
-  }
-
-  function actualizarFP(id: number, fp: number | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, FP: fp })))
-    const fire = (rid: number) => circuitosApi.updateFPCircuito(rid, fp).catch(console.error)
-    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
-    else fire(id)
-  }
-
-  function actualizarLargo(id: number, largo: number | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, Largo: largo })))
-    const fire = (rid: number) => circuitosApi.updateLargoCircuito(rid, largo).catch(console.error)
-    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
-    else fire(id)
-  }
-
-  function actualizarPotencia(id: number, potencia: number | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, potencia })))
-    const fire = (rid: number) => circuitosApi.updatePotenciaCircuito(rid, potencia).catch(console.error)
-    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
-    else fire(id)
-  }
-
-  function actualizarTipoTension(id: number, tipo: string | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo_tension: tipo })))
-    const fire = (rid: number) => circuitosApi.updateTipoTensionCircuito(rid, tipo).catch(console.error)
-    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
-    else fire(id)
-  }
-
-  function actualizarFase(id: number, fase: string | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, fase })))
-    const fire = (rid: number) => circuitosApi.updateFaseCircuito(rid, fase).catch(console.error)
-    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
-    else fire(id)
-  }
-
-  function actualizarTipo(id: number, tipo: string | null) {
-    const esAlimentador = tipo === 'ALIMENTADOR'
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo, es_alimentador: esAlimentador })))
-    const fire = (rid: number) => circuitosApi.updateTipoCircuito(rid, tipo).catch(console.error)
-    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
-    else fire(id)
-  }
-
-  function actualizarEsAlimentador(id: number, val: boolean) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, es_alimentador: val })))
-    const fire = (rid: number) => circuitosApi.updateEsAlimentadorCircuito(rid, val).catch(console.error)
-    if (id < 0 && pendingCircuitos.current.has(id)) pendingCircuitos.current.get(id)!.then(r => fire(r.id))
-    else fire(id)
-  }
-
-  function agregarAlimentador(tableroId: number, nombre: string, insertIndex: number) {
-    const tempId = nextTempId()
-    const temp: Circuito = {
-      id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tipo: 'ALIMENTADOR', tablero_id: tableroId,
-      formacion_id: null, formacion: null, FP: null, Largo: null,
-      tipo_tension: null, fase: null, es_alimentador: true, potencia: null,
-    }
-    setTableros(prev => {
-      const t = prev.find(t => t.id === tableroId)
-      if (!t) return prev
-      const s = [...t.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
-      s.splice(insertIndex, 0, temp)
-      return prev.map(t => t.id === tableroId ? { ...t, circuitos: s.map((c, i) => ({ ...c, orden: i })) } : t)
-    })
-    const promise = circuitosApi.crearCircuitoVacio(tableroId)
-      .then(async real => {
-        await circuitosApi.updateEsAlimentadorCircuito(real.id, true)
-        await circuitosApi.updateNombreCircuito(real.id, nombre)
-        const currentSorted = tableros
-          .find(t => t.id === tableroId)?.circuitos
-          .slice().sort((a, b) => (a as any).orden - (b as any).orden) ?? []
-        const newOrder = currentSorted
-          .map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
-          .filter(({ id }) => id > 0)
-        if (newOrder.length > 0) await circuitosApi.reordenarCircuitos(newOrder)
-        const resolved = { ...real, circuito: nombre, es_alimentador: true } as Circuito
-        setTableros(prev => replaceCirc(prev, tempId, resolved))
-        pendingCircuitos.current.set(tempId, Promise.resolve(resolved))
-        return resolved
-      })
-    pendingCircuitos.current.set(tempId, promise)
-  }
-
-  function appendSegmentos(segs: Segmento[]) {
-    setSegmentos(prev => [...prev, ...segs])
-  }
-
-  function appendParedes(nuevasParedes: Pared[]) {
-    setParedes(prev => [...prev, ...nuevasParedes])
-    setArquitecturaes(prev => prev.map(tp => {
-      const extras = nuevasParedes.filter(p => p.tabla_pared_id === tp.id)
-      return extras.length ? { ...tp, paredes: [...tp.paredes, ...extras] } : tp
-    }))
-  }
-
-  function actualizarFormacion(circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) {
-    setTableros(prev => mapCirc(prev, circuitoId, c => ({
-      ...c,
-      formacion: {
-        id: c.formacion?.id ?? 0,
-        cable_id:        data.cable_id,
-        cond_por_fase:   data.cond_por_fase,
-        Nfases:          data.Nfases,
-        Nneutro:         data.Nneutro,
-        cable_neutro_id: data.cable_neutro_id,
-        cable_tierra_id: data.cable_tierra_id,
-        disposicion:     data.disposicion ?? null,
-        cable:        cables.fase,
-        cable_neutro: cables.neutro,
-        cable_tierra: cables.tierra,
-      },
-    })))
-    const fire = (realId: number) =>
-      circuitosApi.updateFormacion(realId, data)
-        .then(real => setTableros(prev => mapCirc(prev, realId, () => real as Circuito)))
-        .catch(console.error)
-    if (circuitoId < 0 && pendingCircuitos.current.has(circuitoId)) {
-      pendingCircuitos.current.get(circuitoId)!.then(real => fire(real.id))
-    } else {
-      fire(circuitoId)
-    }
-  }
-
-  async function actualizarTablero(id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) {
-    setTableros(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
-    await tablerosApi.updateTablero(id, data).catch(console.error)
+  async function agregarTablero(data: any): Promise<Tablero> {
+    const real = await tablerosApi.createTablero({ ...data, proyecto_id: proyectoActivo?.id ?? null }) as Tablero
+    setTableros(prev => [...prev, { ...real, circuitos: [] }])
+    return real
   }
 
   async function duplicarTablero(id: number): Promise<Tablero> {
@@ -602,263 +173,27 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     return real
   }
 
+  async function actualizarTablero(id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) {
+    setTableros(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
+    await tablerosApi.updateTablero(id, data).catch(console.error)
+  }
+
   async function eliminarTablero(id: number) {
     setTableros(prev => prev.filter(t => t.id !== id))
     await tablerosApi.deleteTablero(id).catch(console.error)
   }
 
-  async function agregarTablero(data: any): Promise<Tablero> {
-    const real = await tablerosApi.createTablero({
-      ...data,
-      proyecto_id: proyectoActivo?.id ?? null,
-    }) as Tablero
-    setTableros(prev => [...prev, { ...real, circuitos: [] }])
-    return real
-  }
+  // ── Domain action hooks ───────────────────────────────────────
+  const circuitos = useCircuitosActions(tableros, setTableros, pendingCircuitos, recargar)
 
-  // ── Segmento helpers ─────────────────────────────────────────
-  function resolveSegPatch(patch: SegPatch, prev: Segmento): Segmento {
-    const next: Segmento = { ...prev, ...patch }
-    if ('canio_id'   in patch) next.canio   = patch.canio_id   != null ? (canios.find(c => c.id === patch.canio_id)     ?? null) : null
-    if ('bandeja_id' in patch) next.bandeja = patch.bandeja_id != null ? (bandejas.find(b => b.id === patch.bandeja_id) ?? null) : null
-    return next
-  }
-
-  // ── Segmento mutations ───────────────────────────────────────
-  function addSegmento(data: CreateSegmentoInput) {
-    const tempId = nextTempId()
-    const conjOptimistic = (data.conjunto_ids ?? [])
-      .map(id => conjuntos.find(c => c.id === id))
-      .filter(Boolean) as Conjunto[]
-    const optimistic: Segmento = {
-      ...data, color: data.color ?? null, id: tempId,
-      canio:     data.canio_id   != null ? (canios.find(c => c.id === data.canio_id)     ?? null) : null,
-      bandeja:   data.bandeja_id != null ? (bandejas.find(b => b.id === data.bandeja_id) ?? null) : null,
-      circuitos: [],
-      conjuntos: conjOptimistic,
-    }
-    setSegmentos(prev => [...prev, optimistic])
-    const promise = ruteoApi.createSegmento(data)
-      .then(real => {
-        setSegmentos(prev => prev.map(s => s.id === tempId ? real : s))
-        pendingSegmentos.current.delete(tempId)
-        return real
-      })
-      .catch(err => { console.error(err); return optimistic })
-    pendingSegmentos.current.set(tempId, promise)
-  }
-
-  function previewSegmento(id: number, patch: SegPatch) {
-    setSegmentos(prev => prev.map(s => s.id === id ? resolveSegPatch(patch, s) : s))
-  }
-
-  function editSegmento(id: number, patch: SegPatch) {
-    setSegmentos(prev => prev.map(s => s.id === id ? resolveSegPatch(patch, s) : s))
-    const fire = (realId: number) => {
-      const ver = (editVer.current.get(realId) ?? 0) + 1
-      editVer.current.set(realId, ver)
-      ruteoApi.updateSegmento(realId, patch).then(real => {
-        if (editVer.current.get(realId) === ver) {
-          editVer.current.delete(realId)
-          setSegmentos(prev => prev.map(s => s.id === realId ? real : s))
-        }
-      }).catch(console.error)
-    }
-    if (id < 0 && pendingSegmentos.current.has(id)) {
-      pendingSegmentos.current.get(id)!.then(real => fire(real.id))
-    } else {
-      fire(id)
-    }
-  }
-
-  function removeSegmento(id: number) {
-    setSegmentos(prev => prev.filter(s => s.id !== id))
-    const fire = (realId: number) => ruteoApi.deleteSegmento(realId).catch(console.error)
-    if (id < 0 && pendingSegmentos.current.has(id)) {
-      pendingSegmentos.current.get(id)!.then(real => fire(real.id))
-    } else {
-      fire(id)
-    }
-  }
-
-  function asignarCircuito(segId: number, circId: number, circ: SegmentoCircuito) {
-    setSegmentos(prev => prev.map(s =>
-      s.id === segId && !s.circuitos.find(c => c.id === circId)
-        ? { ...s, circuitos: [...s.circuitos, circ] } : s
-    ))
-    const fire = (realId: number) =>
-      ruteoApi.addCircuitoToSegmento(realId, circId)
-        .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
-        .catch(console.error)
-    if (segId < 0 && pendingSegmentos.current.has(segId)) {
-      pendingSegmentos.current.get(segId)!.then(real => fire(real.id))
-    } else { fire(segId) }
-  }
-
-  function quitarCircuito(segId: number, circId: number) {
-    setSegmentos(prev => prev.map(s =>
-      s.id === segId ? { ...s, circuitos: s.circuitos.filter(c => c.id !== circId) } : s
-    ))
-    const fire = (realId: number) =>
-      ruteoApi.removeCircuitoFromSegmento(realId, circId)
-        .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
-        .catch(console.error)
-    if (segId < 0 && pendingSegmentos.current.has(segId)) {
-      pendingSegmentos.current.get(segId)!.then(real => fire(real.id))
-    } else { fire(segId) }
-  }
-
-  // ── Conjunto mutations ───────────────────────────────────────
-  function addConjunto(nombre: string) {
-    ruteoApi.createConjunto(nombre, proyectoActivo?.id)
-      .then(real => {
-        setConjuntos(prev => [...prev, real])
-        setActiveConjuntoId(real.id as number)
-      })
-      .catch(console.error)
-  }
-
-  function renameConjunto(id: number, nombre: string) {
-    setConjuntos(prev => prev.map(c => c.id === id ? { ...c, nombre } : c))
-    setSegmentos(prev => prev.map(s => ({
-      ...s,
-      conjuntos: s.conjuntos.map(c => c.id === id ? { ...c, nombre } : c),
-    })))
-    ruteoApi.updateConjunto(id, nombre).catch(console.error)
-  }
-
-  function deleteConjunto(id: number) {
-    if (conjuntos.length <= 1) return
-    const remaining = conjuntos.filter(c => c.id !== id)
-    setConjuntos(remaining)
-    setSegmentos(prev => prev.map(s => ({ ...s, conjuntos: s.conjuntos.filter(c => c.id !== id) })))
-    if (activeConjuntoId === id) setActiveConjuntoId(remaining[0].id as number)
-    ruteoApi.deleteConjunto(id).catch(console.error)
-  }
-
-  function addSegmentoToConjunto(segId: number, conjuntoId: number) {
-    const conjunto = conjuntos.find(c => c.id === conjuntoId)
-    if (!conjunto) return
-    setSegmentos(prev => prev.map(s =>
-      s.id === segId && !s.conjuntos.find(c => c.id === conjuntoId)
-        ? { ...s, conjuntos: [...s.conjuntos, conjunto] } : s
-    ))
-    const fire = (realId: number) => ruteoApi.addSegmentoToConjunto(realId, conjuntoId).catch(console.error)
-    if (segId < 0 && pendingSegmentos.current.has(segId)) {
-      pendingSegmentos.current.get(segId)!.then(real => fire(real.id))
-    } else { fire(segId) }
-  }
-
-  function removeSegmentoFromConjunto(segId: number, conjuntoId: number) {
-    setSegmentos(prev => prev.map(s =>
-      s.id === segId ? { ...s, conjuntos: s.conjuntos.filter(c => c.id !== conjuntoId) } : s
-    ))
-    const fire = (realId: number) => ruteoApi.removeSegmentoFromConjunto(realId, conjuntoId).catch(console.error)
-    if (segId < 0 && pendingSegmentos.current.has(segId)) {
-      pendingSegmentos.current.get(segId)!.then(real => fire(real.id))
-    } else { fire(segId) }
-  }
-
-  function addTableroToConjunto(conjuntoId: number, tableroId: number) {
-    ruteoApi.addTableroToConjunto(conjuntoId, tableroId)
-      .then(updated => setConjuntos(prev => prev.map(c => c.id === conjuntoId ? updated : c)))
-      .catch(console.error)
-  }
-
-  function removeTableroFromConjunto(conjuntoId: number, tableroId: number) {
-    setConjuntos(prev => prev.map(c =>
-      c.id === conjuntoId ? { ...c, tableros: c.tableros.filter(t => t.id !== tableroId) } : c
-    ))
-    ruteoApi.removeTableroFromConjunto(conjuntoId, tableroId).catch(console.error)
-  }
-
-  // ── Pared mutations ──────────────────────────────────────────
-  function addPared(data: CreateParedInput) {
-    const tempId = nextTempId()
-    const optimistic: Pared = { ...data, id: tempId }
-    setParedes(prev => [...prev, optimistic])
-    ruteoApi.createPared(data)
-      .then(real => {
-        setParedes(prev => prev.map(p => p.id === tempId ? real : p))
-        setArquitecturaes(prev => prev.map(tp =>
-          tp.id === real.tabla_pared_id
-            ? { ...tp, paredes: [...tp.paredes.filter(p => p.id !== tempId), real] }
-            : tp
-        ))
-      })
-      .catch(err => { console.error(err); setParedes(prev => prev.filter(p => p.id !== tempId)) })
-  }
-
-  function editPared(id: number, patch: Partial<Omit<Pared, 'id'>>) {
-    setParedes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
-    ruteoApi.updatePared(id, patch)
-      .then(real => setParedes(prev => prev.map(p => p.id === id ? real : p)))
-      .catch(console.error)
-  }
-
-  function removePared(id: number) {
-    setParedes(prev => prev.filter(p => p.id !== id))
-    setArquitecturaes(prev => prev.map(tp => ({ ...tp, paredes: tp.paredes.filter(p => p.id !== id) })))
-    ruteoApi.deletePared(id).catch(console.error)
-  }
-
-  // ── Arquitectura mutations ─────────────────────────────────────
-  function addArquitectura(nombre: string) {
-    if (!proyectoActivo) return
-    ruteoApi.createArquitectura(nombre, proyectoActivo.id)
-      .then(real => {
-        setArquitecturaes(prev => [...prev, real])
-        setActivaArquitecturaId(real.id)
-      })
-      .catch(console.error)
-  }
-
-  function renameArquitectura(id: number, nombre: string) {
-    setArquitecturaes(prev => prev.map(tp => tp.id === id ? { ...tp, nombre } : tp))
-    ruteoApi.updateArquitectura(id, nombre).catch(console.error)
-  }
-
-  function deleteArquitectura(id: number) {
-    setArquitecturaes(prev => prev.filter(tp => tp.id !== id))
-    setParedes(prev => prev.filter(p => p.tabla_pared_id !== id))
-    setConjuntos(prev => prev.map(c => ({
-      ...c,
-      arquitecturas: c.arquitecturas.filter(tp => tp.id !== id),
-    })))
-    if (activaArquitecturaId === id) {
-      const remaining = tablaParedes.filter(tp => tp.id !== id)
-      setActivaArquitecturaId(remaining[0]?.id ?? null)
-    }
-    ruteoApi.deleteArquitectura(id).catch(console.error)
-  }
-
-  function addArquitecturaToConjunto(tablaParedId: number, conjuntoId: number) {
-    setArquitecturaes(prev => prev.map(tp =>
-      tp.id === tablaParedId && !tp.conjuntos.some(c => c.id === conjuntoId)
-        ? { ...tp, conjuntos: [...tp.conjuntos, { id: conjuntoId }] }
-        : tp
-    ))
-    setConjuntos(prev => prev.map(c =>
-      c.id === conjuntoId && !c.arquitecturas.some(tp => tp.id === tablaParedId)
-        ? { ...c, arquitecturas: [...c.arquitecturas, { id: tablaParedId }] }
-        : c
-    ))
-    ruteoApi.addArquitecturaToConjunto(tablaParedId, conjuntoId).catch(console.error)
-  }
-
-  function removeArquitecturaFromConjunto(tablaParedId: number, conjuntoId: number) {
-    setArquitecturaes(prev => prev.map(tp =>
-      tp.id === tablaParedId
-        ? { ...tp, conjuntos: tp.conjuntos.filter(c => c.id !== conjuntoId) }
-        : tp
-    ))
-    setConjuntos(prev => prev.map(c =>
-      c.id === conjuntoId
-        ? { ...c, arquitecturas: c.arquitecturas.filter(tp => tp.id !== tablaParedId) }
-        : c
-    ))
-    ruteoApi.removeArquitecturaFromConjunto(tablaParedId, conjuntoId).catch(console.error)
-  }
+  const ruteo = useRuteoActions(
+    conjuntos, canios, bandejas, tablaParedes,
+    activeConjuntoId, activaArquitecturaId,
+    proyectoActivo,
+    setSegmentos, setConjuntos, setParedes, setArquitecturaes,
+    setActiveConjuntoId, setActivaArquitecturaId,
+    pendingSegmentos, editVer,
+  )
 
   return (
     <ProyectosContext.Provider value={{
@@ -866,19 +201,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       crearProyecto, actualizarProyecto, eliminarProyecto,
       tableros, loading, error, recargar,
       getTablero, getCircuito,
-      renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
-      reordenarCircuitos, actualizarDescripcion, actualizarTipo, actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarEsAlimentador, agregarAlimentador, actualizarPotencia, actualizarFormacion, agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
-      segmentos, canios, bandejas, conjuntos, activeConjuntoId, setActiveConjuntoId,
-      addSegmento, previewSegmento, editSegmento, removeSegmento,
-      asignarCircuito, quitarCircuito,
-      addConjunto, renameConjunto, deleteConjunto,
-      addSegmentoToConjunto, removeSegmentoFromConjunto,
-      addTableroToConjunto, removeTableroFromConjunto,
-      paredes, addPared, editPared, removePared,
-      tablaParedes, activaArquitecturaId, setActivaArquitecturaId,
-      addArquitectura, renameArquitectura, deleteArquitectura,
-      addArquitecturaToConjunto, removeArquitecturaFromConjunto,
-      appendSegmentos, appendParedes,
+      agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
+      ...circuitos,
+      segmentos, canios, bandejas, conjuntos,
+      activeConjuntoId, setActiveConjuntoId,
+      paredes, tablaParedes, activaArquitecturaId, setActivaArquitecturaId,
+      ...ruteo,
     }}>
       {children}
     </ProyectosContext.Provider>
