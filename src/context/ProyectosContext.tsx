@@ -56,6 +56,23 @@ type Circuito = {
   potencia: number | null
 }
 
+// Fusiona el circuito real del back con el estado actual del temp,
+// preservando cualquier edición que el usuario haya hecho antes de que el back respondiera.
+function mergeWithTemp(real: Circuito, temp: Circuito | undefined): Circuito {
+  if (!temp) return real
+  return {
+    ...real,
+    circuito:     temp.circuito,
+    descripcion:  temp.descripcion  !== null ? temp.descripcion  : real.descripcion,
+    tipo:         temp.tipo         !== null ? temp.tipo         : real.tipo,
+    FP:           temp.FP           !== null ? temp.FP           : real.FP,
+    Largo:        temp.Largo        !== null ? temp.Largo        : real.Largo,
+    potencia:     temp.potencia     !== null ? temp.potencia     : real.potencia,
+    tipo_tension: temp.tipo_tension !== null ? temp.tipo_tension : real.tipo_tension,
+    fase:         temp.fase         !== null ? temp.fase         : real.fase,
+  }
+}
+
 type Tablero = {
   id: number
   tag: string
@@ -379,11 +396,13 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
             .filter(({ id }) => id > 0)  // omitir otros circuitos pendientes (IDs temporales negativos)
           await circuitosApi.reordenarCircuitos(newOrder)
         }
-        // Preservar el orden optimista (idx) para que el circuito no salte al final
-        const resolved = { ...(real as Circuito), orden: idx }
-        setTableros(prev => replaceCirc(prev, tempId, resolved))
-        pendingCircuitos.current.set(tempId, Promise.resolve(resolved))
-        return resolved
+        const realCircuito = { ...(real as Circuito), orden: idx }
+        setTableros(prev => {
+          const currentTemp = prev.flatMap(t => t.circuitos).find(c => c.id === tempId)
+          return replaceCirc(prev, tempId, mergeWithTemp(realCircuito, currentTemp))
+        })
+        pendingCircuitos.current.set(tempId, Promise.resolve(realCircuito))
+        return realCircuito
       })
       .catch(err => { console.error(err); return temp })
     pendingCircuitos.current.set(tempId, promise)
@@ -394,12 +413,25 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     const original = tablero?.circuitos.find(c => c.id === circuitoId)
     if (!tablero || !original) return
     const tempId = nextTempId()
-    const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const temp: Circuito = { ...original, id: tempId, circuito: tag }
+    const numMatch = original.circuito.match(/^(.*?)(\d+)$/)
+    let tag: string
+    if (numMatch) {
+      const prefix = numMatch[1]
+      const nums = tablero.circuitos
+        .map(c => { const m = c.circuito.match(/^(.*?)(\d+)$/); return m && m[1] === prefix ? parseInt(m[2]) : null })
+        .filter((n): n is number => n !== null)
+      tag = `${prefix}${nums.length > 0 ? Math.max(...nums) + 1 : parseInt(numMatch[2]) + 1}`
+    } else {
+      tag = `${tablero.tag}-C${tablero.circuitos.length + 1}`
+    }
+    const temp: Circuito = { ...original, id: tempId, circuito: tag, orden: tablero.circuitos.length }
     setTableros(prev => addCirc(prev, tablero.id, temp))
     const promise = circuitosApi.duplicarCircuito(circuitoId)
       .then(real => {
-        setTableros(prev => replaceCirc(prev, tempId, real as Circuito))
+        setTableros(prev => {
+          const currentTemp = prev.flatMap(t => t.circuitos).find(c => c.id === tempId)
+          return replaceCirc(prev, tempId, mergeWithTemp(real as Circuito, currentTemp))
+        })
         pendingCircuitos.current.set(tempId, Promise.resolve(real as Circuito))
         return real as Circuito
       })

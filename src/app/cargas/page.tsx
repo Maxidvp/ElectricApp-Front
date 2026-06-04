@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -12,7 +12,7 @@ import ConfirmModal from '@/components/ConfirmModal'
 import { useProyectos } from '@/context/ProyectosContext'
 import { generarFormacion, calcCorriente } from '@/utils/electricidad'
 
-const TIPOS_CIRCUITO = ['ACU', 'MOTOR', 'VDF', 'IUG', 'TUG', 'IUE', 'TUE', 'APM', 'ALIMENTADOR'] as const
+const TIPOS_CIRCUITO = ['ACU', 'MOTOR', 'VDF', 'IUG', 'TUG', 'IUE', 'TUE', 'APM', 'RESERVA', 'ALIMENTADOR'] as const
 
 type CircuitoAPI = {
   id: number
@@ -183,8 +183,10 @@ export default function TablaCargas() {
   const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
   const [rowSeleccionada, setRowSeleccionada]           = useState<number | null>(null)
   const [draggingId,      setDraggingId]               = useState<string | null>(null)
-  const [confirmEliminar,      setConfirmEliminar]      = useState(false)
-  const [pendingTipo, setPendingTipo] = useState<{ id: number; nuevoTipo: string | null } | null>(null)
+  const [confirmEliminar,  setConfirmEliminar]  = useState(false)
+  const [pendingTipo,      setPendingTipo]      = useState<{ id: number; nuevoTipo: string | null } | null>(null)
+  const [newCircuitIds,    setNewCircuitIds]    = useState<Set<number>>(new Set())
+  const prevDisplayIdsRef = useRef<Set<number>>(new Set())
   const idEfectivo = tableroId ?? tableros[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
@@ -212,6 +214,29 @@ export default function TablaCargas() {
   }, [tablero])
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
+
+  useEffect(() => {
+    const prev = prevDisplayIdsRef.current
+    const current = new Set(displayData.map(r => r.id))
+    if (prev.size > 0) {
+      const added      = [...current].filter(id => !prev.has(id))
+      const removed    = [...prev].filter(id => !current.has(id))
+      const removedNeg = removed.filter(id => id < 0)
+      // Solo animar cuando el back confirma (ID real reemplaza al temporal)
+      // No animar el temp, así evitamos el doble flash al remontar el row
+      if (removedNeg.length > 0) {
+        const toAnimate = added.filter(id => id > 0).slice(0, removedNeg.length)
+        if (toAnimate.length > 0) {
+          setNewCircuitIds(s => new Set([...s, ...toAnimate]))
+          toAnimate.forEach(id =>
+            setTimeout(() => setNewCircuitIds(s => { const n = new Set(s); n.delete(id); return n }), 3000)
+          )
+        }
+      }
+    }
+    prevDisplayIdsRef.current = current
+  }, [displayData])
+
   if (displayData.length !== contextData.length ||
       displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.tipo !== contextData[i]?.tipo || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.fase !== contextData[i]?.fase || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion)) {
     setDisplayData(contextData)
@@ -556,6 +581,7 @@ export default function TablaCargas() {
                       key={row.id}
                       id={String(row.original.id)}
                       isSelected={isSelected}
+                      isNew={newCircuitIds.has(row.original.id)}
                       isAnyDragging={draggingId !== null}
                       onClick={() => { setRowSeleccionada(isSelected ? null : row.original.id) }}
                     >
@@ -638,9 +664,10 @@ export default function TablaCargas() {
 
 // ── Sortable row ──────────────────────────────────────────
 
-function SortableRow({ id, isSelected, isAnyDragging, onClick, children }: {
+function SortableRow({ id, isSelected, isNew, isAnyDragging, onClick, children }: {
   id: string
   isSelected: boolean
+  isNew: boolean
   isAnyDragging: boolean
   onClick: () => void
   children: React.ReactNode
@@ -650,11 +677,12 @@ function SortableRow({ id, isSelected, isAnyDragging, onClick, children }: {
     <tr
       ref={setNodeRef}
       onClick={onClick}
+      className={isNew && !isSelected ? 'circuit-new' : undefined}
       style={{
         transform: CSS.Transform.toString(transform),
         transition: isAnyDragging && !isDragging
-          ? `${transition}, background-color 500ms ease`
-          : 'background-color 500ms ease',
+          ? `${transition}, background-color 100ms ease`
+          : 'background-color 100ms ease',
         opacity: isDragging ? 0.4 : 1,
         cursor: 'pointer',
         outline: isSelected ? '1px solid var(--clr-info-a10)' : undefined,
