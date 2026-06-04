@@ -237,10 +237,32 @@ export default function TablaCargas() {
     prevDisplayIdsRef.current = current
   }, [displayData])
 
-  if (displayData.length !== contextData.length ||
-      displayData.some((r, i) => r.id !== contextData[i]?.id || r.circuito !== contextData[i]?.circuito || r.descripcion !== contextData[i]?.descripcion || r.tipo !== contextData[i]?.tipo || r.FP !== contextData[i]?.FP || r.Largo !== contextData[i]?.Largo || r.tipo_tension !== contextData[i]?.tipo_tension || r.fase !== contextData[i]?.fase || r.potencia !== contextData[i]?.potencia || r.formacion !== contextData[i]?.formacion)) {
-    setDisplayData(contextData)
-  }
+  useEffect(() => {
+    setDisplayData(prev => {
+      // Carga inicial
+      if (prev.length === 0) return contextData
+
+      const ctxById = new Map(contextData.map(r => [r.id, r]))
+      const prevIds  = new Set(prev.map(r => r.id))
+
+      // Detectar sustituciones temp (ID neg) → real (ID pos)
+      const lostNegs   = prev.filter(r => r.id < 0 && !ctxById.has(r.id))
+      const gainedPos  = contextData.filter(r => r.id > 0 && !prevIds.has(r.id))
+      const tempToReal = new Map<number, CircuitoRow>()
+      lostNegs.forEach((neg, i) => { if (gainedPos[i]) tempToReal.set(neg.id, gainedPos[i]) })
+      const handledPos = new Set(gainedPos.slice(0, lostNegs.length).map(r => r.id))
+
+      // Actualizar datos in-place preservando el orden del display
+      const updated = prev
+        .map(r => tempToReal.get(r.id) ?? ctxById.get(r.id) ?? null)
+        .filter((r): r is CircuitoRow => r !== null)
+
+      // Agregar circuitos genuinamente nuevos al final
+      const newRows = contextData.filter(r => !prevIds.has(r.id) && !handledPos.has(r.id))
+
+      return [...updated, ...newRows]
+    })
+  }, [contextData])
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
