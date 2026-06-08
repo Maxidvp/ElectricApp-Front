@@ -15,15 +15,16 @@ export const STROKE: Record<string, number> = {
   punto:   0,
 }
 
-export type ToolType = 'seleccionar' | 'asignar' | 'pared' | 'canio' | 'bandeja' | 'punto'
+export type ToolType = 'seleccionar' | 'asignar' | 'pared' | 'canio' | 'bandeja' | 'punto' | 'vertical'
 
 export const TOOLS: { id: ToolType; label: string; dot?: boolean }[] = [
   { id: 'seleccionar', label: 'Seleccionar' },
   { id: 'asignar',     label: 'Asignar'     },
-  { id: 'pared',       label: 'Pared',   dot: true },
-  { id: 'bandeja',     label: 'Bandeja', dot: true },
-  { id: 'canio',       label: 'Caño',    dot: true },
-  { id: 'punto',       label: 'Punto',   dot: true },
+  { id: 'pared',       label: 'Pared',    dot: true },
+  { id: 'bandeja',     label: 'Bandeja',  dot: true },
+  { id: 'canio',       label: 'Caño',     dot: true },
+  { id: 'punto',       label: 'Punto',    dot: true },
+  { id: 'vertical',    label: 'Vertical'            },
 ]
 
 export function snap(v: number) { return Math.round(v / GRID) * GRID }

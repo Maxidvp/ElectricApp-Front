@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: '/ruteo',       label: 'Ruteo'       },
   { href: '/ocupaciones', label: 'Ocupaciones' },
   { href: '/importador',  label: 'Importador'  },
+  { href: '/nec_panel_tag', label: 'NEC Panel'  },
   { href: '/cables',      label: 'Cables'      },
 ]
 

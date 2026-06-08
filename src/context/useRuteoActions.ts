@@ -115,12 +115,18 @@ export function useRuteoActions(
   // ── Conjuntos ─────────────────────────────────────────────────
 
   function addConjunto(nombre: string) {
+    const tempId = nextTempId()
+    const optimistic: Conjunto = { id: tempId, nombre, tableros: [], arquitecturas: [] }
+    setConjuntos(prev => [...prev, optimistic])
     ruteoApi.createConjunto(nombre, proyectoActivo?.id)
       .then(real => {
-        setConjuntos(prev => [...prev, real])
+        setConjuntos(prev => prev.map(c => c.id === tempId ? real : c))
         setActiveConjuntoId(real.id as number)
       })
-      .catch(console.error)
+      .catch(err => {
+        console.error(err)
+        setConjuntos(prev => prev.filter(c => c.id !== tempId))
+      })
   }
 
   function renameConjunto(id: number, nombre: string) {
@@ -159,6 +165,11 @@ export function useRuteoActions(
   }
 
   function addTableroToConjunto(conjuntoId: number, tableroId: number) {
+    setConjuntos(prev => prev.map(c =>
+      c.id === conjuntoId && !c.tableros.some(t => t.id === tableroId)
+        ? { ...c, tableros: [...c.tableros, { id: tableroId }] }
+        : c
+    ))
     ruteoApi.addTableroToConjunto(conjuntoId, tableroId)
       .then(updated => setConjuntos(prev => prev.map(c => c.id === conjuntoId ? updated : c)))
       .catch(console.error)
@@ -212,14 +223,12 @@ export function useRuteoActions(
 
   // ── Arquitecturas ─────────────────────────────────────────────
 
-  function addArquitectura(nombre: string) {
-    if (!proyectoActivo) return
-    ruteoApi.createArquitectura(nombre, proyectoActivo.id)
-      .then(real => {
-        setArquitecturaes(prev => [...prev, real])
-        setActivaArquitecturaId(real.id)
-      })
-      .catch(console.error)
+  async function addArquitectura(nombre: string) {
+    if (!proyectoActivo) return null
+    const real = await ruteoApi.createArquitectura(nombre, proyectoActivo.id)
+    setArquitecturaes(prev => [...prev, real])
+    setActivaArquitecturaId(real.id)
+    return real
   }
 
   function renameArquitectura(id: number, nombre: string) {

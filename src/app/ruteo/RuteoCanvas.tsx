@@ -29,12 +29,15 @@ export function RuteoCanvas({
   isSegVisible, isParedVisible, getSegColor, snapPoint,
   onStageClick, onSegmentClick, onSelectPared,
 }: Props) {
-  const [isClient,  setIsClient]  = useState(false)
-  const [size,      setSize]      = useState({ w: 800, h: 600 })
-  const [mousePos,  setMousePos]  = useState({ x: 0, y: 0 })
+  const [isClient,      setIsClient]      = useState(false)
+  const [size,          setSize]          = useState({ w: 800, h: 600 })
+  const [mousePos,      setMousePos]      = useState({ x: 0, y: 0 })
+  const [midPanning,    setMidPanning]    = useState(false)
   const containerRef     = useRef<HTMLDivElement>(null)
   const stageRef         = useRef<Konva.Stage>(null)
   const stageInitialized = useRef(false)
+  const midPanActive     = useRef(false)
+  const midPanLast       = useRef({ x: 0, y: 0 })
 
   const { segmentos, paredes, editSegmento, editPared } = useProyectos()
 
@@ -70,9 +73,42 @@ export function RuteoCanvas({
     })
   }
 
+  // Limpia el pan si el usuario suelta la rueda fuera del canvas
+  useEffect(() => {
+    const onUp = (e: MouseEvent) => {
+      if (e.button === 1 && midPanActive.current) {
+        midPanActive.current = false
+        setMidPanning(false)
+      }
+    }
+    window.addEventListener('mouseup', onUp)
+    return () => window.removeEventListener('mouseup', onUp)
+  }, [])
+
+  const handleMouseDown = (e: KonvaEventObject<MouseEvent>) => {
+    if (e.evt.button !== 1) return
+    e.evt.preventDefault()
+    midPanActive.current = true
+    midPanLast.current = { x: e.evt.clientX, y: e.evt.clientY }
+    setMidPanning(true)
+  }
+
+  const handleMouseUp = (e: KonvaEventObject<MouseEvent>) => {
+    if (e.evt.button !== 1) return
+    midPanActive.current = false
+    setMidPanning(false)
+  }
+
   const handleMouseMove = (e: KonvaEventObject<MouseEvent>) => {
     const raw = e.target.getStage()!.getRelativePointerPosition()!
     setMousePos({ x: snap(raw.x), y: snap(raw.y) })
+    if (midPanActive.current) {
+      const stage = stageRef.current!
+      const dx = e.evt.clientX - midPanLast.current.x
+      const dy = e.evt.clientY - midPanLast.current.y
+      stage.position({ x: stage.x() + dx, y: stage.y() + dy })
+      midPanLast.current = { x: e.evt.clientX, y: e.evt.clientY }
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,14 +157,18 @@ export function RuteoCanvas({
   const isSnapActive  = drawStart && (snappedMouse.x !== mousePos.x || snappedMouse.y !== mousePos.y)
   const selectedSeg   = selectedId !== null ? segmentos.find(s => s.id === selectedId) ?? null : null
 
+  const cursorClass = midPanning ? 'cursor-grabbing' : isPanMode ? 'cursor-default' : 'cursor-crosshair'
+
   return (
-    <div ref={containerRef} className={`flex-1 overflow-hidden relative ${isPanMode ? 'cursor-default' : 'cursor-crosshair'}`}>
+    <div ref={containerRef} className={`flex-1 overflow-hidden relative ${cursorClass}`}>
       <div className="absolute bottom-2.5 left-3 text-[11px] text-surface-tonal-a40 bg-[rgba(27,26,32,0.75)] px-2 py-0.75 rounded-sm pointer-events-none z-5 tabular-nums tracking-[0.02em]">
         X {(mousePos.x/100).toFixed(2)}m · Y {(mousePos.y/100).toFixed(2)}m · Z {(drawZ/100).toFixed(2)}m
       </div>
       <Stage ref={stageRef} width={size.w} height={size.h}
-        draggable={isPanMode} onWheel={handleWheel} onMouseMove={handleMouseMove}
+        draggable={isPanMode} onWheel={handleWheel}
+        onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove}
         onClick={e => {
+          if (e.evt.button !== 0) return // ignorar botón del medio
           const stage = e.target.getStage()!
           onStageClick(e.target === stage, stage.getRelativePointerPosition()!)
         }}>
@@ -160,6 +200,33 @@ export function RuteoCanvas({
                 }}
                 onClick={e => onSegmentClick(seg.id, e)} />
             )
+
+            if (seg.x1 === seg.x2 && seg.y1 === seg.y2) {
+              const r = sw * 2 + 3
+              return (
+                <Shape key={seg.id}
+                  x={seg.x1} y={seg.y1}
+                  sceneFunc={(ctx, shape) => {
+                    ctx.beginPath()
+                    ctx.moveTo(-r, -r); ctx.lineTo(r, r)
+                    ctx.moveTo(-r,  r); ctx.lineTo(r, -r)
+                    ctx.strokeShape(shape)
+                  }}
+                  stroke={color} strokeWidth={sw} lineCap="round"
+                  hitFunc={(ctx, shape) => {
+                    ctx.beginPath(); ctx.rect(-r - 4, -r - 4, (r + 4) * 2, (r + 4) * 2)
+                    ctx.fillShape(shape)
+                  }}
+                  opacity={opacity} listening={visible}
+                  draggable={isSelected && tool === 'seleccionar'}
+                  onDragEnd={e => {
+                    const pos = snapPoint(e.target.x(), e.target.y(), seg.id)
+                    e.target.position(pos)
+                    editSegmento(seg.id, { x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y })
+                  }}
+                  onClick={e => onSegmentClick(seg.id, e)} />
+              )
+            }
 
             return (
               <Line key={seg.id} points={[seg.x1, seg.y1, seg.x2, seg.y2]}
@@ -221,24 +288,31 @@ export function RuteoCanvas({
           })()}
 
           {/* Endpoint handles for selected segmento */}
-          {selectedSeg && selectedSeg.tipo !== 'punto' && tool === 'seleccionar' && (<>
-            <Circle x={selectedSeg.x1} y={selectedSeg.y1} radius={7} fill="#fff"
-              stroke={COLORS[selectedSeg.tipo] ?? '#aaa'} strokeWidth={2} draggable
-              onClick={e => { e.cancelBubble = true }}
-              onDragEnd={e => {
-                e.cancelBubble = true
-                const pos = snapPoint(e.target.x(), e.target.y(), selectedSeg.id)
-                e.target.position(pos); editSegmento(selectedSeg.id, { x1: pos.x, y1: pos.y })
-              }} />
-            <Circle x={selectedSeg.x2} y={selectedSeg.y2} radius={7} fill="#fff"
-              stroke={COLORS[selectedSeg.tipo] ?? '#aaa'} strokeWidth={2} draggable
-              onClick={e => { e.cancelBubble = true }}
-              onDragEnd={e => {
-                e.cancelBubble = true
-                const pos = snapPoint(e.target.x(), e.target.y(), selectedSeg.id)
-                e.target.position(pos); editSegmento(selectedSeg.id, { x2: pos.x, y2: pos.y })
-              }} />
-          </>)}
+          {selectedSeg && selectedSeg.tipo !== 'punto' && tool === 'seleccionar' && (() => {
+            const isVert = selectedSeg.x1 === selectedSeg.x2 && selectedSeg.y1 === selectedSeg.y2
+            return (<>
+              <Circle x={selectedSeg.x1} y={selectedSeg.y1} radius={7} fill="#fff"
+                stroke={COLORS[selectedSeg.tipo] ?? '#aaa'} strokeWidth={2} draggable
+                onClick={e => { e.cancelBubble = true }}
+                onDragEnd={e => {
+                  e.cancelBubble = true
+                  const pos = snapPoint(e.target.x(), e.target.y(), selectedSeg.id)
+                  e.target.position(pos)
+                  if (isVert) editSegmento(selectedSeg.id, { x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y })
+                  else editSegmento(selectedSeg.id, { x1: pos.x, y1: pos.y })
+                }} />
+              {!isVert && (
+                <Circle x={selectedSeg.x2} y={selectedSeg.y2} radius={7} fill="#fff"
+                  stroke={COLORS[selectedSeg.tipo] ?? '#aaa'} strokeWidth={2} draggable
+                  onClick={e => { e.cancelBubble = true }}
+                  onDragEnd={e => {
+                    e.cancelBubble = true
+                    const pos = snapPoint(e.target.x(), e.target.y(), selectedSeg.id)
+                    e.target.position(pos); editSegmento(selectedSeg.id, { x2: pos.x, y2: pos.y })
+                  }} />
+              )}
+            </>)
+          })()}
 
           {/* Drawing preview */}
           {drawStart && (<>

@@ -67,6 +67,7 @@ export type Tablero = {
   modelo: string | null
   norma: string | null
   grado_proteccion: string | null
+  modulos: number | null
   circuitos: Circuito[]
 }
 
@@ -141,7 +142,7 @@ export type ProyectosContextType = {
   tablaParedes: Arquitectura[]
   activaArquitecturaId: number | null
   setActivaArquitecturaId: (id: number | null) => void
-  addArquitectura: (nombre: string) => void
+  addArquitectura: (nombre: string) => Promise<Arquitectura | null>
   renameArquitectura: (id: number, nombre: string) => void
   deleteArquitectura: (id: number) => void
   addArquitecturaToConjunto: (tablaParedId: number, conjuntoId: number) => void

@@ -25,6 +25,13 @@ export default function RuteoPage() {
   const [showConjuntosModal, setShowConjuntosModal] = useState(false)
   const [showParedesModal,   setShowParedesModal]   = useState(false)
   const [pendingDelete,      setPendingDelete]      = useState<'segmento' | 'pared' | null>(null)
+  const [alertaModal,        setAlertaModal]        = useState<{ mensaje: string; labelAccion: string; onAccion: () => void } | null>(null)
+
+  // ── Vertical tool ──────────────────────────────────────
+  const [verticalZMax,          setVerticalZMax]          = useState(300) // 3 m en cm
+  const [verticalZMin,          setVerticalZMin]          = useState(0)
+  const [continuarCanalizacion, setContinuarCanalizacion] = useState(false)
+  const [verticalTipo,          setVerticalTipo]          = useState<'canio' | 'bandeja'>('canio')
 
   const {
     tableros, segmentos, conjuntos, paredes,
@@ -56,6 +63,15 @@ export default function RuteoPage() {
     if (activaArquitecturaId === null) return false
     return p.tabla_pared_id === activaArquitecturaId
   }, [activaArquitecturaId])
+
+  // ── Vertical tool helper ───────────────────────────────
+  const closestPointOnSegment = useCallback((px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
+    const dx = x2 - x1, dy = y2 - y1
+    const len2 = dx * dx + dy * dy
+    if (len2 === 0) return { x: x1, y: y1 }
+    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / len2))
+    return { x: Math.round(x1 + t * dx), y: Math.round(y1 + t * dy) }
+  }, [])
 
   // ── Endpoint snap ──────────────────────────────────────
   const findNearestEndpoint = useCallback((x: number, y: number, excludeId: number) => {
@@ -116,10 +132,31 @@ export default function RuteoPage() {
       return
     }
 
+    if (tool === 'vertical') {
+      if (continuarCanalizacion) return // requiere click en un segmento existente
+      if (conjuntos.length === 0 || activeConjuntoId === null) {
+        setAlertaModal({ mensaje: 'Para insertar un tramo vertical necesitás una canalización activa. Podés crear una desde el panel de Canalizaciones.', labelAccion: 'Ir a Canalizaciones', onAccion: () => setShowConjuntosModal(true) })
+        return
+      }
+      const pos = snapPoint(snap(rawPos.x), snap(rawPos.y))
+      addSegmento({
+        tipo: verticalTipo,
+        x1: pos.x, y1: pos.y, z1: verticalZMin,
+        x2: pos.x, y2: pos.y, z2: verticalZMax,
+        canio_id: null, bandeja_id: null,
+        conjunto_ids: [activeConjuntoId],
+      })
+      return
+    }
+
     const pos = snapPoint(snap(rawPos.x), snap(rawPos.y))
     if (!drawStart) {
-      if (tool === 'pared' && tablaParedes.length === 0) {
-        setShowParedesModal(true)
+      if ((tool === 'canio' || tool === 'bandeja') && (conjuntos.length === 0 || activeConjuntoId === null)) {
+        setAlertaModal({ mensaje: 'Para dibujar caños y bandejas necesitás una canalización activa. Podés crear una desde el panel de Canalizaciones.', labelAccion: 'Ir a Canalizaciones', onAccion: () => setShowConjuntosModal(true) })
+        return
+      }
+      if (tool === 'pared' && (tablaParedes.length === 0 || activaArquitecturaId === null)) {
+        setAlertaModal({ mensaje: 'Para dibujar paredes necesitás un layout de arquitectura activo. Podés crear uno desde el panel de Paredes.', labelAccion: 'Ir a Paredes', onAccion: () => setShowParedesModal(true) })
         return
       }
       setDrawStart(pos)
@@ -137,7 +174,9 @@ export default function RuteoPage() {
       }
       setDrawStart(null)
     }
-  }, [tool, drawStart, drawZ, activeConjuntoId, activaArquitecturaId, tablaParedes.length, snapPoint, addSegmento, addPared])
+  }, [tool, drawStart, drawZ, activeConjuntoId, activaArquitecturaId, tablaParedes.length,
+      conjuntos.length, continuarCanalizacion, verticalTipo, verticalZMin, verticalZMax,
+      snapPoint, addSegmento, addPared])
 
   const handleSegmentClick = useCallback((id: number, e: KonvaEventObject<MouseEvent>) => {
     if (tool === 'seleccionar') {
@@ -157,7 +196,29 @@ export default function RuteoPage() {
         asignarCircuito(id, activeCircId, { id: c.id, circuito: c.circuito, tablero: { tag: t.tag } })
       }
     }
-  }, [tool, activeCircId, segmentos, tableros, quitarCircuito, asignarCircuito])
+    if (tool === 'vertical' && continuarCanalizacion) {
+      const seg = segmentos.find(s => s.id === id)
+      if (!seg || (seg.tipo !== 'canio' && seg.tipo !== 'bandeja')) return
+      if (conjuntos.length === 0 || activeConjuntoId === null) {
+        setAlertaModal({ mensaje: 'Para insertar un tramo vertical necesitás una canalización activa. Podés crear una desde el panel de Canalizaciones.', labelAccion: 'Ir a Canalizaciones', onAccion: () => setShowConjuntosModal(true) })
+        return
+      }
+      e.cancelBubble = true
+      const stage = e.target.getStage()
+      const raw = stage?.getRelativePointerPosition()
+      if (!raw) return
+      const cp = closestPointOnSegment(raw.x, raw.y, seg.x1, seg.y1, seg.x2, seg.y2)
+      const pos = { x: snap(cp.x), y: snap(cp.y) }
+      addSegmento({
+        tipo: seg.tipo as 'canio' | 'bandeja',
+        x1: pos.x, y1: pos.y, z1: seg.z1,
+        x2: pos.x, y2: pos.y, z2: verticalZMax,
+        canio_id: null, bandeja_id: null,
+        conjunto_ids: [activeConjuntoId],
+      })
+    }
+  }, [tool, activeCircId, segmentos, tableros, conjuntos.length, continuarCanalizacion, verticalZMax,
+      activeConjuntoId, closestPointOnSegment, quitarCircuito, asignarCircuito, addSegmento])
 
   const changeTool = (t: ToolType) => {
     setTool(t); setDrawStart(null); setSelectedId(null); setSelectedParedId(null); setActiveCircId(null)
@@ -172,10 +233,17 @@ export default function RuteoPage() {
         activeConjuntoId={activeConjuntoId} drawStart={drawStart}
         activeCircId={activeCircId} activeCirc={activeCirc} selectedId={selectedId}
         tablasParedesCount={tablaParedes.length}
+        activeArquitecturaNombre={tablaParedes.find(tp => tp.id === activaArquitecturaId)?.nombre ?? null}
+        verticalZMax={verticalZMax} verticalZMin={verticalZMin}
+        continuarCanalizacion={continuarCanalizacion} verticalTipo={verticalTipo}
         onChangeTool={changeTool} onChangeDrawZ={setDrawZ}
         onChangeConjunto={setActiveConjuntoId}
         onOpenConjuntos={() => setShowConjuntosModal(true)}
         onOpenParedes={() => setShowParedesModal(true)}
+        onChangeVerticalZMax={setVerticalZMax}
+        onChangeVerticalZMin={setVerticalZMin}
+        onToggleContinuar={setContinuarCanalizacion}
+        onChangeVerticalTipo={setVerticalTipo}
       />
       <div className="flex flex-1 overflow-hidden">
         <RuteoCanvas
@@ -201,6 +269,27 @@ export default function RuteoPage() {
           onConfirmar={confirmDelete}
           onCancelar={() => setPendingDelete(null)}
         />
+      )}
+      {alertaModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200]" onClick={() => setAlertaModal(null)}>
+          <div className="bg-surface-a0 border border-surface-tonal-a20 rounded-xl shadow-[0_8px_40px_rgba(0,0,0,0.6)] px-6 py-5 flex flex-col gap-4 min-w-[320px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
+            <p className="text-[13px] text-font-a0">{alertaModal.mensaje}</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setAlertaModal(null)}
+                className="h-[32px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-surface-tonal-a30 bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={() => { alertaModal.onAccion(); setAlertaModal(null) }}
+                className="h-[32px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-info-a0 bg-info-a0 text-font-a0 hover:opacity-90"
+              >
+                {alertaModal.labelAccion}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

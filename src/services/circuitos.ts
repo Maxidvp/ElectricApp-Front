@@ -161,6 +161,16 @@ export type FormacionPatch = {
   disposicion: string | null
 }
 
+export async function renombrarCircuitosBulk(items: { id: number; circuito: string }[]) {
+  const res = await fetch(`${API_URL}/circuitos/renombrar-bulk`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(items),
+  })
+  if (!res.ok) throw new Error('Error al renombrar circuitos')
+  return res.json()
+}
+
 export async function reordenarCircuitos(ordenes: { id: number; orden: number }[]) {
   const res = await fetch(`${API_URL}/circuitos/reordenar`, {
     method: 'PATCH',
