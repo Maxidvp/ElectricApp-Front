@@ -30,11 +30,33 @@ const initialState: FormacionForm = {
 
 type Props = {
   formacionInicial?: FormacionForm
+  tipoTension?: string | null
   onGuardar: (data: FormacionForm, cables: FormacionCables) => void | Promise<void>
   onCerrar: () => void
 }
 
 let globalClipboard: FormacionForm | null = null
+let globalLastParams: { familia_id: string; familia_tierra_id: string; disposicion: string } | null = null
+
+function nfasesFromTension(tipo: string | null | undefined): string {
+  if (tipo === 'mono') return '1'
+  if (tipo === 'bi')   return '2'
+  return '3'
+}
+
+function buildInitialForm(formacionInicial: FormacionForm | undefined, tipoTension: string | null | undefined): FormacionForm {
+  if (formacionInicial?.cable_fase_id) return formacionInicial
+  const base = formacionInicial ?? initialState
+  return {
+    ...base,
+    Nfases: nfasesFromTension(tipoTension),
+    ...(globalLastParams ? {
+      familia_id:       globalLastParams.familia_id,
+      familia_tierra_id: globalLastParams.familia_tierra_id,
+      disposicion:      globalLastParams.disposicion,
+    } : {}),
+  }
+}
 
 const cx = {
   input: 'h-[34px] border border-surface-tonal-a30 rounded-[7px] px-[10px] text-[13px] bg-surface-a10 text-font-a0 outline-none w-full hover:border-surface-tonal-a40 focus:border-info-a10 focus:shadow-[0_0_0_3px_rgba(64,119,209,0.2)] disabled:opacity-40 disabled:cursor-not-allowed',
@@ -47,12 +69,12 @@ const cx = {
   btnPrimary: 'h-[34px] px-4 rounded-[7px] text-[13px] font-medium cursor-pointer border border-info-a0 bg-info-a0 text-font-a0 transition-colors hover:bg-info-a10 hover:border-info-a10 disabled:opacity-50 disabled:cursor-not-allowed',
 }
 
-export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }: Props) {
+export default function FormacionModal({ formacionInicial, tipoTension, onGuardar, onCerrar }: Props) {
   const { familias, getCablesDeFamilia } = useCables()
   const [cablesFase,   setCablesFase]   = useState<CableItem[]>([])
   const [cablesNeutro, setCablesNeutro] = useState<CableItem[]>([])
   const [cablesTierra, setCablesTierra] = useState<CableItem[]>([])
-  const [form, setForm] = useState<FormacionForm>(formacionInicial ?? initialState)
+  const [form, setForm] = useState<FormacionForm>(() => buildInitialForm(formacionInicial, tipoTension))
   const [loading, setLoading] = useState(false)
   const [clipboardSnapshot, setClipboardSnapshot] = useState<FormacionForm | null>(globalClipboard)
   const [copiadoReciente, setCopiadoReciente] = useState(false)
@@ -75,6 +97,7 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
     const neutro  = cablesF.find(c => String(c.id) === snap.cable_neutro_id) ?? null
     const cablesT = snap.familia_tierra_id ? await getCablesDeFamilia(Number(snap.familia_tierra_id)) : []
     const tierra  = cablesT.find(c => String(c.id) === snap.cable_tierra_id) ?? null
+    globalLastParams = { familia_id: snap.familia_id, familia_tierra_id: snap.familia_tierra_id, disposicion: snap.disposicion }
     await onGuardar(snap, { fase, neutro, tierra })
     onCerrar()
   }
@@ -123,6 +146,7 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
     if (!fase) return
     const neutro = cablesNeutro.find(c => String(c.id) === form.cable_neutro_id) ?? null
     const tierra = cablesTierra.find(c => String(c.id) === form.cable_tierra_id) ?? null
+    globalLastParams = { familia_id: form.familia_id, familia_tierra_id: form.familia_tierra_id, disposicion: form.disposicion }
     setLoading(true)
     try {
       await onGuardar(form, { fase, neutro, tierra })
@@ -258,8 +282,8 @@ export default function FormacionModal({ formacionInicial, onGuardar, onCerrar }
                       <option value="">— Sin especificar —</option>
                       {isUnipolar ? <>
                         <option value="trefoil">Trébol compacto — cables tocando, equilátero</option>
-                        <option value="trefoil_sep">Trébol espaciado — 1 diámetro de separación</option>
                         <option value="plana">Plana compacta — cables tocando en línea</option>
+                        <option value="trefoil_sep">Trébol espaciado — 1 diámetro de separación</option>
                         <option value="plana_sep">Plana espaciada — 1 diámetro de separación</option>
                       </> : (
                         <option value="multipolar">Multipolar — geometría interna del cable</option>

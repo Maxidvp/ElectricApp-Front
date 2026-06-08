@@ -40,16 +40,18 @@ export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): Circ
       }
     }
 
-    const tension_v = c.tipo_tension === 'mono' ? tensiones.mono
-                    : c.tipo_tension === 'bi'   ? tensiones.bi
-                    : c.tipo_tension === 'tri'  ? tensiones.tri
+    const available = [tensiones.mono != null ? 'mono' : null, tensiones.bi != null ? 'bi' : null, tensiones.tri != null ? 'tri' : null].filter(Boolean) as string[]
+    const tipoEfectivo = c.tipo_tension ?? (available.length === 1 ? available[0] : null)
+    const tension_v = tipoEfectivo === 'mono' ? tensiones.mono
+                    : tipoEfectivo === 'bi'   ? tensiones.bi
+                    : tipoEfectivo === 'tri'  ? tensiones.tri
                     : null
     return {
       id: c.id, circuito: c.circuito, descripcion: c.descripcion, tipo: c.tipo,
       FP: c.FP, Largo: c.Largo, tipo_tension: c.tipo_tension, fase: c.fase,
       es_alimentador: false,
       potencia: c.potencia ?? null,
-      corriente: calcCorriente(c.potencia ?? null, c.tipo_tension, tension_v, c.FP),
+      corriente: calcCorriente(c.potencia ?? null, tipoEfectivo, tension_v, c.FP),
       formacion: c.formacion ? generarFormacion(c.formacion) : '—',
       formacionData: formacionData(c),
     }

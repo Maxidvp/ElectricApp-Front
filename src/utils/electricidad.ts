@@ -313,11 +313,11 @@ export function calcDrops(
   const cosφ   = Math.min(1, Math.max(0, fp))
   const sinφ   = Math.sqrt(Math.max(0, 1 - cosφ ** 2))
   const factor = nfases >= 3 ? Math.sqrt(3) : 2
-  const ev     = factor * (in_ / cf) * l * (r * cosφ + x * sinφ)
+  const ev     = factor * (in_ / cf) * l /1000 * (r * cosφ + x * sinφ)
 
   const tension = parseFloat(input.tension) || tensionAuto || NaN
   const epct    = !isNaN(tension) && tension > 0 ? (ev / tension) * 100 : null
-
+  console.log({ ev, epct, tension, fp, in_, cf, l, r, x ,cosφ, sinφ, factor })
   return { ev, epct }
 }
 

@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { InlineMath } from 'react-katex'
 import FormacionModal from '@/components/FormacionModal'
 import ConfirmModal   from '@/components/ConfirmModal'
 import { useProyectos } from '@/context/ProyectosContext'
@@ -268,12 +269,30 @@ export default function TablaCargas() {
             </SortableContext>
           </table>
         </DndContext>
+
+          <div className="px-3.5 py-3 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-1.5">
+            <span>• <b>Corriente monofásica</b> — <InlineMath math="V_{FN}" /> tensión fase-neutro:{' '}
+              <InlineMath math="I = \dfrac{P}{V_{FN} \cdot FP}" />
+            </span>
+            <span>• <b>Corriente bifásica</b> — <InlineMath math="V_{FF}" /> tensión fase-fase:{' '}
+              <InlineMath math="I = \dfrac{P}{V_{FF} \cdot FP}" />
+            </span>
+            <span>• <b>Corriente trifásica</b> — <InlineMath math="V_{FF}" /> tensión de línea:{' '}
+              <InlineMath math="I = \dfrac{P}{\sqrt{3} \cdot V_{FF} \cdot FP}" />
+            </span>
+            <span>• P en kW, I en A, tensiones en V. FP = factor de potencia.</span>
+            <span>• <b>Verificación capacidad de corriente</b> (AEA 90364):{' '}
+              <InlineMath math="1{,}25 \cdot I_N \leq I_{CABLE} \cdot F_H \cdot F_C \cdot F_T" />
+              {' '}— <InlineMath math="F_H" /> altura · <InlineMath math="F_C" /> canalización · <InlineMath math="F_T" /> temperatura.
+            </span>
+          </div>
       </div>
 
       {/* Modales */}
       {modalAbierto && formacionSeleccionada && (
         <FormacionModal
           formacionInicial={formacionSeleccionada}
+          tipoTension={displayData.find(r => r.id === circuitoEditando)?.tipo_tension}
           onGuardar={(data, cables) => {
             if (!circuitoEditando) return
             actualizarFormacion(circuitoEditando, {

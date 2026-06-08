@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables, type CableItem } from '@/context/CablesContext'
@@ -405,6 +406,17 @@ export default function CaidaTension() {
               Sin circuitos en este tablero.
             </p>
           )}
+
+          <div className="px-3.5 py-3 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-1.5">
+            <span>• <b>Caída trifásica</b> — <InlineMath math="V_{FF}" /> tensión de línea:{' '}
+              <InlineMath math="e = \sqrt{3} \cdot \dfrac{I_N}{n_c} \cdot L \cdot (R\cos\varphi + X\sin\varphi)" />
+              {',  '}<InlineMath math="\%e = \dfrac{e}{V_{FF}} \cdot 100" />
+            </span>
+            <span>• <b>Caída monofásica / bifásica</b> — <InlineMath math="V" /> tensión de referencia:{' '}
+              <InlineMath math="e = 2 \cdot \dfrac{I_N}{n_c} \cdot L \cdot (R\cos\varphi + X\sin\varphi)" />
+            </span>
+            <span>• L en m · R, X en Ω/km · I en A · <InlineMath math="n_c" /> = conductores por fase. Límite recomendado: 3 % régimen permanente.</span>
+          </div>
         </div>
       )}
     </div>

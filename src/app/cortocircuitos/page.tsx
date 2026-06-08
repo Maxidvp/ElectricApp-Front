@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables, type CableItem } from '@/context/CablesContext'
@@ -397,10 +398,16 @@ export default function Cortocircuitos() {
             </p>
           )}
 
-          <div className="px-3.5 py-3 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-1">
-            <span>• <b>Icc extremo:</b> Icc = 0.8·U₀ / (2·R·L) — falla fase-neutro al final del circuito (IEC 60364).</span>
-            <span>• <b>S mín:</b> S = Icc_panel·√t / k — sección mínima adiabática. t=0.02 s zona magnética; t=0.2 s zona térmica.</span>
-            <span>• k: Cu/XLPE=143 · Cu/PVC=115 · Al/XLPE=87 · Al/PVC=74.</span>
+          <div className="px-3.5 py-3 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-1.5">
+            <span>• <b>Icc extremo</b> — falla fase-neutro al final del circuito (IEC 60364):{' '}
+              <InlineMath math="I_{cc} = \dfrac{0{,}8 \cdot U_0}{2 \cdot R \cdot L}" />
+            </span>
+            <span>• <b>Sección mínima adiabática</b> (IEC 60364):{' '}
+              <InlineMath math="\left(\dfrac{I_{CC}}{A}\right)^{\!2} t_{CC} = 0{,}0297 \cdot \log\!\left(\dfrac{T_2 + 234}{T_1 + 234}\right)" />
+              {' '}— equivalente a{' '}<InlineMath math="S_{min} = I_{cc} \cdot \sqrt{t} / k" />
+            </span>
+            <span>• T₁ = 90 °C (op. XLPE) · T₂ = 250 °C (cc XLPE) · t = 0,02 s zona magnética; t = 0,2 s zona térmica.</span>
+            <span>• k: Cu/XLPE = 143 · Cu/PVC = 115 · Al/XLPE = 87 · Al/PVC = 74.</span>
           </div>
         </div>
       )}
