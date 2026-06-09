@@ -117,11 +117,48 @@ function parseCsvSegments(
     .filter(s => [s.x1, s.y1, s.x2, s.y2].every(n => !isNaN(n)))
 }
 
+// ── Previsualización SVG ──────────────────────────────────
+
+function SegPreview({ segments, color }: { segments: SegData[], color: string }) {
+  if (segments.length === 0) return null
+  const xs   = segments.flatMap(s => [s.x1, s.x2])
+  const ys   = segments.flatMap(s => [s.y1, s.y2])
+  const minX = Math.min(...xs), maxX = Math.max(...xs)
+  const minY = Math.min(...ys), maxY = Math.max(...ys)
+  const span = Math.max(maxX - minX, maxY - minY) || 1
+  const pad  = span * 0.04 + 1
+  const sw   = span * 0.004 + 0.5
+  return (
+    <div style={{
+      marginTop: 10,
+      background: 'var(--clr-surface-tonal-a0)',
+      border: '1px solid var(--clr-surface-tonal-a20)',
+      borderRadius: 7,
+      overflow: 'hidden',
+    }}>
+      <svg
+        viewBox={`${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`}
+        style={{ width: '100%', maxHeight: 280, display: 'block' }}
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {segments.map((s, i) => (
+          <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+            stroke={color}
+            strokeOpacity={s.matched || s.tipo === 'pared' ? 0.85 : 0.25}
+            strokeWidth={sw}
+            strokeLinecap="round"
+          />
+        ))}
+      </svg>
+    </div>
+  )
+}
+
 // ── Config por tipo ───────────────────────────────────────
 
 const TIPO_INFO = {
-  canio:   { label: 'Caño',    color: '#E87C3A', catalogLabel: 'Sección'   as string | null, hint: 'Start X;Start Y;Start Z;End X;End Y;End Z;Sección',    placeholder: '0.2282;15.0141;0.0000;1.0941;15.0141;0.0000;EMT 3/4'   },
-  bandeja: { label: 'Bandeja', color: '#378ADD', catalogLabel: 'Dimensión' as string | null, hint: 'Start X;Start Y;Start Z;End X;End Y;End Z;Dimensión',  placeholder: '0.2282;15.0141;0.0000;1.0941;15.0141;0.0000;BPC 150x50' },
+  canio:   { label: 'Caño',    color: '#E87C3A', catalogLabel: 'Sección'   as string | null, hint: 'Start X;Start Y;Start Z;End X;End Y;End Z;Sección',    placeholder: '0.2282;15.0141;0.0000;1.0941;15.0141;0.0000'   },
+  bandeja: { label: 'Bandeja', color: '#378ADD', catalogLabel: 'Dimensión' as string | null, hint: 'Start X;Start Y;Start Z;End X;End Y;End Z;Dimensión',  placeholder: '0.2282;15.0141;0.0000;1.0941;15.0141;0.0000' },
   pared:   { label: 'Pared',   color: '#888780', catalogLabel: null,                         hint: 'Start X;Start Y;Start Z;End X;End Y;End Z',             placeholder: '0.2282;15.0141;0.0000;1.0941;15.0141;0.0000'           },
 } as const
 
@@ -191,7 +228,7 @@ function DestSelector({
 // ── Página ────────────────────────────────────────────────
 
 export default function ImportadorPage() {
-  const { canios, bandejas, conjuntos, tablaParedes, proyectoActivo, appendSegmentos, appendParedes, addArquitectura } = useProyectos()
+  const { canios, bandejas, conjuntos, tablaParedes, proyectoActivo, appendSegmentos, appendParedes, addArquitectura, addConjunto } = useProyectos()
 
   const [unit,         setUnit]         = useState<Unit>('m')
   const [tipo,         setTipo]         = useState<Tipo>('canio')
@@ -201,7 +238,6 @@ export default function ImportadorPage() {
 
   const [conjuntoId,    setConjuntoId]    = useState<number | null>(null)
   const [layoutId,      setLayoutId]      = useState<number | null>(null)
-  const [localConjs,    setLocalConjs]    = useState<NamedItem[]>([])
   const [localLayouts,  setLocalLayouts]  = useState<NamedItem[]>([])
   const [creandoConj,   setCreandoConj]   = useState(false)
   const [nuevoConj,     setNuevoConj]     = useState('')
@@ -212,10 +248,7 @@ export default function ImportadorPage() {
 
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const allConjs = useMemo(() => [
-    ...conjuntos,
-    ...localConjs.filter(lc => !conjuntos.some(c => c.id === lc.id)),
-  ], [conjuntos, localConjs])
+  const allConjs = useMemo(() => conjuntos, [conjuntos])
 
   const allLayouts = useMemo(() => [
     ...tablaParedes,
@@ -262,8 +295,7 @@ export default function ImportadorPage() {
   const crearConjunto = async () => {
     const nombre = nuevoConj.trim(); if (!nombre) return
     try {
-      const c = await api.createConjunto(nombre, proyectoActivo?.id)
-      setLocalConjs(prev => [...prev, { id: c.id, nombre: c.nombre }])
+      const c = await addConjunto(nombre)
       setConjuntoId(c.id); setCreandoConj(false); setNuevoConj('')
     } catch (e) { console.error(e) }
   }
@@ -379,7 +411,7 @@ export default function ImportadorPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'var(--clr-surface-tonal-a10)', border: '1px solid var(--clr-surface-tonal-a20)', borderRadius: 5 }}>
                   <span style={{ fontSize: 11, color: 'var(--clr-success-a20)' }}>✓</span>
                   <span style={{ fontSize: 11, color: 'var(--clr-font-a20)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{csvFilename}</span>
-                  <button onClick={() => { setCsvText(null); setCsvFilename(null) }} title="Quitar CSV"
+                  <button onClick={() => { setCsvText(null); setCsvFilename(null); setStatus('idle'); setImported(0) }} title="Quitar CSV"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--clr-surface-tonal-a40)', fontSize: 13, lineHeight: 1 }}>×</button>
                 </div>
               ) : (
@@ -417,34 +449,26 @@ export default function ImportadorPage() {
             />
           )}
 
+          {/* Previsualización SVG */}
+          <SegPreview segments={segments} color={tipoInfo.color} />
+
           {/* Tabla de preview */}
           {segments.length > 0 && (
             <div style={{ marginTop: 10, overflowX: 'auto' }}>
               <table className="datatable" style={{ fontSize: 12, width: '100%' }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 32 }}>#</th>
-                    <th>X1</th><th>Y1</th><th>Z1</th>
-                    <th>X2</th><th>Y2</th><th>Z2</th>
-                    {tipoInfo.catalogLabel && <th>{tipoInfo.catalogLabel}</th>}
+                    <th style={{ width: 32, textAlign: 'left' }}>#</th>
+                    <th style={{ textAlign: 'left' }}>X1</th><th style={{ textAlign: 'left' }}>Y1</th><th style={{ textAlign: 'left' }}>Z1</th>
+                    <th style={{ textAlign: 'left' }}>X2</th><th style={{ textAlign: 'left' }}>Y2</th><th style={{ textAlign: 'left' }}>Z2</th>
                   </tr>
                 </thead>
                 <tbody>
                   {segments.map((seg, i) => (
                     <tr key={i}>
-                      <td style={{ color: 'var(--clr-surface-tonal-a40)', textAlign: 'center' }}>{i + 1}</td>
+                      <td style={{ color: 'var(--clr-surface-tonal-a40)', textAlign: 'left' }}>{i + 1}</td>
                       <td>{fmtM(seg.x1)}</td><td>{fmtM(seg.y1)}</td><td>{fmtM(seg.z1)}</td>
                       <td>{fmtM(seg.x2)}</td><td>{fmtM(seg.y2)}</td><td>{fmtM(seg.z2)}</td>
-                      {tipoInfo.catalogLabel && (
-                        <td>
-                          {!seg.label
-                            ? <span style={{ color: 'var(--clr-surface-tonal-a40)' }}>—</span>
-                            : seg.matched
-                            ? <span style={{ color: 'var(--clr-success-a20)' }}>✓ {seg.label}</span>
-                            : <span style={{ color: 'var(--clr-warning-a10)' }} title="No encontrado en catálogo">⚠ {seg.label}</span>
-                          }
-                        </td>
-                      )}
                     </tr>
                   ))}
                 </tbody>

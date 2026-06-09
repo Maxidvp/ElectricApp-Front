@@ -15,11 +15,12 @@ export const STROKE: Record<string, number> = {
   punto:   0,
 }
 
-export type ToolType = 'seleccionar' | 'asignar' | 'pared' | 'canio' | 'bandeja' | 'punto' | 'vertical'
+export type ToolType = 'seleccionar' | 'asignar' | 'dividir' | 'pared' | 'canio' | 'bandeja' | 'punto' | 'vertical'
 
 export const TOOLS: { id: ToolType; label: string; dot?: boolean }[] = [
   { id: 'seleccionar', label: 'Seleccionar' },
   { id: 'asignar',     label: 'Asignar'     },
+  { id: 'dividir',     label: 'Dividir'     },
   { id: 'pared',       label: 'Pared',    dot: true },
   { id: 'bandeja',     label: 'Bandeja',  dot: true },
   { id: 'canio',       label: 'Caño',     dot: true },

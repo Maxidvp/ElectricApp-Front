@@ -1,4 +1,5 @@
 'use client'
+import { useMemo, useEffect } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import { COLORS } from './_constants'
 import type { ToolType } from './_constants'
@@ -7,12 +8,13 @@ import { calcOcupacionCanio, calcOcupacionBandeja } from '@/utils/electricidad'
 
 interface Props {
   tool: ToolType
-  selectedId: number | null
+  selectedIds: Set<number>
   activeCircId: number | null
   asignarTableroId: number | null
   setActiveCircId: (id: number | null) => void
   setAsignarTableroId: (id: number | null) => void
   handleDelete: () => void
+  onSetZ: (z: number) => void
 }
 
 const cx = {
@@ -28,16 +30,30 @@ const cx = {
 }
 
 export function RuteoPanel({
-  tool, selectedId, activeCircId, asignarTableroId,
-  setActiveCircId, setAsignarTableroId, handleDelete,
+  tool, selectedIds, activeCircId, asignarTableroId,
+  setActiveCircId, setAsignarTableroId, handleDelete, onSetZ,
 }: Props) {
   const {
-    tableros, segmentos, canios, bandejas, conjuntos,
+    tableros, segmentos, canios, bandejas, conjuntos, activeConjuntoId,
     previewSegmento, editSegmento, quitarCircuito,
     addSegmentoToConjunto, removeSegmentoFromConjunto,
     getCircuito,
   } = useProyectos()
 
+  const conjuntoTableros = useMemo(() => {
+    const c = conjuntos.find(c => c.id === activeConjuntoId)
+    if (!c) return tableros
+    const ids = new Set(c.tableros.map(t => t.id))
+    return tableros.filter(t => ids.has(t.id))
+  }, [tableros, conjuntos, activeConjuntoId])
+
+  useEffect(() => {
+    if (conjuntoTableros.length === 0) { setAsignarTableroId(null); return }
+    if (!conjuntoTableros.some(t => t.id === asignarTableroId))
+      setAsignarTableroId(conjuntoTableros[0].id)
+  }, [conjuntoTableros, asignarTableroId, setAsignarTableroId])
+
+  const selectedId       = selectedIds.size === 1 ? [...selectedIds][0] : null
   const selectedSeg      = segmentos.find(s => s.id === selectedId) ?? null
   const canalSegmentos   = segmentos.filter(s => s.tipo === 'canio' || s.tipo === 'bandeja')
   const getF             = (id: number) => getCircuito(id)?.formacion
@@ -49,7 +65,7 @@ export function RuteoPanel({
   const selectedSegIdx   = selectedSeg ? canalSegmentos.findIndex(s => s.id === selectedSeg.id) + 1 : 0
   const updateProp       = (field: string, value: unknown) => { if (selectedId) editSegmento(selectedId, { [field]: value } as never) }
   const handleQuitar     = (circId: number) => { if (selectedId) quitarCircuito(selectedId, circId) }
-  const asignarTablero   = tableros.find(t => t.id === asignarTableroId)
+  const asignarTablero   = conjuntoTableros.find(t => t.id === asignarTableroId)
   const asignarCircuitos = asignarTablero?.circuitos ?? []
   const activeCirc       = tableros.flatMap(t => t.circuitos).find(c => c.id === activeCircId) ?? null
 
@@ -61,9 +77,9 @@ export function RuteoPanel({
             ? <>Circuito activo: <strong>{activeCirc?.circuito}</strong><br /><span>Click en un caño o bandeja para asignar o quitar</span></>
             : 'Seleccioná un circuito para activarlo'}
         </div>
-        {tableros.length > 0 && (
+        {conjuntoTableros.length > 0 && (
           <div className="flex flex-wrap gap-1 px-2.5 py-2 border-b border-surface-tonal-a10">
-            {tableros.map(t => (
+            {conjuntoTableros.map(t => (
               <button key={t.id}
                 onClick={() => setAsignarTableroId(t.id)}
                 className={`px-2.5 py-0.75 rounded-xl border text-[11px] cursor-pointer transition-[background,color] ${
@@ -93,6 +109,28 @@ export function RuteoPanel({
     </div>
   )
 
+  if (selectedIds.size > 1) return (
+    <div className={cx.panel}>
+      <div className="flex items-center justify-between px-3.5 py-3 border-b border-surface-tonal-a20">
+        <span className="text-[13px] font-medium text-font-a0">{selectedIds.size} segmentos</span>
+        <button
+          onClick={handleDelete}
+          className="px-2 py-0.75 border border-danger-a0 rounded-sm bg-transparent text-danger-a10 text-xs cursor-pointer hover:bg-danger-a0 hover:text-font-a0"
+        >Eliminar</button>
+      </div>
+      <div className="px-3.5 py-3 flex flex-col gap-1.5">
+        <label className={cx.sectionLabel}>Altura Z (m)</label>
+        <DeferredInput
+          className={cx.sectionInput}
+          type="number" step="0.01" value={0}
+          onPreview={() => {}}
+          onCommit={v => onSetZ(Math.round(v * 100))}
+        />
+        <span className="text-[11px] text-surface-tonal-a40">Aplica z1 y z2 a todos los seleccionados</span>
+      </div>
+    </div>
+  )
+
   if (!selectedSeg) return (
     <div className={cx.panel}>
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-surface-tonal-a40 text-[13px] px-6 py-6 text-center">
@@ -114,6 +152,24 @@ export function RuteoPanel({
           className="px-2 py-0.75 border border-danger-a0 rounded-sm bg-transparent text-danger-a10 text-xs cursor-pointer hover:bg-danger-a0 hover:text-font-a0"
         >Eliminar</button>
       </div>
+
+      {(selectedSeg.tipo === 'canio' || selectedSeg.tipo === 'bandeja') && (
+        <div className="px-3.5 py-2.5 border-b border-surface-tonal-a10 flex gap-1.5">
+          {(['canio', 'bandeja'] as const).map(t => (
+            <button key={t}
+              onClick={() => {
+                if (selectedSeg.tipo !== t)
+                  editSegmento(selectedSeg.id, { tipo: t, canio_id: null, bandeja_id: null })
+              }}
+              className={`flex-1 py-1 rounded-md border text-xs cursor-pointer transition-[background,color,border-color] ${
+                selectedSeg.tipo === t
+                  ? 'border-surface-tonal-a30 bg-surface-tonal-a20 text-font-a0'
+                  : 'border-surface-tonal-a20 bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0'
+              }`}
+            >{t === 'canio' ? 'Caño' : 'Bandeja'}</button>
+          ))}
+        </div>
+      )}
 
       <div className="px-3.5 py-3 border-b border-surface-tonal-a10 flex flex-col gap-1.5">
         <label className={cx.sectionLabel}>Punto inicio</label>

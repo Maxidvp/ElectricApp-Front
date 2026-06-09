@@ -85,6 +85,44 @@ export function useRuteoActions(
     firePendingSeg(id, realId => ruteoApi.deleteSegmento(realId).catch(console.error))
   }
 
+  function removeSegmentos(ids: number[]) {
+    const idSet = new Set(ids)
+    setSegmentos(prev => prev.filter(s => !idSet.has(s.id)))
+    ruteoApi.deleteSegmentosBulk(ids).catch(console.error)
+  }
+
+  function editSegmentosZ(ids: number[], z: number) {
+    const idSet = new Set(ids)
+    setSegmentos(prev => prev.map(s => idSet.has(s.id) ? { ...s, z1: z, z2: z } : s))
+    ruteoApi.updateSegmentosZBulk(ids, z).catch(console.error)
+  }
+
+  function splitSegmento(id: number, x: number, y: number, z: number) {
+    let savedOrig: Segmento | undefined
+    const tempId = nextTempId()
+    setSegmentos(prev => {
+      const orig = prev.find(s => s.id === id)
+      if (!orig) return prev
+      savedOrig = orig
+      return prev
+        .map(s => s.id === id ? { ...s, x2: x, y2: y, z2: z } : s)
+        .concat({ ...orig, id: tempId, x1: x, y1: y, z1: z })
+    })
+    ruteoApi.splitSegmento(id, x, y, z)
+      .then(({ updated, created }) => {
+        setSegmentos(prev =>
+          prev.filter(s => s.id !== tempId).map(s => s.id === id ? updated : s).concat(created)
+        )
+      })
+      .catch(err => {
+        console.error(err)
+        setSegmentos(prev => {
+          if (!savedOrig) return prev
+          return prev.filter(s => s.id !== tempId).map(s => s.id === id ? savedOrig! : s)
+        })
+      })
+  }
+
   function asignarCircuito(segId: number, circId: number, circ: SegmentoCircuito) {
     setSegmentos(prev => prev.map(s =>
       s.id === segId && !s.circuitos.find(c => c.id === circId)
@@ -114,19 +152,20 @@ export function useRuteoActions(
 
   // ── Conjuntos ─────────────────────────────────────────────────
 
-  function addConjunto(nombre: string) {
+  async function addConjunto(nombre: string): Promise<Conjunto> {
     const tempId = nextTempId()
     const optimistic: Conjunto = { id: tempId, nombre, tableros: [], arquitecturas: [] }
     setConjuntos(prev => [...prev, optimistic])
-    ruteoApi.createConjunto(nombre, proyectoActivo?.id)
-      .then(real => {
-        setConjuntos(prev => prev.map(c => c.id === tempId ? real : c))
-        setActiveConjuntoId(real.id as number)
-      })
-      .catch(err => {
-        console.error(err)
-        setConjuntos(prev => prev.filter(c => c.id !== tempId))
-      })
+    try {
+      const real = await ruteoApi.createConjunto(nombre, proyectoActivo?.id)
+      setConjuntos(prev => prev.map(c => c.id === tempId ? real : c))
+      setActiveConjuntoId(real.id as number)
+      return real
+    } catch (err) {
+      console.error(err)
+      setConjuntos(prev => prev.filter(c => c.id !== tempId))
+      throw err
+    }
   }
 
   function renameConjunto(id: number, nombre: string) {
@@ -279,7 +318,7 @@ export function useRuteoActions(
   }
 
   return {
-    addSegmento, previewSegmento, editSegmento, removeSegmento,
+    addSegmento, previewSegmento, editSegmento, removeSegmento, removeSegmentos, editSegmentosZ, splitSegmento,
     asignarCircuito, quitarCircuito, appendSegmentos,
     addConjunto, renameConjunto, deleteConjunto,
     addSegmentoToConjunto, removeSegmentoFromConjunto,

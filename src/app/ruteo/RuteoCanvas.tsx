@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Stage, Layer, Line, Circle, Shape } from 'react-konva'
+import { Stage, Layer, Line, Circle, Shape, Rect } from 'react-konva'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { useProyectos } from '@/context/ProyectosContext'
@@ -8,11 +8,49 @@ import type { Segmento, Pared } from '@/services/ruteo'
 import { COLORS, STROKE, snap, niceSpacing, formatM } from './_constants'
 import type { ToolType } from './_constants'
 
+// ── Split helper ──────────────────────────────────────────────────
+
+function closestPtOnSegLine(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
+  const dx = x2 - x1, dy = y2 - y1
+  const len2 = dx * dx + dy * dy
+  if (len2 === 0) return null
+  const t = ((px - x1) * dx + (py - y1) * dy) / len2
+  if (t <= 0.02 || t >= 0.98) return null
+  return { x: x1 + t * dx, y: y1 + t * dy, t }
+}
+
+// ── Rubber-band helpers ────────────────────────────────────────────
+
+function ptInRect(px: number, py: number, rx1: number, ry1: number, rx2: number, ry2: number) {
+  const xMin = Math.min(rx1, rx2), xMax = Math.max(rx1, rx2)
+  const yMin = Math.min(ry1, ry2), yMax = Math.max(ry1, ry2)
+  return px >= xMin && px <= xMax && py >= yMin && py <= yMax
+}
+
+function segIntersectsRect(ax1: number, ay1: number, ax2: number, ay2: number,
+                            rx1: number, ry1: number, rx2: number, ry2: number) {
+  const xMin = Math.min(rx1, rx2), xMax = Math.max(rx1, rx2)
+  const yMin = Math.min(ry1, ry2), yMax = Math.max(ry1, ry2)
+  const dx = ax2 - ax1, dy = ay2 - ay1
+  let tMin = 0, tMax = 1
+  const p = [-dx, dx, -dy, dy]
+  const q = [ax1 - xMin, xMax - ax1, ay1 - yMin, yMax - ay1]
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) { if (q[i] < 0) return false }
+    else {
+      const t = q[i] / p[i]
+      if (p[i] < 0) tMin = Math.max(tMin, t); else tMax = Math.min(tMax, t)
+    }
+    if (tMin > tMax) return false
+  }
+  return true
+}
+
 interface Props {
   tool: ToolType
   drawStart: { x: number; y: number } | null
   drawZ: number
-  selectedId: number | null
+  selectedIds: Set<number>
   selectedParedId: number | null
   activeCircId: number | null
   isSegVisible: (seg: Segmento) => boolean
@@ -21,18 +59,24 @@ interface Props {
   snapPoint: (x: number, y: number, excludeId?: number) => { x: number; y: number }
   onStageClick: (isBackground: boolean, rawPos: { x: number; y: number }) => void
   onSegmentClick: (id: number, e: KonvaEventObject<MouseEvent>) => void
+  onBoxSelect: (ids: number[]) => void
   onSelectPared: (id: number | null) => void
+  onSplitSegment: (segId: number, x: number, y: number, z: number) => void
 }
 
 export function RuteoCanvas({
-  tool, drawStart, drawZ, selectedId, selectedParedId, activeCircId,
+  tool, drawStart, drawZ, selectedIds, selectedParedId, activeCircId,
   isSegVisible, isParedVisible, getSegColor, snapPoint,
-  onStageClick, onSegmentClick, onSelectPared,
+  onStageClick, onSegmentClick, onBoxSelect, onSelectPared, onSplitSegment,
 }: Props) {
   const [isClient,      setIsClient]      = useState(false)
   const [size,          setSize]          = useState({ w: 800, h: 600 })
   const [mousePos,      setMousePos]      = useState({ x: 0, y: 0 })
   const [midPanning,    setMidPanning]    = useState(false)
+  const [selStart,      setSelStart]      = useState<{ x: number; y: number } | null>(null)
+  const [selCurrent,    setSelCurrent]    = useState<{ x: number; y: number } | null>(null)
+  const [splitSnap,     setSplitSnap]     = useState<{ x: number; y: number; z: number; segId: number } | null>(null)
+  const boxSelectDone = useRef(false)
   const containerRef     = useRef<HTMLDivElement>(null)
   const stageRef         = useRef<Konva.Stage>(null)
   const stageInitialized = useRef(false)
@@ -73,6 +117,8 @@ export function RuteoCanvas({
     })
   }
 
+  useEffect(() => { if (tool !== 'dividir') setSplitSnap(null) }, [tool])
+
   // Limpia el pan si el usuario suelta la rueda fuera del canvas
   useEffect(() => {
     const onUp = (e: MouseEvent) => {
@@ -86,17 +132,47 @@ export function RuteoCanvas({
   }, [])
 
   const handleMouseDown = (e: KonvaEventObject<MouseEvent>) => {
-    if (e.evt.button !== 1) return
-    e.evt.preventDefault()
-    midPanActive.current = true
-    midPanLast.current = { x: e.evt.clientX, y: e.evt.clientY }
-    setMidPanning(true)
+    if (e.evt.button === 1) {
+      e.evt.preventDefault()
+      midPanActive.current = true
+      midPanLast.current = { x: e.evt.clientX, y: e.evt.clientY }
+      setMidPanning(true)
+      return
+    }
+    if (e.evt.button === 0 && tool === 'seleccionar' && e.target === e.target.getStage()) {
+      const pos = e.target.getStage()!.getRelativePointerPosition()!
+      setSelStart(pos)
+      setSelCurrent(null)
+    }
   }
 
   const handleMouseUp = (e: KonvaEventObject<MouseEvent>) => {
-    if (e.evt.button !== 1) return
-    midPanActive.current = false
-    setMidPanning(false)
+    if (e.evt.button === 1) {
+      midPanActive.current = false
+      setMidPanning(false)
+      return
+    }
+    if (e.evt.button === 0 && selStart && selCurrent) {
+      const dx = Math.abs(selCurrent.x - selStart.x)
+      const dy = Math.abs(selCurrent.y - selStart.y)
+      if (dx > 10 || dy > 10) {
+        const crossing = selCurrent.x < selStart.x
+        const ids = segmentos
+          .filter(s => isSegVisible(s))
+          .filter(s => crossing
+            ? ptInRect(s.x1, s.y1, selStart.x, selStart.y, selCurrent.x, selCurrent.y)
+              || ptInRect(s.x2, s.y2, selStart.x, selStart.y, selCurrent.x, selCurrent.y)
+              || segIntersectsRect(s.x1, s.y1, s.x2, s.y2, selStart.x, selStart.y, selCurrent.x, selCurrent.y)
+            : ptInRect(s.x1, s.y1, selStart.x, selStart.y, selCurrent.x, selCurrent.y)
+              && ptInRect(s.x2, s.y2, selStart.x, selStart.y, selCurrent.x, selCurrent.y)
+          )
+          .map(s => s.id)
+        onBoxSelect(ids)
+        boxSelectDone.current = true
+      }
+    }
+    setSelStart(null)
+    setSelCurrent(null)
   }
 
   const handleMouseMove = (e: KonvaEventObject<MouseEvent>) => {
@@ -108,6 +184,33 @@ export function RuteoCanvas({
       const dy = e.evt.clientY - midPanLast.current.y
       stage.position({ x: stage.x() + dx, y: stage.y() + dy })
       midPanLast.current = { x: e.evt.clientX, y: e.evt.clientY }
+    }
+    if (selStart) setSelCurrent({ x: raw.x, y: raw.y })
+
+    if (tool === 'dividir') {
+      const scale = stageRef.current?.scaleX() ?? 1
+      const hitDist = 12 / scale
+      let best: { x: number; y: number; z: number; segId: number; dist: number } | null = null
+      for (const seg of segmentos) {
+        if (!isSegVisible(seg) || seg.tipo === 'punto') continue
+        const cp = closestPtOnSegLine(raw.x, raw.y, seg.x1, seg.y1, seg.x2, seg.y2)
+        if (!cp) continue
+        const dist = Math.hypot(raw.x - cp.x, raw.y - cp.y)
+        if (dist > hitDist) continue
+        if (best && dist >= best.dist) continue
+        const isH = seg.y1 === seg.y2, isV = seg.x1 === seg.x2
+        let sx: number, sy: number
+        if (isH) { sx = snap(raw.x); sy = seg.y1 }
+        else if (isV) { sx = seg.x1; sy = snap(raw.y) }
+        else { sx = snap(cp.x); sy = snap(cp.y) }
+        const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1
+        const len2 = dx * dx + dy * dy
+        const t2 = ((sx - seg.x1) * dx + (sy - seg.y1) * dy) / len2
+        if (t2 <= 0.01 || t2 >= 0.99) continue
+        const sz = snap(seg.z1 + t2 * (seg.z2 - seg.z1))
+        best = { x: sx, y: sy, z: sz, segId: seg.id, dist }
+      }
+      setSplitSnap(best ? { x: best.x, y: best.y, z: best.z, segId: best.segId } : null)
     }
   }
 
@@ -155,9 +258,12 @@ export function RuteoCanvas({
   const dimming       = tool === 'asignar' && activeCircId !== null
   const snappedMouse  = drawStart ? snapPoint(mousePos.x, mousePos.y) : mousePos
   const isSnapActive  = drawStart && (snappedMouse.x !== mousePos.x || snappedMouse.y !== mousePos.y)
+  const selectedId    = selectedIds.size === 1 ? [...selectedIds][0] : null
   const selectedSeg   = selectedId !== null ? segmentos.find(s => s.id === selectedId) ?? null : null
 
-  const cursorClass = midPanning ? 'cursor-grabbing' : isPanMode ? 'cursor-default' : 'cursor-crosshair'
+  const cursorClass = midPanning ? 'cursor-grabbing'
+    : tool === 'dividir' ? (splitSnap ? 'cursor-crosshair' : 'cursor-default')
+    : isPanMode ? 'cursor-default' : 'cursor-crosshair'
 
   return (
     <div ref={containerRef} className={`flex-1 overflow-hidden relative ${cursorClass}`}>
@@ -165,10 +271,16 @@ export function RuteoCanvas({
         X {(mousePos.x/100).toFixed(2)}m · Y {(mousePos.y/100).toFixed(2)}m · Z {(drawZ/100).toFixed(2)}m
       </div>
       <Stage ref={stageRef} width={size.w} height={size.h}
-        draggable={isPanMode} onWheel={handleWheel}
+        draggable={false} onWheel={handleWheel}
         onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove}
         onClick={e => {
-          if (e.evt.button !== 0) return // ignorar botón del medio
+          if (e.evt.button !== 0) return
+          if (boxSelectDone.current) { boxSelectDone.current = false; return }
+          if (tool === 'dividir' && splitSnap) {
+            onSplitSegment(splitSnap.segId, splitSnap.x, splitSnap.y, splitSnap.z)
+            setSplitSnap(null)
+            return
+          }
           const stage = e.target.getStage()!
           onStageClick(e.target === stage, stage.getRelativePointerPosition()!)
         }}>
@@ -180,7 +292,7 @@ export function RuteoCanvas({
         <Layer>
           {segmentos.map(seg => {
             const visible       = isSegVisible(seg)
-            const isSelected    = seg.id === selectedId
+            const isSelected    = selectedIds.has(seg.id)
             const color         = isSelected ? '#ffffff' : getSegColor(seg)
             const sw            = (STROKE[seg.tipo] ?? 2) + (isSelected ? 2 : 0)
             const hasActiveCirc = dimming && seg.circuitos.some(c => c.id === activeCircId)
@@ -192,7 +304,7 @@ export function RuteoCanvas({
             if (seg.tipo === 'punto') return (
               <Circle key={seg.id} x={seg.x1} y={seg.y1}
                 radius={isSelected ? 8 : 6} fill={color} opacity={opacity} listening={visible}
-                draggable={isSelected && tool === 'seleccionar'}
+                draggable={isSelected && selectedIds.size === 1 && tool === 'seleccionar'}
                 onDragEnd={e => {
                   const pos = snapPoint(e.target.x(), e.target.y(), seg.id)
                   e.target.position(pos)
@@ -218,7 +330,7 @@ export function RuteoCanvas({
                     ctx.fillShape(shape)
                   }}
                   opacity={opacity} listening={visible}
-                  draggable={isSelected && tool === 'seleccionar'}
+                  draggable={isSelected && selectedIds.size === 1 && tool === 'seleccionar'}
                   onDragEnd={e => {
                     const pos = snapPoint(e.target.x(), e.target.y(), seg.id)
                     e.target.position(pos)
@@ -232,7 +344,7 @@ export function RuteoCanvas({
               <Line key={seg.id} points={[seg.x1, seg.y1, seg.x2, seg.y2]}
                 stroke={color} strokeWidth={sw} lineCap="round" hitStrokeWidth={12}
                 opacity={opacity} listening={visible}
-                draggable={isSelected && tool === 'seleccionar'}
+                draggable={isSelected && selectedIds.size === 1 && tool === 'seleccionar'}
                 onDragEnd={e => {
                   const dx = e.target.x(); const dy = e.target.y()
                   e.target.position({ x: 0, y: 0 })
@@ -240,6 +352,21 @@ export function RuteoCanvas({
                 }}
                 onClick={e => onSegmentClick(seg.id, e)} />
             )
+          })}
+
+          {segmentos.flatMap(seg => {
+            if (!isSegVisible(seg) || selectedIds.has(seg.id)) return []
+            if (seg.tipo === 'punto' || (seg.x1 === seg.x2 && seg.y1 === seg.y2)) return []
+            const baseSw     = STROKE[seg.tipo] ?? 2
+            const color      = getSegColor(seg)
+            const hasActiveCirc = dimming && seg.circuitos.some(c => c.id === activeCircId)
+            const canAssign  = seg.tipo === 'canio' || seg.tipo === 'bandeja'
+            const opacity    = dimming ? (canAssign ? (hasActiveCirc ? 1 : 0.2) : 0.08) : 1
+            const r = baseSw * 0.75
+            return [
+              <Circle key={`ep1-${seg.id}`} x={seg.x1} y={seg.y1} radius={r} fill={color} opacity={opacity} listening={false} />,
+              <Circle key={`ep2-${seg.id}`} x={seg.x2} y={seg.y2} radius={r} fill={color} opacity={opacity} listening={false} />,
+            ]
           })}
 
           {paredes.map(p => {
@@ -251,7 +378,7 @@ export function RuteoCanvas({
               <Line key={`pared-${p.id}`} points={[p.x1, p.y1, p.x2, p.y2]}
                 stroke={color} strokeWidth={sw} lineCap="round" hitStrokeWidth={12}
                 opacity={visible ? 1 : 0} listening={visible}
-                draggable={isSelected && tool === 'seleccionar'}
+                draggable={isSelected && selectedIds.size === 1 && tool === 'seleccionar'}
                 onDragEnd={e => {
                   const dx = e.target.x(); const dy = e.target.y()
                   e.target.position({ x: 0, y: 0 })
@@ -311,6 +438,39 @@ export function RuteoCanvas({
                     e.target.position(pos); editSegmento(selectedSeg.id, { x2: pos.x, y2: pos.y })
                   }} />
               )}
+            </>)
+          })()}
+
+          {/* Rubber-band selection rect */}
+          {selStart && selCurrent && (() => {
+            const scale    = stageRef.current?.scaleX() ?? 1
+            const crossing = selCurrent.x < selStart.x
+            return (
+              <Rect
+                x={Math.min(selStart.x, selCurrent.x)}
+                y={Math.min(selStart.y, selCurrent.y)}
+                width={Math.abs(selCurrent.x - selStart.x)}
+                height={Math.abs(selCurrent.y - selStart.y)}
+                fill={crossing ? 'rgba(0,196,140,0.06)' : 'rgba(74,158,255,0.06)'}
+                stroke={crossing ? '#00c48c' : '#4a9eff'}
+                strokeWidth={1 / scale}
+                dash={crossing ? [8 / scale, 4 / scale] : undefined}
+                listening={false}
+              />
+            )
+          })()}
+
+          {/* Split crosshair */}
+          {tool === 'dividir' && splitSnap && (() => {
+            const scale = stageRef.current?.scaleX() ?? 1
+            const arm = 10 / scale
+            const sw  = 1.5 / scale
+            return (<>
+              <Line points={[splitSnap.x - arm, splitSnap.y, splitSnap.x + arm, splitSnap.y]}
+                stroke="#FFD700" strokeWidth={sw} listening={false} />
+              <Line points={[splitSnap.x, splitSnap.y - arm, splitSnap.x, splitSnap.y + arm]}
+                stroke="#FFD700" strokeWidth={sw} listening={false} />
+              <Circle x={splitSnap.x} y={splitSnap.y} radius={3 / scale} fill="#FFD700" listening={false} />
             </>)
           })()}
 

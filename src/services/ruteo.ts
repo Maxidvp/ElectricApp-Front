@@ -128,6 +128,24 @@ export async function createParedesBulk(items: CreateParedInput[]): Promise<Pare
   return res.json()
 }
 
+export async function deleteSegmentosBulk(ids: number[]): Promise<void> {
+  const res = await fetch(`${API}/segmentos/bulk`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+  if (!res.ok) throw new Error('Error al eliminar segmentos')
+}
+
+export async function updateSegmentosZBulk(ids: number[], z: number): Promise<void> {
+  const res = await fetch(`${API}/segmentos/bulk-z`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, z1: z, z2: z }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar Z')
+}
+
 export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>): Promise<Segmento> {
   const res = await fetch(`${API}/segmentos/${id}`, {
     method: 'PUT',
@@ -141,6 +159,16 @@ export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'c
 export async function deleteSegmento(id: number): Promise<void> {
   const res = await fetch(`${API}/segmentos/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar segmento')
+}
+
+export async function splitSegmento(id: number, x: number, y: number, z: number): Promise<{ updated: Segmento; created: Segmento }> {
+  const res = await fetch(`${API}/segmentos/${id}/split`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ x, y, z }),
+  })
+  if (!res.ok) throw new Error('Error al dividir segmento')
+  return res.json()
 }
 
 export async function addCircuitoToSegmento(segmentoId: number, circuitoId: number): Promise<Segmento> {

@@ -17,7 +17,7 @@ const snap = (v: number) => Math.round(v / GRID) * GRID
 export default function RuteoPage() {
   const [tool,             setTool]             = useState<ToolType>('seleccionar')
   const [drawStart,        setDrawStart]        = useState<{ x: number; y: number } | null>(null)
-  const [selectedId,       setSelectedId]       = useState<number | null>(null)
+  const [selectedIds,      setSelectedIds]      = useState<Set<number>>(new Set())
   const [selectedParedId,  setSelectedParedId]  = useState<number | null>(null)
   const [drawZ,            setDrawZ]            = useState(0)
   const [activeCircId,     setActiveCircId]     = useState<number | null>(null)
@@ -37,10 +37,12 @@ export default function RuteoPage() {
     tableros, segmentos, conjuntos, paredes,
     activeConjuntoId, setActiveConjuntoId,
     tablaParedes, activaArquitecturaId,
-    addSegmento, removeSegmento,
+    addSegmento, removeSegmento, removeSegmentos, editSegmentosZ, splitSegmento,
     asignarCircuito, quitarCircuito,
     addPared, removePared,
   } = useProyectos()
+
+  const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null
 
   useEffect(() => {
     if (tableros.length > 0 && asignarTableroId === null) setAsignarTableroId(tableros[0].id)
@@ -97,30 +99,42 @@ export default function RuteoPage() {
 
   // ── Keyboard ───────────────────────────────────────────
   const handleDelete = useCallback(() => {
-    if (selectedId)           setPendingDelete('segmento')
-    else if (selectedParedId) setPendingDelete('pared')
-  }, [selectedId, selectedParedId])
+    if (selectedIds.size > 0)  setPendingDelete('segmento')
+    else if (selectedParedId)  setPendingDelete('pared')
+  }, [selectedIds, selectedParedId])
 
   const confirmDelete = useCallback(() => {
-    if (selectedId)           { removeSegmento(selectedId);   setSelectedId(null) }
-    else if (selectedParedId) { removePared(selectedParedId); setSelectedParedId(null) }
+    if (selectedIds.size > 0) {
+      const ids = [...selectedIds]
+      if (ids.length === 1) removeSegmento(ids[0])
+      else removeSegmentos(ids)
+      setSelectedIds(new Set())
+    } else if (selectedParedId) {
+      removePared(selectedParedId)
+      setSelectedParedId(null)
+    }
     setPendingDelete(null)
-  }, [selectedId, selectedParedId, removeSegmento, removePared])
+  }, [selectedIds, selectedParedId, removeSegmento, removeSegmentos, removePared])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setDrawStart(null); setSelectedId(null); setActiveCircId(null) }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedId || selectedParedId) &&
+      if (e.key === 'Escape') { setDrawStart(null); setSelectedIds(new Set()); setActiveCircId(null) }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedIds.size > 0 || selectedParedId) &&
           document.activeElement?.tagName !== 'INPUT') handleDelete()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, selectedParedId, handleDelete])
+  }, [selectedIds, selectedParedId, handleDelete])
 
   // ── Canvas event handlers ──────────────────────────────
+  const handleBoxSelect = useCallback((ids: number[]) => {
+    setSelectedIds(new Set(ids))
+    setSelectedParedId(null)
+  }, [])
+
   const handleStageClick = useCallback((isBackground: boolean, rawPos: { x: number; y: number }) => {
     if (tool === 'seleccionar') {
-      if (isBackground) { setSelectedId(null); setSelectedParedId(null) }
+      if (isBackground) { setSelectedIds(new Set()); setSelectedParedId(null) }
       return
     }
     if (tool === 'asignar') return
@@ -178,9 +192,25 @@ export default function RuteoPage() {
       conjuntos.length, continuarCanalizacion, verticalTipo, verticalZMin, verticalZMax,
       snapPoint, addSegmento, addPared])
 
+  const handleSplitSegment = useCallback((segId: number, x: number, y: number, z: number) => {
+    splitSegmento(segId, x, y, z)
+  }, [splitSegmento])
+
   const handleSegmentClick = useCallback((id: number, e: KonvaEventObject<MouseEvent>) => {
+    if (tool === 'dividir') return
     if (tool === 'seleccionar') {
-      e.cancelBubble = true; setSelectedParedId(null); setSelectedId(id); return
+      e.cancelBubble = true
+      setSelectedParedId(null)
+      if (e.evt.shiftKey) {
+        setSelectedIds(prev => {
+          const next = new Set(prev)
+          if (next.has(id)) next.delete(id); else next.add(id)
+          return next
+        })
+      } else {
+        setSelectedIds(new Set([id]))
+      }
+      return
     }
     if (tool === 'asignar') {
       if (!activeCircId) return
@@ -221,7 +251,7 @@ export default function RuteoPage() {
       activeConjuntoId, closestPointOnSegment, quitarCircuito, asignarCircuito, addSegmento])
 
   const changeTool = (t: ToolType) => {
-    setTool(t); setDrawStart(null); setSelectedId(null); setSelectedParedId(null); setActiveCircId(null)
+    setTool(t); setDrawStart(null); setSelectedIds(new Set()); setSelectedParedId(null); setActiveCircId(null)
   }
 
   const activeCirc = tableros.flatMap(t => t.circuitos).find(c => c.id === activeCircId) ?? null
@@ -248,24 +278,30 @@ export default function RuteoPage() {
       <div className="flex flex-1 overflow-hidden">
         <RuteoCanvas
           tool={tool} drawStart={drawStart} drawZ={drawZ}
-          selectedId={selectedId} selectedParedId={selectedParedId} activeCircId={activeCircId}
+          selectedIds={selectedIds} selectedParedId={selectedParedId} activeCircId={activeCircId}
           isSegVisible={isSegVisible} isParedVisible={isParedVisible}
           getSegColor={getSegColor} snapPoint={snapPoint}
           onStageClick={handleStageClick} onSegmentClick={handleSegmentClick}
-          onSelectPared={id => { setSelectedId(null); setSelectedParedId(id) }}
+          onBoxSelect={handleBoxSelect} onSplitSegment={handleSplitSegment}
+          onSelectPared={id => { setSelectedIds(new Set()); setSelectedParedId(id) }}
         />
         <RuteoPanel
-          tool={tool} selectedId={selectedId}
+          tool={tool} selectedIds={selectedIds}
           activeCircId={activeCircId} asignarTableroId={asignarTableroId}
           setActiveCircId={setActiveCircId} setAsignarTableroId={setAsignarTableroId}
           handleDelete={handleDelete}
+          onSetZ={z => editSegmentosZ([...selectedIds], z)}
         />
       </div>
       {showConjuntosModal && <ConjuntosModal onClose={() => setShowConjuntosModal(false)} />}
       {showParedesModal   && <ArquitecturasModal onClose={() => setShowParedesModal(false)} />}
       {pendingDelete && (
         <ConfirmModal
-          mensaje={pendingDelete === 'segmento' ? '¿Eliminar este segmento?' : '¿Eliminar esta pared?'}
+          mensaje={
+            pendingDelete === 'segmento'
+              ? selectedIds.size > 1 ? `¿Eliminar ${selectedIds.size} segmentos?` : '¿Eliminar este segmento?'
+              : '¿Eliminar esta pared?'
+          }
           onConfirmar={confirmDelete}
           onCancelar={() => setPendingDelete(null)}
         />
