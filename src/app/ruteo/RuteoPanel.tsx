@@ -13,6 +13,11 @@ interface Props {
   asignarTableroId: number | null
   setActiveCircId: (id: number | null) => void
   setAsignarTableroId: (id: number | null) => void
+  medirCircId: number | null
+  medirTableroId: number | null
+  localExcluded: Set<number>
+  setMedirCircId: (id: number | null) => void
+  setMedirTableroId: (id: number | null) => void
   handleDelete: () => void
   onSetZ: (z: number) => void
 }
@@ -31,13 +36,15 @@ const cx = {
 
 export function RuteoPanel({
   tool, selectedIds, activeCircId, asignarTableroId,
-  setActiveCircId, setAsignarTableroId, handleDelete, onSetZ,
+  setActiveCircId, setAsignarTableroId,
+  medirCircId, medirTableroId, localExcluded, setMedirCircId, setMedirTableroId,
+  handleDelete, onSetZ,
 }: Props) {
   const {
     tableros, segmentos, canios, bandejas, conjuntos, activeConjuntoId,
     previewSegmento, editSegmento, quitarCircuito,
     addSegmentoToConjunto, removeSegmentoFromConjunto,
-    getCircuito,
+    getCircuito, actualizarLargo,
   } = useProyectos()
 
   const conjuntoTableros = useMemo(() => {
@@ -51,7 +58,35 @@ export function RuteoPanel({
     if (conjuntoTableros.length === 0) { setAsignarTableroId(null); return }
     if (!conjuntoTableros.some(t => t.id === asignarTableroId))
       setAsignarTableroId(conjuntoTableros[0].id)
-  }, [conjuntoTableros, asignarTableroId, setAsignarTableroId])
+  }, [conjuntoTableros])
+
+  useEffect(() => {
+    if (conjuntoTableros.length === 0) { setMedirTableroId(null); return }
+    if (!conjuntoTableros.some(t => t.id === medirTableroId))
+      setMedirTableroId(conjuntoTableros[0].id)
+  }, [conjuntoTableros])
+
+  const medirTablero     = conjuntoTableros.find(t => t.id === medirTableroId)
+  const medirCircuitos   = medirTablero?.circuitos ?? []
+  const medirSegs        = useMemo(() =>
+    medirCircId === null ? [] : segmentos.filter(s =>
+      s.conjuntos.some(c => c.id === activeConjuntoId) &&
+      s.circuitos.some(c => c.id === medirCircId)
+    ),
+    [segmentos, medirCircId, activeConjuntoId]
+  )
+  const medirTotal       = medirSegs
+    .filter(s => !localExcluded.has(s.id))
+    .reduce((sum, s) => sum + Math.hypot(s.x2 - s.x1, s.y2 - s.y1, s.z2 - s.z1) / 100, 0)
+  const medirExcludedCnt = medirSegs.filter(s => localExcluded.has(s.id)).length
+  const medirActiveCount = medirSegs.length - medirExcludedCnt
+  const medirRounded     = Math.round(medirTotal * 100) / 100
+  const medirSavedLargo  = medirCircId !== null ? (getCircuito(medirCircId)?.Largo ?? null) : null
+  const medirAlreadySame = medirSavedLargo !== null && medirSavedLargo === medirRounded
+  const canSaveLargo     = medirActiveCount > 0 && !medirAlreadySame
+  const saveHint         = medirActiveCount === 0 ? 'Sin segmentos activos'
+    : medirAlreadySame ? 'El valor ya está guardado'
+    : null
 
   const selectedId       = selectedIds.size === 1 ? [...selectedIds][0] : null
   const selectedSeg      = segmentos.find(s => s.id === selectedId) ?? null
@@ -68,6 +103,70 @@ export function RuteoPanel({
   const asignarTablero   = conjuntoTableros.find(t => t.id === asignarTableroId)
   const asignarCircuitos = asignarTablero?.circuitos ?? []
   const activeCirc       = tableros.flatMap(t => t.circuitos).find(c => c.id === activeCircId) ?? null
+
+  if (tool === 'medir') return (
+    <div className={cx.panel}>
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="px-3.5 py-3 text-xs text-surface-tonal-a40 border-b border-surface-tonal-a10 leading-relaxed">
+          {medirCircId
+            ? <>Circuito activo. Clickeá un segmento para incluirlo o excluirlo.</>
+            : 'Seleccioná un circuito para medir su largo.'}
+        </div>
+        {conjuntoTableros.length > 0 && (
+          <div className="flex flex-wrap gap-1 px-2.5 py-2 border-b border-surface-tonal-a10">
+            {conjuntoTableros.map(t => (
+              <button key={t.id}
+                onClick={() => setMedirTableroId(t.id)}
+                className={`px-2.5 py-0.75 rounded-xl border text-[11px] cursor-pointer transition-[background,color] ${
+                  medirTableroId === t.id
+                    ? 'bg-surface-tonal-a20 text-font-a0 border-surface-tonal-a30'
+                    : 'border-surface-tonal-a20 bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0'
+                }`}
+              >{t.tag}</button>
+            ))}
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto px-2.5 py-2 flex flex-col gap-0.75">
+          {medirCircuitos.length === 0
+            ? <span className="text-xs text-surface-tonal-a40 py-2 px-1">Sin circuitos</span>
+            : medirCircuitos.map(c => (
+                <button key={c.id}
+                  onClick={() => setMedirCircId(medirCircId === c.id ? null : c.id)}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-[background,color,border-color] ${
+                    medirCircId === c.id
+                      ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
+                      : 'border-transparent bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0'
+                  }`}
+                >{c.circuito}</button>
+              ))}
+        </div>
+        {medirCircId !== null && (
+          <div className="px-3.5 py-3 border-t border-surface-tonal-a20 flex flex-col gap-2">
+            <div className="flex justify-between text-[11px] text-surface-tonal-a40">
+              <span>{medirSegs.length - medirExcludedCnt} seg. activos</span>
+              {medirExcludedCnt > 0 && <span>{medirExcludedCnt} excluidos</span>}
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[22px] font-semibold tabular-nums text-font-a0">{medirTotal.toFixed(2)}</span>
+              <span className="text-[12px] text-surface-tonal-a40">m</span>
+            </div>
+            <button
+              onClick={() => canSaveLargo && actualizarLargo(medirCircId, medirRounded)}
+              disabled={!canSaveLargo}
+              className={`w-full py-1.5 rounded-md border text-xs transition-opacity ${
+                canSaveLargo
+                  ? 'border-primary-a0 bg-primary-a0 text-font-a0 cursor-pointer hover:opacity-90'
+                  : 'border-surface-tonal-a20 bg-transparent text-surface-tonal-a30 cursor-default opacity-50'
+              }`}
+            >Guardar como Largo</button>
+            {saveHint && (
+              <span className="text-[11px] text-surface-tonal-a40 text-center">{saveHint}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
   if (tool === 'asignar') return (
     <div className={cx.panel}>
@@ -255,16 +354,24 @@ export function RuteoPanel({
                 className="h-full rounded-full transition-[width] duration-300"
                 style={{
                   width: `${Math.min(ocupacion.pct, 100)}%`,
-                  background: ocupacion.pct > 40 ? 'var(--clr-danger-a10)'
-                    : ocupacion.pct > 30 ? 'var(--clr-warning-a10)'
-                    : 'var(--clr-success-a10)',
+                  background: selectedSeg?.tipo === 'bandeja'
+                    ? (ocupacion.pct > 90 || ocupacion.pct < 10 ? 'var(--clr-danger-a10)'
+                      : ocupacion.pct > 80 || ocupacion.pct < 20 ? 'var(--clr-warning-a10)'
+                      : 'var(--clr-success-a10)')
+                    : (ocupacion.pct > 35 || ocupacion.pct < 5  ? 'var(--clr-danger-a10)'
+                      : ocupacion.pct > 30 || ocupacion.pct < 10 ? 'var(--clr-warning-a10)'
+                      : 'var(--clr-success-a10)'),
                 }}
               />
             </div>
             <span className="text-[12px] font-medium tabular-nums" style={{
-              color: ocupacion.pct > 40 ? 'var(--clr-danger-a10)'
-                : ocupacion.pct > 30 ? 'var(--clr-warning-a10)'
-                : 'var(--clr-success-a10)',
+              color: selectedSeg?.tipo === 'bandeja'
+                ? (ocupacion.pct > 90 || ocupacion.pct < 10 ? 'var(--clr-danger-a10)'
+                  : ocupacion.pct > 80 || ocupacion.pct < 20 ? 'var(--clr-warning-a10)'
+                  : 'var(--clr-success-a10)')
+                : (ocupacion.pct > 35 || ocupacion.pct < 5  ? 'var(--clr-danger-a10)'
+                  : ocupacion.pct > 30 || ocupacion.pct < 10 ? 'var(--clr-warning-a10)'
+                  : 'var(--clr-success-a10)'),
             }}>
               {ocupacion.pct.toFixed(1)}%
             </span>

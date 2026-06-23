@@ -53,6 +53,8 @@ interface Props {
   selectedIds: Set<number>
   selectedParedId: number | null
   activeCircId: number | null
+  medirCircId: number | null
+  localExcluded: Set<number>
   isSegVisible: (seg: Segmento) => boolean
   isParedVisible: (p: Pared) => boolean
   getSegColor: (seg: Segmento) => string
@@ -66,6 +68,7 @@ interface Props {
 
 export function RuteoCanvas({
   tool, drawStart, drawZ, selectedIds, selectedParedId, activeCircId,
+  medirCircId, localExcluded,
   isSegVisible, isParedVisible, getSegColor, snapPoint,
   onStageClick, onSegmentClick, onBoxSelect, onSelectPared, onSplitSegment,
 }: Props) {
@@ -252,7 +255,7 @@ export function RuteoCanvas({
 
   if (!isClient) return null
 
-  const isPanMode     = tool === 'seleccionar' || tool === 'asignar'
+  const isPanMode     = tool === 'seleccionar' || tool === 'asignar' || tool === 'medir'
   const previewColor  = COLORS[tool] ?? '#aaa'
   const previewStroke = STROKE[tool] ?? 2
   const dimming       = tool === 'asignar' && activeCircId !== null
@@ -295,10 +298,14 @@ export function RuteoCanvas({
             const isSelected    = selectedIds.has(seg.id)
             const color         = isSelected ? '#ffffff' : getSegColor(seg)
             const sw            = (STROKE[seg.tipo] ?? 2) + (isSelected ? 2 : 0)
-            const hasActiveCirc = dimming && seg.circuitos.some(c => c.id === activeCircId)
-            const canAssign     = seg.tipo === 'canio' || seg.tipo === 'bandeja'
+            const hasActiveCirc  = dimming && seg.circuitos.some(c => c.id === activeCircId)
+            const canAssign      = seg.tipo === 'canio' || seg.tipo === 'bandeja'
+            const measuring      = tool === 'medir' && medirCircId !== null
+            const hasMedirCirc   = measuring && seg.circuitos.some(c => c.id === medirCircId)
+            const isExcluded     = hasMedirCirc && localExcluded.has(seg.id)
             const opacity = !visible ? 0
-              : dimming ? (canAssign ? (hasActiveCirc ? 1 : 0.2) : 0.08)
+              : measuring ? (hasMedirCirc ? (isExcluded ? 0.2 : 1) : 0.06)
+              : dimming   ? (canAssign ? (hasActiveCirc ? 1 : 0.2) : 0.08)
               : 1
 
             if (seg.tipo === 'punto') return (
@@ -357,11 +364,16 @@ export function RuteoCanvas({
           {segmentos.flatMap(seg => {
             if (!isSegVisible(seg) || selectedIds.has(seg.id)) return []
             if (seg.tipo === 'punto' || (seg.x1 === seg.x2 && seg.y1 === seg.y2)) return []
-            const baseSw     = STROKE[seg.tipo] ?? 2
-            const color      = getSegColor(seg)
+            const baseSw        = STROKE[seg.tipo] ?? 2
+            const color         = getSegColor(seg)
             const hasActiveCirc = dimming && seg.circuitos.some(c => c.id === activeCircId)
-            const canAssign  = seg.tipo === 'canio' || seg.tipo === 'bandeja'
-            const opacity    = dimming ? (canAssign ? (hasActiveCirc ? 1 : 0.2) : 0.08) : 1
+            const canAssign     = seg.tipo === 'canio' || seg.tipo === 'bandeja'
+            const measuring     = tool === 'medir' && medirCircId !== null
+            const hasMedirCirc  = measuring && seg.circuitos.some(c => c.id === medirCircId)
+            const isExcluded    = hasMedirCirc && localExcluded.has(seg.id)
+            const opacity = measuring ? (hasMedirCirc ? (isExcluded ? 0.2 : 1) : 0.06)
+              : dimming   ? (canAssign ? (hasActiveCirc ? 1 : 0.2) : 0.08)
+              : 1
             const r = baseSw * 0.75
             return [
               <Circle key={`ep1-${seg.id}`} x={seg.x1} y={seg.y1} radius={r} fill={color} opacity={opacity} listening={false} />,

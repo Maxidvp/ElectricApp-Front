@@ -22,6 +22,9 @@ export default function RuteoPage() {
   const [drawZ,            setDrawZ]            = useState(0)
   const [activeCircId,     setActiveCircId]     = useState<number | null>(null)
   const [asignarTableroId, setAsignarTableroId] = useState<number | null>(null)
+  const [medirCircId,    setMedirCircIdRaw]  = useState<number | null>(null)
+  const [medirTableroId, setMedirTableroId]  = useState<number | null>(null)
+  const [localExcluded,  setLocalExcluded]   = useState<Set<number>>(new Set())
   const [showConjuntosModal, setShowConjuntosModal] = useState(false)
   const [showParedesModal,   setShowParedesModal]   = useState(false)
   const [pendingDelete,      setPendingDelete]      = useState<'segmento' | 'pared' | null>(null)
@@ -198,6 +201,13 @@ export default function RuteoPage() {
 
   const handleSegmentClick = useCallback((id: number, e: KonvaEventObject<MouseEvent>) => {
     if (tool === 'dividir') return
+    if (tool === 'medir') {
+      e.cancelBubble = true
+      const seg = segmentos.find(s => s.id === id)
+      if (!seg || !seg.circuitos.some(c => c.id === medirCircId)) return
+      setLocalExcluded(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
+      return
+    }
     if (tool === 'seleccionar') {
       e.cancelBubble = true
       setSelectedParedId(null)
@@ -247,11 +257,17 @@ export default function RuteoPage() {
         conjunto_ids: [activeConjuntoId],
       })
     }
-  }, [tool, activeCircId, segmentos, tableros, conjuntos.length, continuarCanalizacion, verticalZMax,
+  }, [tool, activeCircId, medirCircId, segmentos, tableros, conjuntos.length, continuarCanalizacion, verticalZMax,
       activeConjuntoId, closestPointOnSegment, quitarCircuito, asignarCircuito, addSegmento])
+
+  const setMedirCircId = (id: number | null) => {
+    setMedirCircIdRaw(id)
+    setLocalExcluded(new Set())
+  }
 
   const changeTool = (t: ToolType) => {
     setTool(t); setDrawStart(null); setSelectedIds(new Set()); setSelectedParedId(null); setActiveCircId(null)
+    if (t !== 'medir') { setMedirCircIdRaw(null); setLocalExcluded(new Set()) }
   }
 
   const activeCirc = tableros.flatMap(t => t.circuitos).find(c => c.id === activeCircId) ?? null
@@ -279,6 +295,7 @@ export default function RuteoPage() {
         <RuteoCanvas
           tool={tool} drawStart={drawStart} drawZ={drawZ}
           selectedIds={selectedIds} selectedParedId={selectedParedId} activeCircId={activeCircId}
+          medirCircId={medirCircId} localExcluded={localExcluded}
           isSegVisible={isSegVisible} isParedVisible={isParedVisible}
           getSegColor={getSegColor} snapPoint={snapPoint}
           onStageClick={handleStageClick} onSegmentClick={handleSegmentClick}
@@ -289,6 +306,8 @@ export default function RuteoPage() {
           tool={tool} selectedIds={selectedIds}
           activeCircId={activeCircId} asignarTableroId={asignarTableroId}
           setActiveCircId={setActiveCircId} setAsignarTableroId={setAsignarTableroId}
+          medirCircId={medirCircId} medirTableroId={medirTableroId} localExcluded={localExcluded}
+          setMedirCircId={setMedirCircId} setMedirTableroId={setMedirTableroId}
           handleDelete={handleDelete}
           onSetZ={z => editSegmentosZ([...selectedIds], z)}
         />

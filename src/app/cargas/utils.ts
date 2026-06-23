@@ -16,6 +16,41 @@ export function formacionData(c: CircuitoAPI): FormacionData | null {
   }
 }
 
+function corrienteFase(potencia_kW: number | null, fp: number | null, tension: number | null, factor: number): number {
+  if (!potencia_kW || !fp || fp <= 0 || !tension || tension <= 0) return 0
+  return (potencia_kW * 1000) / (factor * tension * fp)
+}
+
+function calcCorrientesPorFase(above: CircuitoAPI[], tensiones: Tensiones): { R: number; S: number; T: number } | null {
+  const available = ([
+    tensiones.mono != null ? 'mono' : null,
+    tensiones.bi   != null ? 'bi'   : null,
+    tensiones.tri  != null ? 'tri'  : null,
+  ] as (string | null)[]).filter(Boolean) as string[]
+
+  let R = 0, S = 0, T = 0
+
+  for (const c of above) {
+    const tipo = c.tipo_tension ?? (available.length === 1 ? available[0] : null)
+    if (tipo === 'mono') {
+      const i = corrienteFase(c.potencia, c.FP, tensiones.mono, 1)
+      if (c.fase === 'R') R += i
+      else if (c.fase === 'S') S += i
+      else if (c.fase === 'T') T += i
+    } else if (tipo === 'bi') {
+      const i = corrienteFase(c.potencia, c.FP, tensiones.bi, 1)
+      if (c.fase === 'RS') { R += i; S += i }
+      else if (c.fase === 'ST') { S += i; T += i }
+      else if (c.fase === 'TR') { T += i; R += i }
+    } else if (tipo === 'tri') {
+      const i = corrienteFase(c.potencia, c.FP, tensiones.tri, Math.sqrt(3))
+      R += i; S += i; T += i
+    }
+  }
+
+  return R === 0 && S === 0 && T === 0 ? null : { R, S, T }
+}
+
 // Mapea los circuitos del back a filas de la tabla, calculando corrientes y
 // agregando los datos de formación. Los alimentadores suman los circuitos anteriores.
 export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow[] {
@@ -35,6 +70,7 @@ export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): Circ
         FP: fp ?? null, Largo: c.Largo, tipo_tension: tipoTablero, fase: c.fase,
         es_alimentador: true, potencia,
         corriente: calcCorriente(potencia, tipoTablero, tension_v, fp ?? null),
+        corrientesFase: calcCorrientesPorFase(above, tensiones),
         formacion: c.formacion ? generarFormacion(c.formacion) : '—',
         formacionData: formacionData(c),
       }
@@ -52,6 +88,7 @@ export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): Circ
       es_alimentador: false,
       potencia: c.potencia ?? null,
       corriente: calcCorriente(c.potencia ?? null, tipoEfectivo, tension_v, c.FP),
+      corrientesFase: null,
       formacion: c.formacion ? generarFormacion(c.formacion) : '—',
       formacionData: formacionData(c),
     }

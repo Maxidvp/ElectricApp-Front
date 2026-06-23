@@ -40,6 +40,7 @@ export type CircuitoRow = {
   es_alimentador: boolean
   potencia: number | null
   corriente: number | null
+  corrientesFase: { R: number; S: number; T: number } | null
   formacion: string
   formacionData: FormacionData | null
 }

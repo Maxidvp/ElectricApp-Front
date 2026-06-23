@@ -67,8 +67,8 @@ export function ArquitecturasModal({ onClose }: { onClose: () => void }) {
               <div key={tp.id} className={cx.item}>
                 <button
                   className={cx.activaBtn(isActiva)}
-                  onClick={() => setActivaArquitecturaId(tp.id)}
-                  title="Usar esta arquitectura al dibujar"
+                  onClick={() => setActivaArquitecturaId(isActiva ? null : tp.id)}
+                  title={isActiva ? 'Click para desactivar' : 'Usar esta arquitectura al dibujar'}
                 >
                   {isActiva ? '● Activa' : '○'}
                 </button>

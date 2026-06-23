@@ -175,9 +175,19 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
     }),
     columnHelper.accessor('corriente', {
       header: 'Corriente (A)',
-      size: 110,
+      size: 120,
       meta: { colType: 'result' } as ColMeta,
       cell: info => {
+        const row = info.row.original
+        if (row.es_alimentador && row.corrientesFase) {
+          const { R, S, T } = row.corrientesFase
+          const fmt = (n: number) => n.toFixed(1)
+          return (
+            <span className="text-xs font-mono">
+              {fmt(R)}/{fmt(S)}/{fmt(T)}
+            </span>
+          )
+        }
         const v = info.getValue()
         if (v === null) return <span className="text-surface-tonal-a40 text-xs">—</span>
         return <span className="text-xs">{v.toFixed(2)}</span>

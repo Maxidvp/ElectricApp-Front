@@ -5,11 +5,18 @@ import type { Canio, Bandeja, Segmento } from '@/services/ruteo'
 import CircuitosPanel from '@/components/CircuitosPanel'
 import { calcOcupacionCanio, calcOcupacionBandeja } from '@/utils/electricidad'
 
-function OcupacionBar({ pct }: { pct: number }) {
-  const color =
-    pct > 30 ? 'var(--clr-danger-a10)'
-    : pct > 25 ? 'var(--clr-warning-a10)'
+function ocupacionColor(pct: number, tipo: 'canio' | 'bandeja') {
+  if (tipo === 'bandeja')
+    return pct > 90 || pct < 10 ? 'var(--clr-danger-a10)'
+      : pct > 80 || pct < 20    ? 'var(--clr-warning-a10)'
+      : 'var(--clr-success-a10)'
+  return pct > 35 || pct < 5  ? 'var(--clr-danger-a10)'
+    : pct > 30 || pct < 10    ? 'var(--clr-warning-a10)'
     : 'var(--clr-success-a10)'
+}
+
+function OcupacionBar({ pct, tipo }: { pct: number; tipo: 'canio' | 'bandeja' }) {
+  const color = ocupacionColor(pct, tipo)
   return (
     <div className="flex items-center gap-2">
       <div className="w-20 h-1.5 rounded-full bg-surface-tonal-a20 overflow-hidden shrink-0">
@@ -190,8 +197,8 @@ export default function OcupacionesPage() {
                       }
                     </td>
                     <td>
-                      {calcC ? <OcupacionBar pct={calcC.pct} />
-                       : calcB ? <OcupacionBar pct={calcB.pct} />
+                      {calcC ? <OcupacionBar pct={calcC.pct} tipo="canio" />
+                       : calcB ? <OcupacionBar pct={calcB.pct} tipo="bandeja" />
                        : <span className="text-surface-tonal-a40 text-xs">—</span>}
                     </td>
                   </tr>
