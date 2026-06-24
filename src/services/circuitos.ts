@@ -180,6 +180,16 @@ export async function reordenarCircuitos(ordenes: { id: number; orden: number }[
   if (!res.ok) throw new Error('Error al reordenar circuitos')
 }
 
+export async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 'combinacion') {
+  const res = await fetch(`${API_URL}/circuitos/${parentId}/auxiliar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  })
+  if (!res.ok) throw new Error('Error al crear circuito auxiliar')
+  return res.json()
+}
+
 export async function updateFormacion(circuitoId: number, data: FormacionPatch) {
   const res = await fetch(`${API_URL}/circuitos/${circuitoId}`, {
     method: 'PUT',

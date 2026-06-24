@@ -60,7 +60,7 @@ export default function TablaCargas() {
 
   const contextData = useMemo(() => {
     if (!tablero) return []
-    const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
+    const sorted = [...tablero.circuitos].filter(c => (c as any).parent_id === null).sort((a, b) => (a as any).orden - (b as any).orden)
     const tensiones: Tensiones = { mono: tablero.tension_mono, bi: tablero.tension_bi, tri: tablero.tension_tri }
     return mapearCircuitos(sorted as any, tensiones)
   }, [tablero])

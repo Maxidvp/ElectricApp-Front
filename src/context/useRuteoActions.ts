@@ -32,8 +32,14 @@ export function useRuteoActions(
   }
 
   function firePendingSeg(id: number, fn: (realId: number) => void) {
-    if (id < 0 && pendingSegmentos.current.has(id)) pendingSegmentos.current.get(id)!.then(real => fn(real.id))
+    if (id < 0 && pendingSegmentos.current.has(id))
+      pendingSegmentos.current.get(id)!.then(real => fn(real.id)).catch(console.error)
     else fn(id)
+  }
+
+  // Devuelve true si el segmento todavía espera su ID real del backend.
+  function hasPendingSegmento(id: number): boolean {
+    return id < 0 && pendingSegmentos.current.has(id)
   }
 
   // ── Segmentos ─────────────────────────────────────────────────
@@ -108,11 +114,13 @@ export function useRuteoActions(
         .map(s => s.id === id ? { ...s, x2: x, y2: y, z2: z } : s)
         .concat({ ...orig, id: tempId, x1: x, y1: y, z1: z })
     })
-    ruteoApi.splitSegmento(id, x, y, z)
+    const promise = ruteoApi.splitSegmento(id, x, y, z)
       .then(({ updated, created }) => {
         setSegmentos(prev =>
           prev.filter(s => s.id !== tempId).map(s => s.id === id ? updated : s).concat(created)
         )
+        pendingSegmentos.current.delete(tempId)
+        return created
       })
       .catch(err => {
         console.error(err)
@@ -120,7 +128,10 @@ export function useRuteoActions(
           if (!savedOrig) return prev
           return prev.filter(s => s.id !== tempId).map(s => s.id === id ? savedOrig! : s)
         })
+        pendingSegmentos.current.delete(tempId)
+        return { ...savedOrig, id: tempId } as Segmento
       })
+    pendingSegmentos.current.set(tempId, promise)
   }
 
   function asignarCircuito(segId: number, circId: number, circ: SegmentoCircuito) {
@@ -319,7 +330,7 @@ export function useRuteoActions(
 
   return {
     addSegmento, previewSegmento, editSegmento, removeSegmento, removeSegmentos, editSegmentosZ, splitSegmento,
-    asignarCircuito, quitarCircuito, appendSegmentos,
+    asignarCircuito, quitarCircuito, appendSegmentos, hasPendingSegmento,
     addConjunto, renameConjunto, deleteConjunto,
     addSegmentoToConjunto, removeSegmentoFromConjunto,
     addTableroToConjunto, removeTableroFromConjunto,

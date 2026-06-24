@@ -47,6 +47,8 @@ export type Circuito = {
   fase: string | null
   es_alimentador: boolean
   potencia: number | null
+  role: string | null       // null = principal, 'retorno', 'combinacion'
+  parent_id: number | null
 }
 
 export type Tablero = {
@@ -105,6 +107,8 @@ export type ProyectosContextType = {
   actualizarTipo: (id: number, tipo: string | null) => void
   actualizarEsAlimentador: (id: number, val: boolean) => void
   agregarAlimentador: (tableroId: number, nombre: string, insertIndex: number) => void
+  crearCircuitoAuxiliar: (parentId: number, role: 'retorno' | 'combinacion') => Promise<Circuito>
+  reordenarSubcircuitos: (orderedHijoIds: number[]) => void
   appendSegmentos: (segs: Segmento[]) => void
   appendParedes: (paredes: Pared[]) => void
   actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
@@ -127,6 +131,7 @@ export type ProyectosContextType = {
   removeSegmentos: (ids: number[]) => void
   editSegmentosZ: (ids: number[], z: number) => void
   splitSegmento: (id: number, x: number, y: number, z: number) => void
+  hasPendingSegmento: (id: number) => boolean
   asignarCircuito: (segId: number, circId: number, circ: SegmentoCircuito) => void
   quitarCircuito: (segId: number, circId: number) => void
   addConjunto: (nombre: string) => Promise<Conjunto>

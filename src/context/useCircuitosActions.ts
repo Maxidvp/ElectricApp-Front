@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import * as circuitosApi from '@/services/circuitos'
 import type { FormacionPatch } from '@/services/circuitos'
 import type { Tablero, Circuito, Cable } from './types'
-import { nextTempId, mapCirc, addCirc, removeCirc, replaceCirc, mergeWithTemp } from './helpers'
+import { nextTempId, mapCirc, addCirc, replaceCirc, mergeWithTemp } from './helpers'
 
 type SetTableros = Dispatch<SetStateAction<Tablero[]>>
 type PendingMap  = MutableRefObject<Map<number, Promise<Circuito>>>
@@ -35,6 +35,7 @@ export function useCircuitosActions(
       id: tempId, orden: idx, circuito: tag, descripcion: null, tipo: null,
       tablero_id: tableroId, formacion_id: null, formacion: null,
       FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null,
+      role: null, parent_id: null,
     }
     setTableros(prev => {
       const t = prev.find(t => t.id === tableroId)
@@ -97,8 +98,32 @@ export function useCircuitosActions(
   }
 
   function eliminarCircuito(circuitoId: number) {
-    setTableros(prev => removeCirc(prev, circuitoId))
+    setTableros(prev => prev.map(t => ({
+      ...t,
+      circuitos: t.circuitos.filter(c => c.id !== circuitoId && c.parent_id !== circuitoId),
+    })))
     circuitosApi.deleteCircuito(circuitoId).catch(err => { console.error(err); recargar() })
+  }
+
+  function reordenarSubcircuitos(orderedHijoIds: number[]) {
+    setTableros(prev => prev.map(t => ({
+      ...t,
+      circuitos: t.circuitos.map(c => {
+        const idx = orderedHijoIds.indexOf(c.id)
+        return idx !== -1 ? { ...c, orden: idx } : c
+      }),
+    })))
+    const realIds = orderedHijoIds.filter(id => id > 0)
+    if (realIds.length > 0)
+      circuitosApi.reordenarCircuitos(realIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
+  }
+
+  async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 'combinacion'): Promise<Circuito> {
+    const real: Circuito = await circuitosApi.crearCircuitoAuxiliar(parentId, role)
+    setTableros(prev => prev.map(t =>
+      t.id === real.tablero_id ? { ...t, circuitos: [...t.circuitos, real] } : t
+    ))
+    return real
   }
 
   function reordenarCircuitos(tableroId: number, orderedIds: number[]) {
@@ -158,6 +183,7 @@ export function useCircuitosActions(
       id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tipo: 'ALIMENTADOR',
       tablero_id: tableroId, formacion_id: null, formacion: null,
       FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: true, potencia: null,
+      role: null, parent_id: null,
     }
     setTableros(prev => {
       const t = prev.find(t => t.id === tableroId)
@@ -218,6 +244,6 @@ export function useCircuitosActions(
     reordenarCircuitos,
     actualizarDescripcion, actualizarFP, actualizarLargo, actualizarPotencia,
     actualizarTipoTension, actualizarFase, actualizarTipo, actualizarEsAlimentador,
-    agregarAlimentador, actualizarFormacion,
+    agregarAlimentador, actualizarFormacion, crearCircuitoAuxiliar, reordenarSubcircuitos,
   }
 }

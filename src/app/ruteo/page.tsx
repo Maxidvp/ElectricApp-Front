@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { useProyectos } from '@/context/ProyectosContext'
 import type { Segmento, Pared } from '@/services/ruteo'
@@ -21,6 +21,7 @@ export default function RuteoPage() {
   const [selectedParedId,  setSelectedParedId]  = useState<number | null>(null)
   const [drawZ,            setDrawZ]            = useState(0)
   const [activeCircId,     setActiveCircId]     = useState<number | null>(null)
+  const savedCircIdRef = useRef<number | null>(null)
   const [asignarTableroId, setAsignarTableroId] = useState<number | null>(null)
   const [medirCircId,    setMedirCircIdRaw]  = useState<number | null>(null)
   const [medirTableroId, setMedirTableroId]  = useState<number | null>(null)
@@ -266,7 +267,9 @@ export default function RuteoPage() {
   }
 
   const changeTool = (t: ToolType) => {
-    setTool(t); setDrawStart(null); setSelectedIds(new Set()); setSelectedParedId(null); setActiveCircId(null)
+    if (t === 'dividir') savedCircIdRef.current = activeCircId
+    const restoredCircId = tool === 'dividir' && t === 'asignar' ? savedCircIdRef.current : null
+    setTool(t); setDrawStart(null); setSelectedIds(new Set()); setSelectedParedId(null); setActiveCircId(restoredCircId)
     if (t !== 'medir') { setMedirCircIdRaw(null); setLocalExcluded(new Set()) }
   }
 

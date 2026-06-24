@@ -1,9 +1,10 @@
 'use client'
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useState, useRef } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import { COLORS } from './_constants'
 import type { ToolType } from './_constants'
 import { DeferredInput } from './DeferredInput'
+import { SubcircuitosModal } from './SubcircuitosModal'
 import { calcOcupacionCanio, calcOcupacionBandeja } from '@/utils/electricidad'
 
 interface Props {
@@ -44,8 +45,21 @@ export function RuteoPanel({
     tableros, segmentos, canios, bandejas, conjuntos, activeConjuntoId,
     previewSegmento, editSegmento, quitarCircuito,
     addSegmentoToConjunto, removeSegmentoFromConjunto,
-    getCircuito, actualizarLargo,
+    getCircuito, actualizarLargo, crearCircuitoAuxiliar,
   } = useProyectos()
+
+  const TIPOS_ILUMINACION = ['IUG', 'IUE']
+  const [creando,          setCreando]          = useState<{ parentId: number; role: 'retorno' | 'combinacion' } | null>(null)
+  const [subcircEditId,    setSubcircEditId]    = useState<number | null>(null)
+  const prevToolRef   = useRef<ToolType>(tool)
+  const activeCircRef = useRef<HTMLButtonElement | null>(null)
+
+  useEffect(() => {
+    const prev = prevToolRef.current
+    prevToolRef.current = tool
+    if (tool === 'asignar' && prev !== 'asignar' && activeCircId !== null)
+      activeCircRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [tool])
 
   const conjuntoTableros = useMemo(() => {
     const c = conjuntos.find(c => c.id === activeConjuntoId)
@@ -67,13 +81,20 @@ export function RuteoPanel({
   }, [conjuntoTableros])
 
   const medirTablero     = conjuntoTableros.find(t => t.id === medirTableroId)
-  const medirCircuitos   = medirTablero?.circuitos ?? []
+  const medirCircuitos   = (medirTablero?.circuitos ?? []).filter(c => c.parent_id === null)
+  const medirCircIds     = useMemo(() => {
+    if (medirCircId === null) return new Set<number>()
+    const hijoIds = tableros.flatMap(t => t.circuitos)
+      .filter(c => c.parent_id === medirCircId)
+      .map(c => c.id)
+    return new Set([medirCircId, ...hijoIds])
+  }, [medirCircId, tableros])
   const medirSegs        = useMemo(() =>
     medirCircId === null ? [] : segmentos.filter(s =>
       s.conjuntos.some(c => c.id === activeConjuntoId) &&
-      s.circuitos.some(c => c.id === medirCircId)
+      s.circuitos.some(c => medirCircIds.has(c.id))
     ),
-    [segmentos, medirCircId, activeConjuntoId]
+    [segmentos, medirCircId, medirCircIds, activeConjuntoId]
   )
   const medirTotal       = medirSegs
     .filter(s => !localExcluded.has(s.id))
@@ -137,7 +158,12 @@ export function RuteoPanel({
                       ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
                       : 'border-transparent bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0'
                   }`}
-                >{c.circuito}</button>
+                >
+                  {c.circuito}
+                  {TIPOS_ILUMINACION.includes(c.tipo ?? '') && medirCircId === c.id && medirCircIds.size > 1 && (
+                    <span className="ml-1.5 text-[10px] text-surface-tonal-a30">+retornos</span>
+                  )}
+                </button>
               ))}
         </div>
         {medirCircId !== null && (
@@ -169,6 +195,7 @@ export function RuteoPanel({
   )
 
   if (tool === 'asignar') return (
+    <>
     <div className={cx.panel}>
       <div className="flex flex-col flex-1 overflow-hidden">
         <div className="px-3.5 py-3 text-xs text-surface-tonal-a40 border-b border-surface-tonal-a10 leading-relaxed">
@@ -191,21 +218,91 @@ export function RuteoPanel({
           </div>
         )}
         <div className="flex-1 overflow-y-auto px-2.5 py-2 flex flex-col gap-0.75">
-          {asignarCircuitos.length === 0
+          {asignarCircuitos.filter(c => c.parent_id === null).length === 0
             ? <span className="text-xs text-surface-tonal-a40 py-2 px-1">Sin circuitos</span>
-            : asignarCircuitos.map(c => (
-                <button key={c.id}
-                  onClick={() => setActiveCircId(activeCircId === c.id ? null : c.id)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-[background,color,border-color] ${
-                    activeCircId === c.id
-                      ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
-                      : 'border-transparent bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0'
-                  }`}
-                >{c.circuito}</button>
-              ))}
+            : asignarCircuitos.filter(c => c.parent_id === null).map(c => {
+                const hijos    = asignarCircuitos.filter(h => h.parent_id === c.id)
+                const esIlum   = TIPOS_ILUMINACION.includes(c.tipo ?? '')
+                const isActive = activeCircId === c.id || hijos.some(h => h.id === activeCircId)
+                return (
+                  <div key={c.id} className="flex flex-col">
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        ref={activeCircId === c.id ? activeCircRef : null}
+                        onClick={() => setActiveCircId(activeCircId === c.id ? null : c.id)}
+                        className={`flex-1 min-w-0 text-left px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-[background,color,border-color] ${
+                          activeCircId === c.id
+                            ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
+                            : isActive
+                            ? 'border-surface-tonal-a20 bg-surface-tonal-a10 text-font-a10'
+                            : 'border-transparent bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0'
+                        }`}
+                      >
+                        {c.circuito}
+                        {esIlum && <span className="ml-1.5 text-[10px] text-surface-tonal-a30">{c.tipo}</span>}
+                      </button>
+                      {esIlum && (
+                        <button
+                          onClick={() => setSubcircEditId(c.id)}
+                          title="Editar subcircuitos"
+                          className="shrink-0 px-1.5 py-1.5 text-[13px] leading-none text-surface-tonal-a30 hover:text-font-a0 bg-transparent border-none cursor-pointer"
+                        >⋯</button>
+                      )}
+                    </div>
+                    {esIlum && (
+                      <div className="ml-4 flex flex-col gap-0.5 mt-0.5">
+                        {hijos.map(h => (
+                          <button key={h.id}
+                            ref={activeCircId === h.id ? activeCircRef : null}
+                            onClick={() => setActiveCircId(activeCircId === h.id ? null : h.id)}
+                            className={`w-full text-left px-2 py-1 rounded border text-[11px] cursor-pointer transition-[background,color,border-color] ${
+                              activeCircId === h.id
+                                ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
+                                : 'border-transparent bg-transparent text-font-a30 hover:bg-surface-tonal-a10 hover:text-font-a0'
+                            }`}
+                          >
+                            {h.role === 'retorno' ? '↩' : '⟷'} {h.circuito}
+                          </button>
+                        ))}
+                        {(['retorno', 'combinacion'] as const).map(role => {
+                          const busy = creando?.parentId === c.id && creando?.role === role
+                          return (
+                            <button key={role}
+                              disabled={busy}
+                              onClick={async () => {
+                                setCreando({ parentId: c.id, role })
+                                try {
+                                  const nuevo = await crearCircuitoAuxiliar(c.id, role)
+                                  setActiveCircId(nuevo.id)
+                                } finally {
+                                  setCreando(null)
+                                }
+                              }}
+                              className="text-left px-2 py-0.75 text-[11px] text-surface-tonal-a30 hover:text-font-a0 cursor-pointer bg-transparent border-none disabled:cursor-default disabled:opacity-60"
+                            >
+                              {busy ? `creando ${role}…` : `+ ${role}`}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
         </div>
       </div>
     </div>
+    {subcircEditId !== null && (() => {
+      const parent = asignarCircuitos.find(c => c.id === subcircEditId)
+      return parent ? (
+        <SubcircuitosModal
+          parentId={subcircEditId}
+          parentNombre={parent.circuito}
+          onCerrar={() => setSubcircEditId(null)}
+        />
+      ) : null
+    })()}
+    </>
   )
 
   if (selectedIds.size > 1) return (
