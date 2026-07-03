@@ -342,7 +342,6 @@ export function calcDrops(
 
   const tension = parseFloat(input.tension) || tensionAuto || NaN
   const epct    = !isNaN(tension) && tension > 0 ? (ev / tension) * 100 : null
-  console.log({ ev, epct, tension, fp, in_, cf, l, r, x ,cosφ, sinφ, factor })
   return { ev, epct }
 }
 

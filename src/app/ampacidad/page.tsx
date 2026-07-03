@@ -4,6 +4,7 @@ import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
 import { calcCorriente } from '@/utils/electricidad'
+import { getLastTableroId } from '@/utils/cookies'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
@@ -141,12 +142,7 @@ function MetodoCell({ value, onChange }: { value: string; onChange: (v: string) 
 export default function Ampacidad() {
   const { tableros, getTablero, loading, error } = useProyectos()
 
-  const [tableroId, setTableroId] = useState<number | null>(() => {
-    try {
-      const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
-      return m ? Number(m[1]) : null
-    } catch { return null }
-  })
+  const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
   const [altitud, setAltitud] = useState<string>(() => {
     try { return localStorage.getItem('ea_ampacidad_altitud') ?? '0' } catch { return '0' }

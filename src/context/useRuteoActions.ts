@@ -63,7 +63,12 @@ export function useRuteoActions(
         pendingSegmentos.current.delete(tempId)
         return real
       })
-      .catch(err => { console.error(err); return optimistic })
+      .catch(err => {
+        console.error(err)
+        setSegmentos(prev => prev.filter(s => s.id !== tempId))
+        pendingSegmentos.current.delete(tempId)
+        throw err
+      })
     pendingSegmentos.current.set(tempId, promise)
   }
 
@@ -94,7 +99,8 @@ export function useRuteoActions(
   function removeSegmentos(ids: number[]) {
     const idSet = new Set(ids)
     setSegmentos(prev => prev.filter(s => !idSet.has(s.id)))
-    ruteoApi.deleteSegmentosBulk(ids).catch(console.error)
+    const realIds = ids.filter(id => id > 0)
+    if (realIds.length > 0) ruteoApi.deleteSegmentosBulk(realIds).catch(console.error)
   }
 
   function editSegmentosZ(ids: number[], z: number) {
@@ -129,7 +135,7 @@ export function useRuteoActions(
           return prev.filter(s => s.id !== tempId).map(s => s.id === id ? savedOrig! : s)
         })
         pendingSegmentos.current.delete(tempId)
-        return { ...savedOrig, id: tempId } as Segmento
+        throw err
       })
     pendingSegmentos.current.set(tempId, promise)
   }
@@ -193,7 +199,10 @@ export function useRuteoActions(
     const remaining = conjuntos.filter(c => c.id !== id)
     setConjuntos(remaining)
     setSegmentos(prev => prev.map(s => ({ ...s, conjuntos: s.conjuntos.filter(c => c.id !== id) })))
-    if (activeConjuntoId === id) setActiveConjuntoId(remaining[0].id as number)
+    if (activeConjuntoId === id) {
+      const nextId = remaining[0]?.id
+      if (nextId !== undefined) setActiveConjuntoId(nextId as number)
+    }
     ruteoApi.deleteConjunto(id).catch(console.error)
   }
 
@@ -252,8 +261,15 @@ export function useRuteoActions(
 
   function editPared(id: number, patch: Partial<Omit<Pared, 'id'>>) {
     setParedes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
+    const ver = (editVer.current.get(id) ?? 0) + 1
+    editVer.current.set(id, ver)
     ruteoApi.updatePared(id, patch)
-      .then(real => setParedes(prev => prev.map(p => p.id === id ? real : p)))
+      .then(real => {
+        if (editVer.current.get(id) === ver) {
+          editVer.current.delete(id)
+          setParedes(prev => prev.map(p => p.id === id ? real : p))
+        }
+      })
       .catch(console.error)
   }
 

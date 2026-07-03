@@ -239,7 +239,7 @@ export function ConjuntosModal({ onClose }: { onClose: () => void }) {
                 <input className={cx.createInput} placeholder="Nombre de la nueva arquitectura…"
                   value={newArqName} onChange={e => setNewArqName(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') handleCreateArq() }} />
-                <button className={cx.createBtn} onClick={handleCreateArq} disabled={!newArqName.trim()}>Crear</button>
+                <button className={cx.createBtn} onClick={handleCreateArq} disabled={!newArqName.trim()}>Crear y vincular</button>
               </div>
             </div>
 

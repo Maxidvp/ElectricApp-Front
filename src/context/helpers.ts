@@ -16,10 +16,6 @@ export function addCirc(tableros: Tablero[], tableroId: number, circ: Circuito):
   return tableros.map(t => t.id === tableroId ? { ...t, circuitos: [...t.circuitos, circ] } : t)
 }
 
-export function removeCirc(tableros: Tablero[], circId: number): Tablero[] {
-  return tableros.map(t => ({ ...t, circuitos: t.circuitos.filter(c => c.id !== circId) }))
-}
-
 export function replaceCirc(tableros: Tablero[], tempId: number, real: Circuito): Tablero[] {
   return tableros.map(t => ({ ...t, circuitos: t.circuitos.map(c => c.id === tempId ? real : c) }))
 }
@@ -30,7 +26,8 @@ export function mergeWithTemp(real: Circuito, temp: Circuito | undefined): Circu
   if (!temp) return real
   return {
     ...real,
-    circuito:     temp.circuito,
+    circuito:      temp.circuito,
+    es_alimentador: temp.es_alimentador,
     descripcion:  temp.descripcion  !== null ? temp.descripcion  : real.descripcion,
     tipo:         temp.tipo         !== null ? temp.tipo         : real.tipo,
     FP:           temp.FP           !== null ? temp.FP           : real.FP,

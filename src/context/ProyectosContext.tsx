@@ -44,7 +44,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   const setActiveConjuntoId = (id: number) => {
     setActiveConjuntoIdState(id)
-    if (proyectoActivoRef.current)
+    if (proyectoActivoRef.current && id > 0)
       localStorage.setItem(lsConjunto(proyectoActivoRef.current.id), String(id))
     // Always sync arquitectura to whichever is linked to this conjunto (null if none)
     const conj = conjuntos.find(c => c.id === id)
@@ -92,7 +92,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(LS_PROYECTO, String(p.id))
     setLoading(true)
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/proyectos/${p.id}`)
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json() })
       .then(data => {
         const tablerosList = data.tableros ?? []
         setTableros(tablerosList)

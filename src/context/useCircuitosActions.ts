@@ -25,36 +25,34 @@ export function useCircuitosActions(
   }
 
   function agregarCircuito(tableroId: number, insertIndex?: number) {
-    const tablero = tableros.find(t => t.id === tableroId)
-    if (!tablero) return
+    if (!tableros.find(t => t.id === tableroId)) return
     const tempId = nextTempId()
-    const tag    = `${tablero.tag}-C${tablero.circuitos.length + 1}`
-    const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
-    const idx    = insertIndex ?? sorted.length
-    const temp: Circuito = {
-      id: tempId, orden: idx, circuito: tag, descripcion: null, tipo: null,
-      tablero_id: tableroId, formacion_id: null, formacion: null,
-      FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null,
-      role: null, parent_id: null,
-    }
+    let capturedOrder: { id: number; orden: number }[] = []
+
     setTableros(prev => {
       const t = prev.find(t => t.id === tableroId)
       if (!t) return prev
       const s = [...t.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
       const i = insertIndex ?? s.length
-      s.splice(i, 0, { ...temp, orden: i })
-      return prev.map(t => t.id === tableroId ? { ...t, circuitos: s.map((c, j) => ({ ...c, orden: j })) } : t)
+      const tag = `${t.tag}-C${t.circuitos.length + 1}`
+      s.splice(i, 0, {
+        id: tempId, orden: i, circuito: tag, descripcion: null, tipo: null,
+        tablero_id: tableroId, formacion_id: null, formacion: null,
+        FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null,
+        role: null, parent_id: null,
+      })
+      const reordered = s.map((c, j) => ({ ...c, orden: j }))
+      capturedOrder = reordered.map((c, j) => ({ id: c.id, orden: j }))
+      return prev.map(t => t.id === tableroId ? { ...t, circuitos: reordered } : t)
     })
+
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(async real => {
-        const currentSorted = tableros
-          .find(t => t.id === tableroId)?.circuitos
-          .slice().sort((a, b) => (a as any).orden - (b as any).orden) ?? []
-        const newOrder = currentSorted
-          .map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
-          .filter(({ id }) => id > 0)
+        const newOrder = capturedOrder
+          .map(item => ({ id: item.id === tempId ? real.id : item.id, orden: item.orden }))
+          .filter(item => item.id > 0)
         if (newOrder.length > 0) await circuitosApi.reordenarCircuitos(newOrder)
-        const realCircuito = { ...(real as Circuito), orden: idx }
+        const realCircuito = { ...(real as Circuito), orden: capturedOrder.find(x => x.id === tempId)?.orden ?? 0 }
         setTableros(prev => {
           const currentTemp = prev.flatMap(t => t.circuitos).find(c => c.id === tempId)
           return replaceCirc(prev, tempId, mergeWithTemp(realCircuito, currentTemp))
@@ -62,7 +60,11 @@ export function useCircuitosActions(
         pendingCircuitos.current.set(tempId, Promise.resolve(realCircuito))
         return realCircuito
       })
-      .catch(err => { console.error(err); return temp })
+      .catch(err => {
+        console.error(err)
+        setTableros(prev => prev.map(t => ({ ...t, circuitos: t.circuitos.filter(c => c.id !== tempId) })))
+        throw err
+      })
     pendingCircuitos.current.set(tempId, promise)
   }
 
@@ -185,28 +187,34 @@ export function useCircuitosActions(
       FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: true, potencia: null,
       role: null, parent_id: null,
     }
+    let capturedOrderAlim: { id: number; orden: number }[] = []
     setTableros(prev => {
       const t = prev.find(t => t.id === tableroId)
       if (!t) return prev
       const s = [...t.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
       s.splice(insertIndex, 0, temp)
-      return prev.map(t => t.id === tableroId ? { ...t, circuitos: s.map((c, i) => ({ ...c, orden: i })) } : t)
+      const reordered = s.map((c, i) => ({ ...c, orden: i }))
+      capturedOrderAlim = reordered.map((c, i) => ({ id: c.id, orden: i }))
+      return prev.map(t => t.id === tableroId ? { ...t, circuitos: reordered } : t)
     })
+
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(async real => {
         await circuitosApi.updateEsAlimentadorCircuito(real.id, true)
         await circuitosApi.updateNombreCircuito(real.id, nombre)
-        const currentSorted = tableros
-          .find(t => t.id === tableroId)?.circuitos
-          .slice().sort((a, b) => (a as any).orden - (b as any).orden) ?? []
-        const newOrder = currentSorted
-          .map((c, i) => ({ id: c.id === tempId ? real.id : c.id, orden: i }))
-          .filter(({ id }) => id > 0)
+        const newOrder = capturedOrderAlim
+          .map(item => ({ id: item.id === tempId ? real.id : item.id, orden: item.orden }))
+          .filter(item => item.id > 0)
         if (newOrder.length > 0) await circuitosApi.reordenarCircuitos(newOrder)
         const resolved = { ...real, circuito: nombre, es_alimentador: true } as Circuito
         setTableros(prev => replaceCirc(prev, tempId, resolved))
         pendingCircuitos.current.set(tempId, Promise.resolve(resolved))
         return resolved
+      })
+      .catch(err => {
+        console.error(err)
+        setTableros(prev => prev.map(t => ({ ...t, circuitos: t.circuitos.filter(c => c.id !== tempId) })))
+        throw err
       })
     pendingCircuitos.current.set(tempId, promise)
   }

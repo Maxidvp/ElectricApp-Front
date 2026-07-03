@@ -12,6 +12,7 @@ import SortableRow  from './SortableRow'
 import { useColumnas } from './useColumnas'
 import { mapearCircuitos } from './utils'
 import type { CircuitoRow, ColMeta, FormacionData, Tensiones } from './types'
+import { getLastTableroId } from '@/utils/cookies'
 
 export default function TablaCargas() {
   const {
@@ -24,11 +25,7 @@ export default function TablaCargas() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  const [tableroId,             setTableroId]             = useState<number | null>(() => {
-    if (typeof document === 'undefined') return null
-    const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
-    return m ? Number(m[1]) : null
-  })
+  const [tableroId,             setTableroId]             = useState<number | null>(getLastTableroId)
   const [modalAbierto,          setModalAbierto]          = useState(false)
   const [circuitoEditando,      setCircuitoEditando]      = useState<number | null>(null)
   const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
