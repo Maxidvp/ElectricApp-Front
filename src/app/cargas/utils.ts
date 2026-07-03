@@ -1,4 +1,4 @@
-import { generarFormacion, calcCorriente } from '@/utils/electricidad'
+import { generarFormacion, calcCorriente, type FormatoFormacion } from '@/utils/electricidad'
 import type { CircuitoAPI, CircuitoRow, FormacionData, Tensiones } from './types'
 
 export function formacionData(c: CircuitoAPI): FormacionData | null {
@@ -53,7 +53,7 @@ function calcCorrientesPorFase(above: CircuitoAPI[], tensiones: Tensiones): { R:
 
 // Mapea los circuitos del back a filas de la tabla, calculando corrientes y
 // agregando los datos de formación. Los alimentadores suman los circuitos anteriores.
-export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): CircuitoRow[] {
+export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones, formato: FormatoFormacion = 'ingles'): CircuitoRow[] {
   // Tipo predominante del tablero (tri > bi > mono) para alimentadores
   const tipoTablero = tensiones.tri != null ? 'tri' : tensiones.bi != null ? 'bi' : tensiones.mono != null ? 'mono' : null
 
@@ -71,7 +71,7 @@ export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): Circ
         es_alimentador: true, potencia,
         corriente: calcCorriente(potencia, tipoTablero, tension_v, fp ?? null),
         corrientesFase: calcCorrientesPorFase(above, tensiones),
-        formacion: c.formacion ? generarFormacion(c.formacion) : '—',
+        formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
         formacionData: formacionData(c),
       }
     }
@@ -89,7 +89,7 @@ export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones): Circ
       potencia: c.potencia ?? null,
       corriente: calcCorriente(c.potencia ?? null, tipoEfectivo, tension_v, c.FP),
       corrientesFase: null,
-      formacion: c.formacion ? generarFormacion(c.formacion) : '—',
+      formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
       formacionData: formacionData(c),
     }
   })

@@ -46,6 +46,14 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     setActiveConjuntoIdState(id)
     if (proyectoActivoRef.current)
       localStorage.setItem(lsConjunto(proyectoActivoRef.current.id), String(id))
+    // Always sync arquitectura to whichever is linked to this conjunto (null if none)
+    const conj = conjuntos.find(c => c.id === id)
+    const linkedArqId = conj?.arquitecturas?.[0]?.id ?? null
+    setActivaArquitecturaIdState(linkedArqId)
+    if (proyectoActivoRef.current) {
+      if (linkedArqId !== null) localStorage.setItem(lsArquitectura(proyectoActivoRef.current.id), String(linkedArqId))
+      else                      localStorage.removeItem(lsArquitectura(proyectoActivoRef.current.id))
+    }
   }
 
   const setActivaArquitecturaId = (id: number | null) => {
@@ -121,10 +129,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
           ? savedConjId : (availableConjIds[0] ?? null)
         setActiveConjuntoIdState(resolvedConj)
 
-        const availableTablaIds: number[] = tablas.map(tp => tp.id)
-        const savedTablaId  = Number(localStorage.getItem(lsArquitectura(p.id))) || null
-        const resolvedTabla = savedTablaId && availableTablaIds.includes(savedTablaId)
-          ? savedTablaId : (availableTablaIds[0] ?? null)
+        // Derive active arquitectura from the resolved conjunto's linked one
+        const activeConjData = (data.conjuntos ?? []).find((c: any) => c.id === resolvedConj)
+        const resolvedTabla  = (activeConjData?.arquitecturas?.[0]?.id as number | undefined) ?? null
         setActivaArquitecturaIdState(resolvedTabla)
       })
       .catch(err => setError(err.message))
@@ -150,6 +157,24 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     await proyectosApi.deleteProyecto(id)
     setProyectos(prev => prev.filter(p => p.id !== id))
     if (proyectoActivo?.id === id) setProyectoActivo(null)
+  }
+
+  async function agregarFamiliaProyecto(familiaId: number) {
+    if (!proyectoActivo) return
+    await proyectosApi.agregarFamiliaProyecto(proyectoActivo.id, familiaId)
+    setProyectos(prev => prev.map(p =>
+      p.id === proyectoActivo.id ? { ...p, familia_ids: [...p.familia_ids, familiaId] } : p
+    ))
+    setProyectoActivoState(prev => prev ? { ...prev, familia_ids: [...prev.familia_ids, familiaId] } : prev)
+  }
+
+  async function quitarFamiliaProyecto(familiaId: number) {
+    if (!proyectoActivo) return
+    await proyectosApi.quitarFamiliaProyecto(proyectoActivo.id, familiaId)
+    setProyectos(prev => prev.map(p =>
+      p.id === proyectoActivo.id ? { ...p, familia_ids: p.familia_ids.filter(id => id !== familiaId) } : p
+    ))
+    setProyectoActivoState(prev => prev ? { ...prev, familia_ids: prev.familia_ids.filter(id => id !== familiaId) } : prev)
   }
 
   // ── Tableros CRUD ─────────────────────────────────────────────
@@ -199,6 +224,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     <ProyectosContext.Provider value={{
       proyectos, proyectoActivo, setProyectoActivo,
       crearProyecto, actualizarProyecto, eliminarProyecto,
+      agregarFamiliaProyecto, quitarFamiliaProyecto,
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,

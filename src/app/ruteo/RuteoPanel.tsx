@@ -5,7 +5,7 @@ import { COLORS } from './_constants'
 import type { ToolType } from './_constants'
 import { DeferredInput } from './DeferredInput'
 import { SubcircuitosModal } from './SubcircuitosModal'
-import { calcOcupacionCanio, calcOcupacionBandeja } from '@/utils/electricidad'
+import { calcOcupacionCanio, calcOcupacionBandeja, colorOcupacion } from '@/utils/electricidad'
 
 interface Props {
   tool: ToolType
@@ -451,24 +451,12 @@ export function RuteoPanel({
                 className="h-full rounded-full transition-[width] duration-300"
                 style={{
                   width: `${Math.min(ocupacion.pct, 100)}%`,
-                  background: selectedSeg?.tipo === 'bandeja'
-                    ? (ocupacion.pct > 90 || ocupacion.pct < 10 ? 'var(--clr-danger-a10)'
-                      : ocupacion.pct > 80 || ocupacion.pct < 20 ? 'var(--clr-warning-a10)'
-                      : 'var(--clr-success-a10)')
-                    : (ocupacion.pct > 35 || ocupacion.pct < 5  ? 'var(--clr-danger-a10)'
-                      : ocupacion.pct > 30 || ocupacion.pct < 10 ? 'var(--clr-warning-a10)'
-                      : 'var(--clr-success-a10)'),
+                  background: colorOcupacion(ocupacion.pct, selectedSeg?.tipo === 'bandeja' ? 'bandeja' : 'canio'),
                 }}
               />
             </div>
             <span className="text-[12px] font-medium tabular-nums" style={{
-              color: selectedSeg?.tipo === 'bandeja'
-                ? (ocupacion.pct > 90 || ocupacion.pct < 10 ? 'var(--clr-danger-a10)'
-                  : ocupacion.pct > 80 || ocupacion.pct < 20 ? 'var(--clr-warning-a10)'
-                  : 'var(--clr-success-a10)')
-                : (ocupacion.pct > 35 || ocupacion.pct < 5  ? 'var(--clr-danger-a10)'
-                  : ocupacion.pct > 30 || ocupacion.pct < 10 ? 'var(--clr-warning-a10)'
-                  : 'var(--clr-success-a10)'),
+              color: colorOcupacion(ocupacion.pct, selectedSeg?.tipo === 'bandeja' ? 'bandeja' : 'canio'),
             }}>
               {ocupacion.pct.toFixed(1)}%
             </span>

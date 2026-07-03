@@ -3,12 +3,19 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
 export type ProyectoTablero = { id: number; tag: string; nombre: string | null }
 export type ProyectoConjunto = { id: number; nombre: string }
 
+export type ProyectoFamilia = { id: number; nombre: string; material: string; aislamiento: string; tipo: string }
+
+export type FormatoFormacion = 'ingles' | 'extendida' | 'copaipa' | 'resumida'
+
 export type Proyecto = {
   id: number
   nombre: string
   descripcion: string | null
+  familia_ids: number[]
+  familias: ProyectoFamilia[]
   tableros: ProyectoTablero[]
   conjuntos: ProyectoConjunto[]
+  formato_formacion: FormatoFormacion
 }
 
 export async function getProyectos(): Promise<Proyecto[]> {
@@ -27,7 +34,7 @@ export async function createProyecto(data: { nombre: string; descripcion?: strin
   return res.json()
 }
 
-export async function updateProyecto(id: number, data: { nombre: string; descripcion?: string | null }): Promise<Proyecto> {
+export async function updateProyecto(id: number, data: { nombre: string; descripcion?: string | null; formato_formacion?: string }): Promise<Proyecto> {
   const res = await fetch(`${API_URL}/proyectos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -40,4 +47,14 @@ export async function updateProyecto(id: number, data: { nombre: string; descrip
 export async function deleteProyecto(id: number): Promise<void> {
   const res = await fetch(`${API_URL}/proyectos/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar el proyecto')
+}
+
+export async function agregarFamiliaProyecto(proyectoId: number, familiaId: number): Promise<void> {
+  const res = await fetch(`${API_URL}/proyectos/${proyectoId}/familias/${familiaId}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Error al agregar familia')
+}
+
+export async function quitarFamiliaProyecto(proyectoId: number, familiaId: number): Promise<void> {
+  const res = await fetch(`${API_URL}/proyectos/${proyectoId}/familias/${familiaId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al quitar familia')
 }

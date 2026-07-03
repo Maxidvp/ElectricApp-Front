@@ -19,6 +19,7 @@ export default function TablaCargas() {
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos, actualizarDescripcion, actualizarTipo, actualizarFormacion,
     actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia,
+    proyectoActivo,
   } = useProyectos()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -62,8 +63,8 @@ export default function TablaCargas() {
     if (!tablero) return []
     const sorted = [...tablero.circuitos].filter(c => (c as any).parent_id === null).sort((a, b) => (a as any).orden - (b as any).orden)
     const tensiones: Tensiones = { mono: tablero.tension_mono, bi: tablero.tension_bi, tri: tablero.tension_tri }
-    return mapearCircuitos(sorted as any, tensiones)
-  }, [tablero])
+    return mapearCircuitos(sorted as any, tensiones, (proyectoActivo?.formato_formacion as any) ?? 'ingles')
+  }, [tablero, proyectoActivo?.formato_formacion])
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
 
@@ -166,7 +167,7 @@ export default function TablaCargas() {
   if (error) return <p>Error: {error}</p>
 
   return (
-    <div className="bg-surface-a10">
+    <div className="bg-surface-a10 w-full">
       {/* Selector de tablero */}
       <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
         {tableros.map(t => (
@@ -206,6 +207,8 @@ export default function TablaCargas() {
           </div>
         </div>
 
+        <div className="flex justify-center">
+        <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
         <DndContext sensors={sensors} collisionDetection={closestCenter}
           onDragStart={e => setDraggingId(String(e.active.id))}
           onDragEnd={e => { setDraggingId(null); handleDragEnd(e) }}
@@ -269,23 +272,26 @@ export default function TablaCargas() {
             </SortableContext>
           </table>
         </DndContext>
+        </div>
+        </div>
 
-          <div className="px-3.5 py-3 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-1.5">
-            <span>• <b>Corriente monofásica</b> — <InlineMath math="V_{FN}" /> tensión fase-neutro:{' '}
-              <InlineMath math="I = \dfrac{P}{V_{FN} \cdot FP}" />
-            </span>
-            <span>• <b>Corriente bifásica</b> — <InlineMath math="V_{FF}" /> tensión fase-fase:{' '}
-              <InlineMath math="I = \dfrac{P}{V_{FF} \cdot FP}" />
-            </span>
-            <span>• <b>Corriente trifásica</b> — <InlineMath math="V_{FF}" /> tensión de línea:{' '}
-              <InlineMath math="I = \dfrac{P}{\sqrt{3} \cdot V_{FF} \cdot FP}" />
-            </span>
-            <span>• P en kW, I en A, tensiones en V. FP = factor de potencia.</span>
-            <span>• <b>Verificación capacidad de corriente</b> (AEA 90364):{' '}
-              <InlineMath math="1{,}25 \cdot I_N \leq I_{CABLE} \cdot F_H \cdot F_C \cdot F_T" />
-              {' '}— <InlineMath math="F_H" /> altura · <InlineMath math="F_C" /> canalización · <InlineMath math="F_T" /> temperatura.
-            </span>
-          </div>
+      </div>
+
+      <div className="px-3.5 py-3 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-1.5">
+        <span>• <b>Corriente monofásica</b> — <InlineMath math="V_{FN}" /> tensión fase-neutro:{' '}
+          <InlineMath math="I = \dfrac{P}{V_{FN} \cdot FP}" />
+        </span>
+        <span>• <b>Corriente bifásica</b> — <InlineMath math="V_{FF}" /> tensión fase-fase:{' '}
+          <InlineMath math="I = \dfrac{P}{V_{FF} \cdot FP}" />
+        </span>
+        <span>• <b>Corriente trifásica</b> — <InlineMath math="V_{FF}" /> tensión de línea:{' '}
+          <InlineMath math="I = \dfrac{P}{\sqrt{3} \cdot V_{FF} \cdot FP}" />
+        </span>
+        <span>• P en kW, I en A, tensiones en V. FP = factor de potencia.</span>
+        <span>• <b>Verificación capacidad de corriente</b> (AEA 90364):{' '}
+          <InlineMath math="1{,}25 \cdot I_N \leq I_{CABLE} \cdot F_H \cdot F_C \cdot F_T" />
+          {' '}— <InlineMath math="F_H" /> altura · <InlineMath math="F_C" /> canalización · <InlineMath math="F_T" /> temperatura.
+        </span>
       </div>
 
       {/* Modales */}

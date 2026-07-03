@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: '/cargas',      label: 'Cargas'      },
   { href: '/caidas',          label: 'Caídas'          },
   { href: '/cortocircuitos',  label: 'Cortocircuitos'  },
+  { href: '/ampacidad',       label: 'Ampacidad'       },
   { href: '/ruteo',       label: 'Ruteo'       },
   { href: '/ocupaciones', label: 'Ocupaciones' },
   { href: '/importador',  label: 'Importador'  },

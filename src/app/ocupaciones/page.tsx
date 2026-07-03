@@ -3,17 +3,7 @@ import { useState } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import type { Canio, Bandeja, Segmento } from '@/services/ruteo'
 import CircuitosPanel from '@/components/CircuitosPanel'
-import { calcOcupacionCanio, calcOcupacionBandeja } from '@/utils/electricidad'
-
-function ocupacionColor(pct: number, tipo: 'canio' | 'bandeja') {
-  if (tipo === 'bandeja')
-    return pct > 90 || pct < 10 ? 'var(--clr-danger-a10)'
-      : pct > 80 || pct < 20    ? 'var(--clr-warning-a10)'
-      : 'var(--clr-success-a10)'
-  return pct > 35 || pct < 5  ? 'var(--clr-danger-a10)'
-    : pct > 30 || pct < 10    ? 'var(--clr-warning-a10)'
-    : 'var(--clr-success-a10)'
-}
+import { calcOcupacionCanio, calcOcupacionBandeja, colorOcupacion as ocupacionColor } from '@/utils/electricidad'
 
 function OcupacionBar({ pct, tipo }: { pct: number; tipo: 'canio' | 'bandeja' }) {
   const color = ocupacionColor(pct, tipo)
@@ -38,8 +28,9 @@ export default function OcupacionesPage() {
     asignarCircuito, quitarCircuito,
   } = useProyectos()
 
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [showAdd, setShowAdd]       = useState(false)
+  const [selectedId,  setSelectedId]  = useState<number | null>(null)
+  const [showAdd,     setShowAdd]     = useState(false)
+  const [filtroTipo,  setFiltroTipo]  = useState<'todos' | 'canio' | 'bandeja'>('todos')
 
   const activeConjunto    = conjuntos.find(c => c.id === activeConjuntoId)
   const conjuntoTableroIds = new Set(activeConjunto?.tableros.map(t => t.id) ?? [])
@@ -48,7 +39,8 @@ export default function OcupacionesPage() {
   const selectedSeg = segmentos.find(s => s.id === selectedId) ?? null
   const canalSegmentos = segmentos.filter(s => s.tipo === 'canio' || s.tipo === 'bandeja')
   const rows = canalSegmentos.filter(s =>
-    activeConjuntoId === null || s.conjuntos.some(c => c.id === activeConjuntoId)
+    (activeConjuntoId === null || s.conjuntos.some(c => c.id === activeConjuntoId)) &&
+    (filtroTipo === 'todos' || s.tipo === filtroTipo)
   )
 
   const handleAsignar = (circId: number) => {
@@ -106,6 +98,24 @@ export default function OcupacionesPage() {
 
       {/* ── Scrollable content ─── */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+
+        {/* Filtro tipo */}
+        <div className="flex gap-1.5">
+          {(['todos', 'canio', 'bandeja'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setFiltroTipo(t)}
+              className={`px-3 py-1 rounded-full text-[12px] font-medium border cursor-pointer transition-colors ${
+                filtroTipo === t
+                  ? 'bg-primary-a0 border-primary-a0 text-font-a0'
+                  : 'bg-transparent border-surface-tonal-a20 text-surface-tonal-a40 hover:border-surface-tonal-a30 hover:text-font-a20'
+              }`}
+            >
+              {t === 'todos' ? 'Todos' : t === 'canio' ? 'Caños' : 'Bandejas'}
+            </button>
+          ))}
+        </div>
+
         <div className="datatable-container" style={{ maxWidth: '100%', minWidth: 0 }}>
           <table className="datatable">
             <thead>

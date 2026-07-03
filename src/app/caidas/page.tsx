@@ -4,7 +4,7 @@ import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables, type CableItem } from '@/context/CablesContext'
-import { generarFormacion, calcDrops as calcDropsUtil, calcCorriente, calcReactancia, calcResistencia, type CaidaInput } from '@/utils/electricidad'
+import { generarFormacion, calcDrops as calcDropsUtil, calcCorriente, calcReactancia, calcResistencia, type CaidaInput, type FormatoFormacion } from '@/utils/electricidad'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -147,7 +147,8 @@ const columnHelper = createColumnHelper<CaidaRow>()
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function CaidaTension() {
-  const { tableros, getTablero, loading, error } = useProyectos()
+  const { tableros, getTablero, loading, error, proyectoActivo } = useProyectos()
+  const formato: FormatoFormacion = (proyectoActivo?.formato_formacion as FormatoFormacion) ?? 'ingles'
 
   const [tableroId, setTableroId] = useState<number | null>(() => {
     if (typeof document === 'undefined') return null
@@ -206,7 +207,7 @@ export default function CaidaTension() {
         c.formacion?.disposicion ?? null,
         effectiveCable.Nfases,
       ) : null
-      const formacion = c.formacion ? generarFormacion(c.formacion) : '—'
+      const formacion = c.formacion ? generarFormacion(c.formacion, formato) : '—'
       const { ev, epct } = calcDropsUtil(input, nfases, cfAuto, fpAuto, largoAuto, tensionAuto, xAuto, corrienteAuto, rAuto)
       return {
         id: c.id, circuito: c.circuito, formacion,

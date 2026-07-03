@@ -70,7 +70,7 @@ const cx = {
 }
 
 export default function FormacionModal({ formacionInicial, tipoTension, onGuardar, onCerrar }: Props) {
-  const { familias, getCablesDeFamilia } = useCables()
+  const { familiasFiltradas: familias, getCablesDeFamilia } = useCables()
   const [cablesFase,   setCablesFase]   = useState<CableItem[]>([])
   const [cablesNeutro, setCablesNeutro] = useState<CableItem[]>([])
   const [cablesTierra, setCablesTierra] = useState<CableItem[]>([])

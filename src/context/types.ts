@@ -15,6 +15,7 @@ export type Cable = {
   calibre_tipo: string
   familia_id: number
   Nfases: number
+  Iadm: number
   familia?: { material: string | null; temperatura: number | null; aislamiento: string | null } | null
 }
 
@@ -83,8 +84,10 @@ export type ProyectosContextType = {
   proyectoActivo: ProyectoMeta | null
   setProyectoActivo: (p: ProyectoMeta | null) => void
   crearProyecto: (data: { nombre: string; descripcion?: string | null }) => Promise<ProyectoMeta>
-  actualizarProyecto: (id: number, data: { nombre: string; descripcion?: string | null }) => Promise<void>
+  actualizarProyecto: (id: number, data: { nombre: string; descripcion?: string | null; formato_formacion?: string }) => Promise<void>
   eliminarProyecto: (id: number) => Promise<void>
+  agregarFamiliaProyecto: (familiaId: number) => Promise<void>
+  quitarFamiliaProyecto: (familiaId: number) => Promise<void>
 
   // Tableros & circuitos
   tableros: Tablero[]

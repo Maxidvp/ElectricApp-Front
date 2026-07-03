@@ -9,7 +9,6 @@ import { RuteoToolbar } from './RuteoToolbar'
 import { RuteoCanvas } from './RuteoCanvas'
 import { RuteoPanel } from './RuteoPanel'
 import { ConjuntosModal } from './ConjuntosModal'
-import { ArquitecturasModal } from './ArquitecturasModal'
 import ConfirmModal from '@/components/ConfirmModal'
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
@@ -27,7 +26,6 @@ export default function RuteoPage() {
   const [medirTableroId, setMedirTableroId]  = useState<number | null>(null)
   const [localExcluded,  setLocalExcluded]   = useState<Set<number>>(new Set())
   const [showConjuntosModal, setShowConjuntosModal] = useState(false)
-  const [showParedesModal,   setShowParedesModal]   = useState(false)
   const [pendingDelete,      setPendingDelete]      = useState<'segmento' | 'pared' | null>(null)
   const [alertaModal,        setAlertaModal]        = useState<{ mensaje: string; labelAccion: string; onAccion: () => void } | null>(null)
 
@@ -174,7 +172,7 @@ export default function RuteoPage() {
         return
       }
       if (tool === 'pared' && (tablaParedes.length === 0 || activaArquitecturaId === null)) {
-        setAlertaModal({ mensaje: 'Para dibujar paredes necesitás un layout de arquitectura activo. Podés crear uno desde el panel de Paredes.', labelAccion: 'Ir a Paredes', onAccion: () => setShowParedesModal(true) })
+        setAlertaModal({ mensaje: 'Para dibujar paredes necesitás un layout de arquitectura activo. Podés crear uno desde el panel de Canalizaciones.', labelAccion: 'Ir a Canalizaciones', onAccion: () => setShowConjuntosModal(true) })
         return
       }
       setDrawStart(pos)
@@ -281,14 +279,11 @@ export default function RuteoPage() {
         tool={tool} drawZ={drawZ} conjuntos={conjuntos}
         activeConjuntoId={activeConjuntoId} drawStart={drawStart}
         activeCircId={activeCircId} activeCirc={activeCirc} selectedId={selectedId}
-        tablasParedesCount={tablaParedes.length}
-        activeArquitecturaNombre={tablaParedes.find(tp => tp.id === activaArquitecturaId)?.nombre ?? null}
         verticalZMax={verticalZMax} verticalZMin={verticalZMin}
         continuarCanalizacion={continuarCanalizacion} verticalTipo={verticalTipo}
         onChangeTool={changeTool} onChangeDrawZ={setDrawZ}
         onChangeConjunto={setActiveConjuntoId}
         onOpenConjuntos={() => setShowConjuntosModal(true)}
-        onOpenParedes={() => setShowParedesModal(true)}
         onChangeVerticalZMax={setVerticalZMax}
         onChangeVerticalZMin={setVerticalZMin}
         onToggleContinuar={setContinuarCanalizacion}
@@ -316,7 +311,6 @@ export default function RuteoPage() {
         />
       </div>
       {showConjuntosModal && <ConjuntosModal onClose={() => setShowConjuntosModal(false)} />}
-      {showParedesModal   && <ArquitecturasModal onClose={() => setShowParedesModal(false)} />}
       {pendingDelete && (
         <ConfirmModal
           mensaje={

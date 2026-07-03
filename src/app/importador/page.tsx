@@ -137,18 +137,20 @@ function SegPreview({ segments, color }: { segments: SegData[], color: string })
       overflow: 'hidden',
     }}>
       <svg
-        viewBox={`${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`}
+        viewBox={`${minX - pad} ${-maxY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`}
         style={{ width: '100%', maxHeight: 280, display: 'block' }}
         preserveAspectRatio="xMidYMid meet"
       >
-        {segments.map((s, i) => (
-          <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-            stroke={color}
-            strokeOpacity={s.matched || s.tipo === 'pared' ? 0.85 : 0.25}
-            strokeWidth={sw}
-            strokeLinecap="round"
-          />
-        ))}
+        <g transform="scale(1,-1)">
+          {segments.map((s, i) => (
+            <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+              stroke={color}
+              strokeOpacity={s.matched || s.tipo === 'pared' ? 0.85 : 0.25}
+              strokeWidth={sw}
+              strokeLinecap="round"
+            />
+          ))}
+        </g>
       </svg>
     </div>
   )
@@ -236,6 +238,7 @@ export default function ImportadorPage() {
   const [csvText,      setCsvText]      = useState<string | null>(null)
   const [csvFilename,  setCsvFilename]  = useState<string | null>(null)
 
+  const [defaultCatalogId, setDefaultCatalogId] = useState<number | null>(null)
   const [conjuntoId,    setConjuntoId]    = useState<number | null>(null)
   const [layoutId,      setLayoutId]      = useState<number | null>(null)
   const [localLayouts,  setLocalLayouts]  = useState<NamedItem[]>([])
@@ -278,8 +281,19 @@ export default function ImportadorPage() {
   )
   const segments = parsedFromCsv ?? parsedFromText
 
+  const effectiveSegments = useMemo(() => {
+    if (!defaultCatalogId || tipo === 'pared') return segments
+    return segments.map(s => ({
+      ...s,
+      canio_id:   tipo === 'canio'   ? defaultCatalogId : s.canio_id,
+      bandeja_id: tipo === 'bandeja' ? defaultCatalogId : s.bandeja_id,
+      matched: true,
+    }))
+  }, [segments, defaultCatalogId, tipo])
+
   const handleSetTipo = (t: Tipo) => {
     setTipo(t)
+    setDefaultCatalogId(null)
   }
 
   const handleCsvSelect = (file: File) => {
@@ -289,7 +303,7 @@ export default function ImportadorPage() {
     setCsvFilename(file.name)
   }
 
-  const canImport = segments.length > 0 &&
+  const canImport = effectiveSegments.length > 0 &&
     (tipo === 'pared' ? layoutId !== null : conjuntoId !== null)
 
   const crearConjunto = async () => {
@@ -318,7 +332,7 @@ export default function ImportadorPage() {
     try {
       if (tipo === 'pared') {
         const created = await api.createParedesBulk(
-          segments.map(s => ({
+          effectiveSegments.map(s => ({
             x1: s.x1, y1: s.y1, z1: s.z1,
             x2: s.x2, y2: s.y2, z2: s.z2,
             nombre: null, color: null,
@@ -329,7 +343,7 @@ export default function ImportadorPage() {
         count = created.length
       } else {
         const created = await api.createSegmentosBulk(
-          segments.map(s => ({
+          effectiveSegments.map(s => ({
             tipo: s.tipo,
             x1: s.x1, y1: s.y1, z1: s.z1,
             x2: s.x2, y2: s.y2, z2: s.z2,
@@ -347,7 +361,7 @@ export default function ImportadorPage() {
   }
 
   const tipoInfo = TIPO_INFO[tipo]
-  const unmatched = tipoInfo.catalogLabel ? segments.filter(s => s.label && !s.matched).length : 0
+  const unmatched = tipoInfo.catalogLabel ? effectiveSegments.filter(s => s.label && !s.matched).length : 0
 
   const tipoBtn = (active: boolean, color: string): React.CSSProperties => ({
     display: 'flex', alignItems: 'center', gap: 6,
@@ -397,9 +411,9 @@ export default function ImportadorPage() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {segments.length > 0 && (
+              {effectiveSegments.length > 0 && (
                 <span style={{ fontSize: 12, color: 'var(--clr-surface-tonal-a40)' }}>
-                  {segments.length} fila{segments.length !== 1 ? 's' : ''}
+                  {effectiveSegments.length} fila{effectiveSegments.length !== 1 ? 's' : ''}
                 </span>
               )}
               {unmatched > 0 && (
@@ -423,6 +437,34 @@ export default function ImportadorPage() {
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvSelect(f); e.target.value = '' }} />
             </div>
           </div>
+
+          {/* Default catálogo */}
+          {tipo !== 'pared' && catalog.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--clr-surface-tonal-a40)', whiteSpace: 'nowrap' }}>
+                {tipo === 'canio' ? 'Diámetro por defecto:' : 'Ancho por defecto:'}
+              </span>
+              <select
+                value={defaultCatalogId ?? ''}
+                onChange={e => setDefaultCatalogId(e.target.value ? Number(e.target.value) : null)}
+                style={{ ...fieldStyle, fontSize: 11, padding: '2px 8px', height: 26 }}
+              >
+                <option value="">— Desde datos —</option>
+                {catalog.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {tipo === 'canio'
+                      ? ((c as any).diametro_nominal ? `∅ ${(c as any).diametro_nominal}` : c.nombre)
+                      : (`${(c as any).ancho} mm${c.nombre ? ` — ${c.nombre}` : ''}`)}
+                  </option>
+                ))}
+              </select>
+              {defaultCatalogId && (
+                <span style={{ fontSize: 11, color: 'var(--clr-success-a20)' }}>
+                  → Se aplica a todos los segmentos
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Hint */}
           <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--clr-surface-tonal-a40)', marginBottom: 6 }}>
@@ -450,10 +492,10 @@ export default function ImportadorPage() {
           )}
 
           {/* Previsualización SVG */}
-          <SegPreview segments={segments} color={tipoInfo.color} />
+          <SegPreview segments={effectiveSegments} color={tipoInfo.color} />
 
           {/* Tabla de preview */}
-          {segments.length > 0 && (
+          {effectiveSegments.length > 0 && (
             <div style={{ marginTop: 10, overflowX: 'auto' }}>
               <table className="datatable" style={{ fontSize: 12, width: '100%' }}>
                 <thead>
@@ -464,7 +506,7 @@ export default function ImportadorPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {segments.map((seg, i) => (
+                  {effectiveSegments.map((seg, i) => (
                     <tr key={i}>
                       <td style={{ color: 'var(--clr-surface-tonal-a40)', textAlign: 'left' }}>{i + 1}</td>
                       <td>{fmtM(seg.x1)}</td><td>{fmtM(seg.y1)}</td><td>{fmtM(seg.z1)}</td>
@@ -531,9 +573,9 @@ export default function ImportadorPage() {
           >
             {status === 'importing'
               ? 'Importando…'
-              : segments.length === 0
+              : effectiveSegments.length === 0
               ? 'Nada que importar'
-              : `Importar ${segments.length} segmento${segments.length !== 1 ? 's' : ''}`}
+              : `Importar ${effectiveSegments.length} segmento${effectiveSegments.length !== 1 ? 's' : ''}`}
           </button>
         )}
       </div>

@@ -2,12 +2,14 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { getFamiliasCables } from '@/services/familiasCables'
 import { getCablesPorFamilia } from '@/services/cables'
+import { useProyectos } from '@/context/ProyectosContext'
 
 type FamiliaCable = { id: number; nombre: string }
-export type CableItem = { id: number; nombre: string; seccion_f: string; calibre_tipo: string; diametro: number | null; familia_id: number; Nfases: number }
+export type CableItem = { id: number; nombre: string; seccion_f: string; calibre_tipo: string; diametro: number | null; familia_id: number; Nfases: number; Iadm: number }
 
 type CablesContextType = {
-  familias: FamiliaCable[]
+  familias:          FamiliaCable[]   // todas las familias (para la página de cables)
+  familiasFiltradas: FamiliaCable[]   // solo las del proyecto activo (para FormacionModal)
   getCablesDeFamilia: (familiaId: number) => Promise<CableItem[]>
 }
 
@@ -34,6 +36,24 @@ export function prefetchCablesFamilias(ids: number[]) {
 // ── Contexto ──────────────────────────────────────────────────────
 const CablesContext = createContext<CablesContextType | null>(null)
 
+function CablesProviderInner({ children, familias }: { children: React.ReactNode; familias: FamiliaCable[] }) {
+  const { proyectoActivo } = useProyectos()
+
+  const familiasFiltradas: FamiliaCable[] = proyectoActivo?.familia_ids?.length
+    ? familias.filter(f => proyectoActivo.familia_ids.includes(f.id))
+    : familias
+
+  const getCablesDeFamilia = useCallback((familiaId: number): Promise<CableItem[]> => {
+    return _fetchFamilia(familiaId)
+  }, [])
+
+  return (
+    <CablesContext.Provider value={{ familias, familiasFiltradas, getCablesDeFamilia }}>
+      {children}
+    </CablesContext.Provider>
+  )
+}
+
 export function CablesProvider({ children }: { children: React.ReactNode }) {
   const [familias, setFamilias] = useState<FamiliaCable[]>([])
 
@@ -41,15 +61,7 @@ export function CablesProvider({ children }: { children: React.ReactNode }) {
     getFamiliasCables().then(setFamilias)
   }, [])
 
-  const getCablesDeFamilia = useCallback((familiaId: number): Promise<CableItem[]> => {
-    return _fetchFamilia(familiaId)
-  }, [])
-
-  return (
-    <CablesContext.Provider value={{ familias, getCablesDeFamilia }}>
-      {children}
-    </CablesContext.Provider>
-  )
+  return <CablesProviderInner familias={familias}>{children}</CablesProviderInner>
 }
 
 export function useCables() {

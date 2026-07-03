@@ -31,25 +31,50 @@ export interface CaidaInput {
  * Genera la descripción de una formación de cables.
  * Ej: "3x(2x95mm²)+50mm²N+T(G)"
  */
-export function generarFormacion(f: FormacionInfo): string {
+// Convierte "1x6 AWG" → "#6 AWG", "3x95 mm²" → "#95 mm²"
+// El prefijo Nx del nombre indica el número de conductores del cable; lo quitamos
+// porque en la formación el conteo real lo calculamos nosotros.
+function cableBase(nombre: string): string {
+  return '#' + nombre.replace(/^\d+x/, '')
+}
+
+export type FormatoFormacion = 'ingles' | 'extendida' | 'copaipa' | 'resumida'
+
+// Formato: 4C#10 AWG (3P-N)+1C#10 AWG (G)
+// Si fase y neutro son del mismo cable se agrupan en un bloque con etiqueta (3P-N).
+// La tierra siempre va por separado con etiqueta (G).
+function generarFormacionIngles(f: FormacionInfo): string {
   const partes: string[] = []
+  const nFaseCond = f.Nfases * f.cond_por_fase
+  const mismoNombre = f.cable_neutro?.nombre === f.cable.nombre
 
-  const fase = f.cond_por_fase > 1
-    ? `${f.Nfases}x(${f.cond_por_fase}x${f.cable.nombre})`
-    : `${f.Nfases}x${f.cable.nombre}`
-  partes.push(fase)
+  const pLabel = nFaseCond === 1 ? 'P' : `${nFaseCond}P`
 
-  if (f.cable_neutro && f.Nneutro > 0) {
-    partes.push(f.Nneutro > 1
-      ? `${f.Nneutro}x${f.cable_neutro.nombre}N`
-      : `${f.cable_neutro.nombre}N`)
+  if (f.Nneutro > 0 && mismoNombre) {
+    const nLabel = f.Nneutro === 1 ? 'N' : `${f.Nneutro}N`
+    partes.push(`${nFaseCond + f.Nneutro}C${cableBase(f.cable.nombre)} (${pLabel}-${nLabel})`)
+  } else {
+    partes.push(`${nFaseCond}C${cableBase(f.cable.nombre)} (${pLabel})`)
+    if (f.cable_neutro && f.Nneutro > 0) {
+      const nLabel = f.Nneutro === 1 ? 'N' : `${f.Nneutro}N`
+      partes.push(`${f.Nneutro}C${cableBase(f.cable_neutro.nombre)} (${nLabel})`)
+    }
   }
 
   if (f.cable_tierra) {
-    partes.push(`${f.cable_tierra.nombre}(G)`)
+    partes.push(`1C${cableBase(f.cable_tierra.nombre)} (G)`)
   }
 
   return partes.join('+')
+}
+
+export function generarFormacion(f: FormacionInfo, formato: FormatoFormacion = 'ingles'): string {
+  switch (formato) {
+    case 'ingles':    return generarFormacionIngles(f)
+    case 'extendida': return 'A IMPLEMENTAR'
+    case 'copaipa':   return 'A IMPLEMENTAR'
+    case 'resumida':  return 'A IMPLEMENTAR'
+  }
 }
 
 // ── Reactancia inductiva ──────────────────────────────────────────────────
@@ -363,4 +388,16 @@ export function calcOcupacionBandeja(
       anchoOcupado += f.cable_tierra.diametro
   }
   return { anchoOcupado, anchoTotal: ancho, pct: (anchoOcupado / ancho) * 100 }
+}
+
+// Bandeja: rojo >90% o <10%, amarillo >80% o <20%
+// Caño:    rojo >35% o <5%,  amarillo >30% o <10%
+export function colorOcupacion(pct: number, tipo: 'canio' | 'bandeja'): string {
+  if (tipo === 'bandeja')
+    return pct > 90 || pct < 10 ? 'var(--clr-danger-a10)'
+      : pct > 80 || pct < 20   ? 'var(--clr-warning-a10)'
+      : 'var(--clr-success-a10)'
+  return pct > 35 || pct < 5  ? 'var(--clr-danger-a10)'
+    : pct > 25 || pct < 10    ? 'var(--clr-warning-a10)'
+    : 'var(--clr-success-a10)'
 }
