@@ -76,6 +76,11 @@ export function useRuteoActions(
     setSegmentos(prev => prev.map(s => s.id === id ? resolveSegPatch(patch, s) : s))
   }
 
+  // Edita un segmento con latest-wins debounce: si el usuario mueve un endpoint
+  // rápidamente (ej: arrastrar en el canvas) se generan muchos llamados seguidos.
+  // Cada uno incrementa un número de versión; solo la respuesta del última PUT
+  // actualiza el estado. Las respuestas de PUTs anteriores se descartan comparando
+  // el número de versión capturado al inicio del llamado con el actual.
   function editSegmento(id: number, patch: SegPatch) {
     setSegmentos(prev => prev.map(s => s.id === id ? resolveSegPatch(patch, s) : s))
     const fire = (realId: number) => {
@@ -109,6 +114,12 @@ export function useRuteoActions(
     ruteoApi.updateSegmentosZBulk(ids, z).catch(console.error)
   }
 
+  // Divide un segmento en el punto (x,y,z) optimistamente:
+  //   1. El segmento original se trunca visualmente a (x2=x, y2=y, z2=z).
+  //   2. Se agrega un segmento temporal (tempId) desde el punto de corte al extremo original.
+  // Cuando el back confirma, se reemplazan ambos por los registros reales.
+  // En caso de error se restaura el segmento original tal como estaba.
+  // savedOrig captura el estado antes del split para poder revertir si falla la API.
   function splitSegmento(id: number, x: number, y: number, z: number) {
     let savedOrig: Segmento | undefined
     const tempId = nextTempId()

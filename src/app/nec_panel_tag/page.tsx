@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
-import { renombrarCircuitosBulk } from '@/services/circuitos'
+import { renombrarCircuitosBulk, actualizarFasesBulk } from '@/services/circuitos'
 import { updateTablero } from '@/services/tableros'
 import type { Circuito } from '@/context/types'
 
@@ -13,18 +13,57 @@ function polesFrom(c: Circuito): number {
   return 1
 }
 
-// Positions occupied by a circuit starting at startPos (same column, +2 each step)
+// En un tablero tipo NEC los breakers se numeran en dos columnas:
+//   columna izquierda: posiciones impares  1, 3, 5, 7, …
+//   columna derecha:   posiciones pares    2, 4, 6, 8, …
+// Un interruptor bipolar ocupa pos y pos+2 (no pos+1), porque cada posición
+// avanza de a 2 módulos dentro de la misma columna.
 function occupiedPos(startPos: number, poles: number): number[] {
   return Array.from({ length: poles }, (_, i) => startPos + i * 2)
 }
 
-// Phase label cycling A/B/C per row
-function phaseLabel(pos: number): string {
-  return ['L1', 'L2', 'L3'][(Math.ceil(pos / 2) - 1) % 3]
+const FASE_LABELS: Record<string, [string, string, string]> = {
+  RST:    ['R',  'S',  'T'],
+  L1L2L3: ['L1', 'L2', 'L3'],
+  ABC:    ['A',  'B',  'C'],
+  UVW:    ['U',  'V',  'W'],
+}
+
+// Las fases se asignan por fila de módulo (⌈pos/2⌉ da la fila 1-based)
+// y rotan en ciclos de 3: fila 1→fase[0], fila 2→fase[1], fila 3→fase[2], fila 4→fase[0], …
+// Este es el esquema estándar de tableros NEC trifásicos.
+function phaseLabel(pos: number, labels: [string, string, string]): string {
+  return labels[(Math.ceil(pos / 2) - 1) % 3]
+}
+
+// La DB siempre almacena valores RST ('R', 'S', 'T', 'RS', 'ST', 'TR', 'RST').
+// Esta función traduce al sistema de nomenclatura activo del proyecto para mostrar
+// en pantalla sin modificar el valor almacenado.
+function faseToDisplay(stored: string, labels: [string, string, string]): string {
+  const [f1, f2, f3] = labels
+  const sep = f1.length > 1 ? '-' : ''
+  const map: Record<string, string> = {
+    R: f1, S: f2, T: f3,
+    RS: `${f1}${sep}${f2}`, ST: `${f2}${sep}${f3}`, TR: `${f3}${sep}${f1}`,
+    RST: `${f1}${sep}${f2}${sep}${f3}`,
+  }
+  return map[stored] ?? stored
 }
 
 function buildTag(panelTag: string, startPos: number, poles: number): string {
   return `${panelTag}_${occupiedPos(startPos, poles).join(',')}`
+}
+
+// Calcula la fase RST correspondiente a un circuito según su posición en el tablero.
+// Los interruptores bipolares (2P) toman dos fases adyacentes en el ciclo:
+//   fila 1 → RS, fila 2 → ST, fila 3 → TR (y vuelve a empezar)
+// Los trifásicos (3P) siempre toman las tres fases → RST.
+function computedFase(startPos: number, poles: number): string | null {
+  if (poles >= 3) return 'RST'
+  const idx = (Math.ceil(startPos / 2) - 1) % 3
+  if (poles === 1) return ['R', 'S', 'T'][idx]
+  if (poles === 2) return ['RS', 'ST', 'TR'][idx]
+  return null
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,18 +73,24 @@ type PlacedCircuit = {
   startPos: number
   poles: number
   originalTag: string
+  originalFase: string | null
   descripcion: string | null
 }
 
 // ─── Initial layout ───────────────────────────────────────────────────────────
 
+// Ubica greedy cada circuito en la primera posición libre del tablero.
+// Recorre las posiciones 1..200 en orden y para cada circuito verifica que TODAS
+// las posiciones que requiere (calculadas con occupiedPos) estén libres. Si lo están,
+// las marca como ocupadas y registra el circuito ahí.
+// Al ser greedy puede que el orden no sea óptimo, pero reproduce el llenado natural
+// de un electricista que coloca los breakers de arriba hacia abajo.
 function buildInitialLayout(circuits: Circuito[]): PlacedCircuit[] {
   const occupied = new Set<number>()
   const placed: PlacedCircuit[] = []
 
   for (const c of circuits) {
     const poles = polesFrom(c)
-    // Find next free starting position (try odd side first, then even)
     let found: number | null = null
     for (let p = 1; p <= 200 && found === null; p++) {
       const positions = occupiedPos(p, poles)
@@ -54,11 +99,12 @@ function buildInitialLayout(circuits: Circuito[]): PlacedCircuit[] {
     if (found === null) continue
     occupiedPos(found, poles).forEach(p => occupied.add(p))
     placed.push({
-      circuitId:   c.id,
-      startPos:    found,
+      circuitId:    c.id,
+      startPos:     found,
       poles,
-      originalTag: c.circuito,
-      descripcion: c.descripcion,
+      originalTag:  c.circuito,
+      originalFase: (c as any).fase ?? null,
+      descripcion:  c.descripcion,
     })
   }
 
@@ -72,7 +118,8 @@ function circuitAtPos(layout: PlacedCircuit[], pos: number): PlacedCircuit | nul
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function NecPanelTagPage() {
-  const { tableros } = useProyectos()
+  const { tableros, proyectoActivo } = useProyectos()
+  const faseLabels: [string, string, string] = FASE_LABELS[proyectoActivo?.nomenclatura_fases ?? 'RST'] ?? FASE_LABELS.RST
 
   // Persist selected tablero via cookie (same pattern as other pages)
   const [selectedId, setSelectedId] = useState<number | null>(() => {
@@ -128,16 +175,18 @@ export default function NecPanelTagPage() {
     if (!tablero) return
     setSaving(true)
     try {
-      const changed = layout.filter(pc =>
-        buildTag(tablero.tag, pc.startPos, pc.poles) !== pc.originalTag
-      )
-      await renombrarCircuitosBulk(
-        changed.map(pc => ({ id: pc.circuitId, circuito: buildTag(tablero.tag, pc.startPos, pc.poles) }))
-      )
-      // Update originalTag so pending count resets
+      const tagChanged  = layout.filter(pc => buildTag(tablero.tag, pc.startPos, pc.poles) !== pc.originalTag)
+      const faseChanged = layout.filter(pc => computedFase(pc.startPos, pc.poles) !== pc.originalFase)
+
+      await Promise.all([
+        tagChanged.length  > 0 ? renombrarCircuitosBulk(tagChanged.map(pc => ({ id: pc.circuitId, circuito: buildTag(tablero.tag, pc.startPos, pc.poles) }))) : Promise.resolve(),
+        faseChanged.length > 0 ? actualizarFasesBulk(faseChanged.map(pc => ({ id: pc.circuitId, fase: computedFase(pc.startPos, pc.poles) })))             : Promise.resolve(),
+      ])
+
       setLayout(prev => prev.map(pc => ({
         ...pc,
-        originalTag: buildTag(tablero.tag, pc.startPos, pc.poles),
+        originalTag:  buildTag(tablero.tag, pc.startPos, pc.poles),
+        originalFase: computedFase(pc.startPos, pc.poles),
       })))
       setSavedOk(true)
       setTimeout(() => setSavedOk(false), 2500)
@@ -162,7 +211,10 @@ export default function NecPanelTagPage() {
   )
 
   const pendingCount = tablero
-    ? layout.filter(pc => buildTag(tablero.tag, pc.startPos, pc.poles) !== pc.originalTag).length
+    ? layout.filter(pc =>
+        buildTag(tablero.tag, pc.startPos, pc.poles) !== pc.originalTag ||
+        computedFase(pc.startPos, pc.poles) !== pc.originalFase
+      ).length
     : 0
 
   const rowCount = Math.ceil(totalSlots / 2)
@@ -258,11 +310,11 @@ export default function NecPanelTagPage() {
                 <th className="px-3 py-1.5 border-b border-surface-tonal-a20 w-52">Tag</th>
                 <th className="px-3 py-1.5 border-b border-surface-tonal-a20">Descripción</th>
                 <th className="px-1 py-1.5 border-b border-surface-tonal-a20 w-7" />
-                <th className="px-2 py-1.5 border-b border-surface-tonal-a20 w-10 text-center">Fase</th>
+                <th className="px-2 py-1.5 border-b border-surface-tonal-a20 w-14 text-center">Fase</th>
                 {/* center divider */}
                 <th className="w-3" />
                 {/* Right column — mirrored: Fase | Mover | Desc | Tag | Pos */}
-                <th className="px-2 py-1.5 border-b border-surface-tonal-a20 w-10 text-center">Fase</th>
+                <th className="px-2 py-1.5 border-b border-surface-tonal-a20 w-14 text-center">Fase</th>
                 <th className="px-1 py-1.5 border-b border-surface-tonal-a20 w-7" />
                 <th className="px-3 py-1.5 border-b border-surface-tonal-a20">Descripción</th>
                 <th className="px-3 py-1.5 border-b border-surface-tonal-a20 w-52">Tag</th>
@@ -279,7 +331,7 @@ export default function NecPanelTagPage() {
 
                 const oddMain  = !oddPc  || oddPc.startPos  === oddPos
                 const evenMain = !evenPc || evenPc.startPos === evenPos
-                const shared   = { moving, highlightPos, invalidPos: invalidHoverPos, totalSlots,
+                const shared   = { moving, highlightPos, invalidPos: invalidHoverPos, totalSlots, faseLabels,
                   onStartMove: setMoving, onCancelMove: () => { setMoving(null); setHoverPos(null) },
                   onPlaceHere: handlePositionClick, onHover: (p: number | null) => setHoverPos(p) }
 
@@ -302,7 +354,7 @@ export default function NecPanelTagPage() {
 // ─── PanelCell ────────────────────────────────────────────────────────────────
 
 function PanelCell({
-  pos, pc, panelTag, moving, highlightPos, invalidPos, totalSlots, mirrored, isMain,
+  pos, pc, panelTag, moving, highlightPos, invalidPos, totalSlots, mirrored, isMain, faseLabels,
   onStartMove, onCancelMove, onPlaceHere, onHover,
 }: {
   pos: number
@@ -314,16 +366,18 @@ function PanelCell({
   totalSlots: number
   mirrored?: boolean
   isMain: boolean
+  faseLabels: [string, string, string]
   onStartMove: (pc: PlacedCircuit) => void
   onCancelMove: () => void
   onPlaceHere: (pos: number) => void
   onHover: (pos: number | null) => void
 }) {
-  const poles    = pc?.poles ?? 1
-  const newTag   = pc ? buildTag(panelTag, pc.startPos, pc.poles) : null
-  const changed  = pc && newTag !== pc.originalTag
-  const phase    = phaseLabel(pos)
-  const isMoving = !!(moving && pc && moving.circuitId === pc.circuitId)
+  const poles     = pc?.poles ?? 1
+  const newTag    = pc ? buildTag(panelTag, pc.startPos, pc.poles) : null
+  const changed   = pc && newTag !== pc.originalTag
+  const phaseIdx  = (Math.ceil(pos / 2) - 1) % 3
+  const phase     = phaseLabel(pos, faseLabels)
+  const isMoving  = !!(moving && pc && moving.circuitId === pc.circuitId)
   const isTarget = moving && !isMoving
 
   const highlight = highlightPos.has(pos)
@@ -356,12 +410,21 @@ function PanelCell({
     </td>
   )
 
+  const faseChanged   = !!pc && pc.originalFase !== null && pc.originalFase !== computedFase(pc.startPos, pc.poles)
+  const oldFaseLabel  = faseChanged && pc?.originalFase ? faseToDisplay(pc.originalFase, faseLabels) : null
+  const phaseColor    = phaseIdx === 0 ? '#E87C3A' : phaseIdx === 1 ? '#378ADD' : '#9B5DE5'
+
   const phaseCell = (
-    <td className={`${cellCls} text-center font-medium text-[12px] w-8`} {...sharedEvt}>
+    <td className={`${cellCls} text-center font-medium w-14`} {...sharedEvt}>
       {pc && (
-        <span style={{ color: phase === 'L1' ? '#E87C3A' : phase === 'L2' ? '#378ADD' : '#9B5DE5' }}>
-          {phase}
-        </span>
+        faseChanged ? (
+          <span className="flex flex-col items-center leading-tight" title={`${oldFaseLabel} → ${phase}`}>
+            <span className="text-[10px] text-font-a40 line-through">{oldFaseLabel}</span>
+            <span className="text-[11px]" style={{ color: phaseColor }}>{phase}</span>
+          </span>
+        ) : (
+          <span className="text-[12px]" style={{ color: phaseColor }}>{phase}</span>
+        )
       )}
     </td>
   )

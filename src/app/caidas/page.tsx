@@ -360,6 +360,8 @@ export default function CaidaTension() {
               <span className="flex items-center gap-1.5"><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6aab6a', display: 'inline-block' }} /> Resultado</span>
             </div>
           </div>
+          <div className="flex justify-center">
+          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
           <table
             className="datatable"
             style={{ width: table.getTotalSize(), tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}
@@ -402,6 +404,8 @@ export default function CaidaTension() {
               ))}
             </tbody>
           </table>
+          </div>
+          </div>
           {rows.length === 0 && (
             <p style={{ padding: 16, textAlign: 'center', color: 'var(--clr-surface-tonal-a40)', fontSize: 13 }}>
               Sin circuitos en este tablero.

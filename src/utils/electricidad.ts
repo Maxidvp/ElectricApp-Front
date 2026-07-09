@@ -95,6 +95,9 @@ export function generarFormacion(f: FormacionInfo, formato: FormatoFormacion = '
  *   unipolar  plana        → GMD = ∛2 · d ≈ 1.26·d  (plana compacta)
  *   unipolar  plana_sep    → GMD = ∛2 · 2·d ≈ 2.52·d (plana separada)
  *   multipolar             → GMD = 2.5·√(A/π)        (geometría interna estimada)
+ *
+ * Nota: GMD > GMR es necesario para que ln() sea positivo. Si GMD ≤ GMR
+ * (caso degenerado por datos incorrectos) se retorna null.
  */
 export function calcReactancia(
   diametro:   number | null,
@@ -314,6 +317,13 @@ export function calcularAreaFormacion(f: FormacionInfo): number {
  *
  * Los parámetros `fpAuto`, `largoAuto` y `tensionAuto` son valores guardados en la
  * base de datos que se usan cuando el campo manual correspondiente está vacío.
+ *
+ * CF (conductores por fase): divide la corriente porque al poner N conductores
+ * en paralelo cada uno conduce In/N amperes, reduciendo la caída proporcional.
+ *
+ * R y X están en Ω/km, L en metros → el término L/1000 convierte la longitud.
+ * La fórmula es simplificada (ignora componente reactiva transversal) y es
+ * exacta para cosφ cercanos a 1. Error < 0.5 % para cosφ > 0.7.
  */
 export function calcDrops(
   input:       CaidaInput,
@@ -350,6 +360,10 @@ export function calcDrops(
 type SegCircuito = { id: number }
 type GetFormacion = (circId: number) => FormacionInfo | null | undefined
 
+// Suma el área circular de todos los conductores (fase + neutro + tierra) de
+// todos los circuitos asignados al caño, y la compara con el área interna del caño.
+// NEC 2020 art. 40 fija el límite recomendado en 40% para 3+ conductores, pero
+// en la práctica el proyecto usa 25% como umbral verde para facilitar tendido.
 export function calcOcupacionCanio(
   dInterno: number,
   circuitos: SegCircuito[],
@@ -370,6 +384,10 @@ export function calcOcupacionCanio(
   return { areaOcupada, areaTotal, pct: (areaOcupada / areaTotal) * 100 }
 }
 
+// Para bandejas se mide en ancho lineal, no en área: los cables se disponen
+// en una sola capa sobre el fondo de la bandeja. Se suman los diámetros de
+// todos los conductores de todos los circuitos. No aplica factor de empaque
+// porque la norma asume tendido a una sola capa.
 export function calcOcupacionBandeja(
   ancho: number,
   circuitos: SegCircuito[],

@@ -8,6 +8,10 @@ type SetTableros = Dispatch<SetStateAction<Tablero[]>>
 type PendingMap  = MutableRefObject<Map<number, Promise<Circuito>>>
 
 // Dispara un PATCH inmediato o lo encola tras confirmar el ID real si el circuito aún es temporal.
+// Problema que resuelve: el usuario puede editar un campo (FP, largo, etc.) en la misma
+// interacción en que el circuito todavía no fue confirmado por el backend (id < 0).
+// En ese caso encadenamos el PATCH a la promesa del POST original, de modo que cuando
+// el backend confirme el ID real, el PATCH se dispare automáticamente con ese ID.
 function firePending(id: number, pending: PendingMap, fn: (realId: number) => void) {
   if (id < 0 && pending.current.has(id)) pending.current.get(id)!.then(r => fn(r.id))
   else fn(id)
@@ -24,6 +28,10 @@ export function useCircuitosActions(
     circuitosApi.updateNombreCircuito(id, nombre).catch(console.error)
   }
 
+  // Inserta el circuito optimistamente en la posición deseada, luego confirma el ID real
+  // con el back y emite un reordenarCircuitos para persistir el nuevo orden.
+  // capturedOrder se captura dentro del setTableros (que corre sincrónicamente) para que
+  // el .then() tenga el orden definitivo incluso si otro setTableros lo modificó antes.
   function agregarCircuito(tableroId: number, insertIndex?: number) {
     if (!tableros.find(t => t.id === tableroId)) return
     const tempId = nextTempId()
@@ -38,7 +46,7 @@ export function useCircuitosActions(
       s.splice(i, 0, {
         id: tempId, orden: i, circuito: tag, descripcion: null, tipo: null,
         tablero_id: tableroId, formacion_id: null, formacion: null,
-        FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: false, potencia: null,
+        FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: false, potencia: null,
         role: null, parent_id: null,
       })
       const reordered = s.map((c, j) => ({ ...c, orden: j }))
@@ -48,6 +56,8 @@ export function useCircuitosActions(
 
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(async real => {
+        // Reemplazar el tempId por el id real en la lista de órdenes antes de enviarlo al back.
+        // Los ids negativos se filtran porque el back no los reconocería.
         const newOrder = capturedOrder
           .map(item => ({ id: item.id === tempId ? real.id : item.id, orden: item.orden }))
           .filter(item => item.id > 0)
@@ -169,22 +179,22 @@ export function useCircuitosActions(
   }
 
   function actualizarTipo(id: number, tipo: string | null) {
-    const esAlimentador = tipo === 'ALIMENTADOR'
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo, es_alimentador: esAlimentador })))
+    const esAcometida = tipo === 'ACOMETIDA'
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo, es_acometida: esAcometida })))
     firePending(id, pendingCircuitos, rid => circuitosApi.updateTipoCircuito(rid, tipo).catch(console.error))
   }
 
-  function actualizarEsAlimentador(id: number, val: boolean) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, es_alimentador: val })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateEsAlimentadorCircuito(rid, val).catch(console.error))
+  function actualizarEsAcometida(id: number, val: boolean) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, es_acometida: val })))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateEsAcometidaCircuito(rid, val).catch(console.error))
   }
 
-  function agregarAlimentador(tableroId: number, nombre: string, insertIndex: number) {
+  function agregarAcometida(tableroId: number, nombre: string, insertIndex: number) {
     const tempId = nextTempId()
     const temp: Circuito = {
-      id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tipo: 'ALIMENTADOR',
+      id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tipo: 'ACOMETIDA',
       tablero_id: tableroId, formacion_id: null, formacion: null,
-      FP: null, Largo: null, tipo_tension: null, fase: null, es_alimentador: true, potencia: null,
+      FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: true, potencia: null,
       role: null, parent_id: null,
     }
     let capturedOrderAlim: { id: number; orden: number }[] = []
@@ -200,13 +210,13 @@ export function useCircuitosActions(
 
     const promise = circuitosApi.crearCircuitoVacio(tableroId)
       .then(async real => {
-        await circuitosApi.updateEsAlimentadorCircuito(real.id, true)
+        await circuitosApi.updateEsAcometidaCircuito(real.id, true)
         await circuitosApi.updateNombreCircuito(real.id, nombre)
         const newOrder = capturedOrderAlim
           .map(item => ({ id: item.id === tempId ? real.id : item.id, orden: item.orden }))
           .filter(item => item.id > 0)
         if (newOrder.length > 0) await circuitosApi.reordenarCircuitos(newOrder)
-        const resolved = { ...real, circuito: nombre, es_alimentador: true } as Circuito
+        const resolved = { ...real, circuito: nombre, es_acometida: true } as Circuito
         setTableros(prev => replaceCirc(prev, tempId, resolved))
         pendingCircuitos.current.set(tempId, Promise.resolve(resolved))
         return resolved
@@ -251,7 +261,7 @@ export function useCircuitosActions(
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos,
     actualizarDescripcion, actualizarFP, actualizarLargo, actualizarPotencia,
-    actualizarTipoTension, actualizarFase, actualizarTipo, actualizarEsAlimentador,
-    agregarAlimentador, actualizarFormacion, crearCircuitoAuxiliar, reordenarSubcircuitos,
+    actualizarTipoTension, actualizarFase, actualizarTipo, actualizarEsAcometida,
+    agregarAcometida, actualizarFormacion, crearCircuitoAuxiliar, reordenarSubcircuitos,
   }
 }

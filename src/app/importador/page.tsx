@@ -21,12 +21,16 @@ type SegData = {
 
 // ── Conversión y formato ──────────────────────────────────
 
+// La unidad interna de coordenadas es centímetros (cm) para poder trabajar
+// con números enteros y evitar errores de punto flotante en comparaciones.
 function toCm(val: number, unit: Unit): number {
   if (unit === 'm')  return Math.round(val * 100)
   if (unit === 'mm') return Math.round(val / 10)
   return Math.round(val)
 }
 
+// Acepta tanto punto como coma como separador decimal para soportar archivos
+// exportados en locales europeos (donde la coma es el separador estándar).
 function parseFlt(s: string): number {
   return parseFloat(s.trim().replace(',', '.'))
 }
@@ -37,6 +41,10 @@ function fmtM(cm: number): string {
 
 // ── Parser de texto (filas separadas por punto y coma) ────
 
+// Formato esperado: x1;y1;z1;x2;y2;z2;etiqueta  (una fila por segmento)
+// La etiqueta se compara en minúsculas contra el catálogo de caños/bandejas.
+// Las paredes no tienen catálogo → matched siempre true para que no queden marcadas en rojo.
+// Las filas con coordenadas no numéricas se descartan silenciosamente.
 function parseSegments(
   text: string,
   tipo: Tipo,
@@ -52,6 +60,7 @@ function parseSegments(
       const x1 = toCm(parseFlt(p[0] ?? '0'), unit); const y1 = toCm(parseFlt(p[1] ?? '0'), unit); const z1 = toCm(parseFlt(p[2] ?? '0'), unit)
       const x2 = toCm(parseFlt(p[3] ?? '0'), unit); const y2 = toCm(parseFlt(p[4] ?? '0'), unit); const z2 = toCm(parseFlt(p[5] ?? '0'), unit)
       const label = p[6] ?? ''
+      // Búsqueda case-insensitive exacta por nombre en el catálogo local
       const match = label ? catalog.find(c => c.nombre?.toLowerCase() === label.toLowerCase()) : null
       return {
         x1, y1, z1, x2, y2, z2, tipo, label,
@@ -65,6 +74,10 @@ function parseSegments(
 
 // ── Parser CSV (columnas detectadas desde el encabezado) ──
 
+// Mapa de alias de columnas en inglés y español para que el importador acepte
+// exportaciones de distintas herramientas sin necesitar renombrar columnas.
+// El primer alias que coincide por nombre de campo (x1, y1, …) gana; los
+// demás se ignoran (idx[field] === undefined previene sobrescribir el primero).
 const COL_MAP: Record<string, string> = {
   'start x': 'x1', 'inicio x': 'x1', 'x1': 'x1',
   'start y': 'y1', 'inicio y': 'y1', 'y1': 'y1',
@@ -74,6 +87,7 @@ const COL_MAP: Record<string, string> = {
   'end z':   'z2', 'fin z':   'z2', 'z2': 'z2',
   'section': 'label', 'sección': 'label', 'seccion': 'label',
   'dimension': 'label', 'dimensión': 'label', 'tipo': 'label',
+  'etiqueta': 'label',  // columna generada por el script de Dynamo
 }
 
 function parseCsvSegments(
@@ -82,10 +96,11 @@ function parseCsvSegments(
   catalog: { id: number; nombre: string | null }[],
   unit: Unit,
 ): SegData[] {
-  const text = csvText.replace(/^﻿/, '')
+  const text = csvText.replace(/^﻿/, '')  // quitar BOM UTF-8 que Excel agrega al exportar
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   if (lines.length < 2) return []
 
+  // Detección automática del separador: semicolón (Europa) o coma (EE.UU.)
   const sep = lines[0].includes(';') ? ';' : ','
   const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, '').replace(/\s+/g, ' '))
 

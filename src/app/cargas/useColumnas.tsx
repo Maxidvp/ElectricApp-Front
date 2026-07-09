@@ -24,13 +24,27 @@ type Acciones = {
 
 const columnHelper = createColumnHelper<CircuitoRow>()
 
-export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Acciones) {
+const FASE_LABELS: Record<string, [string, string, string]> = {
+  RST:    ['R',  'S',  'T'],
+  L1L2L3: ['L1', 'L2', 'L3'],
+  ABC:    ['A',  'B',  'C'],
+  UVW:    ['U',  'V',  'W'],
+}
+
+function getFaseLabels(nom: string): [string, string, string] {
+  return FASE_LABELS[nom] ?? FASE_LABELS.RST
+}
+
+export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Acciones, nomenclatura = 'RST') {
   const {
     renombrarCircuito, actualizarDescripcion, actualizarTipo,
     actualizarTipoTension, actualizarFase, actualizarPotencia,
     actualizarFP, actualizarLargo,
     setPendingTipo, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto,
   } = acciones
+
+  const [f1, f2, f3] = getFaseLabels(nomenclatura)
+  const sep = nomenclatura === 'RST' ? '' : '-'
 
   return useMemo(() => [
     columnHelper.accessor('circuito', {
@@ -66,7 +80,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
             value={tipo ?? ''}
             onChange={e => {
               const nuevo = e.target.value || null
-              if (nuevo === 'ALIMENTADOR' || tipo === 'ALIMENTADOR')
+              if (nuevo === 'ACOMETIDA' || tipo === 'ACOMETIDA')
                 setPendingTipo({ id, nuevoTipo: nuevo })
               else
                 actualizarTipo(id, nuevo)
@@ -87,8 +101,8 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       size: 110,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, tipo_tension, es_alimentador } = info.row.original
-        if (es_alimentador) {
+        const { id, tipo_tension, es_acometida } = info.row.original
+        if (es_acometida) {
           const v = tensionesDisponibles.find(t => t.tipo === tipo_tension)?.value
           return <span className="text-xs text-font-a20 block text-right pr-1">{v ?? '—'}</span>
         }
@@ -114,11 +128,13 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       size: 80,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, tipo_tension, fase, es_alimentador } = info.row.original
-        if (es_alimentador)  return <span className="text-xs text-font-a20 block text-center">—</span>
+        const { id, tipo_tension, fase, es_acometida } = info.row.original
+        if (es_acometida)  return <span className="text-xs text-font-a20 block text-center">—</span>
         if (!tipo_tension)   return <span className="text-surface-tonal-a40 text-xs">—</span>
-        if (tipo_tension === 'tri') return <span className="text-xs text-font-a20">RST</span>
-        const opciones = tipo_tension === 'mono' ? ['R', 'S', 'T'] : ['RS', 'ST', 'TR']
+        if (tipo_tension === 'tri') return <span className="text-xs text-font-a20">{f1}{sep}{f2}{sep}{f3}</span>
+        const opciones = tipo_tension === 'mono'
+          ? [{ v: 'R', lbl: f1 }, { v: 'S', lbl: f2 }, { v: 'T', lbl: f3 }]
+          : [{ v: 'RS', lbl: `${f1}${sep}${f2}` }, { v: 'ST', lbl: `${f2}${sep}${f3}` }, { v: 'TR', lbl: `${f3}${sep}${f1}` }]
         return (
           <select
             value={fase ?? ''}
@@ -128,7 +144,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
             style={{ background: 'var(--clr-surface-a10)' }}
           >
             <option value="">—</option>
-            {opciones.map(f => <option key={f} value={f}>{f}</option>)}
+            {opciones.map(({ v, lbl }) => <option key={v} value={v}>{lbl}</option>)}
           </select>
         )
       },
@@ -138,7 +154,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       size: 110,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        if (info.row.original.es_alimentador) {
+        if (info.row.original.es_acometida) {
           const v = info.getValue()
           return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
         }
@@ -161,7 +177,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       size: 70,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        if (info.row.original.es_alimentador) {
+        if (info.row.original.es_acometida) {
           const v = info.getValue()
           return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
         }
@@ -179,7 +195,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       meta: { colType: 'result' } as ColMeta,
       cell: info => {
         const row = info.row.original
-        if (row.es_alimentador && row.corrientesFase) {
+        if (row.es_acometida && row.corrientesFase) {
           const { R, S, T } = row.corrientesFase
           const fmt = (n: number) => n.toFixed(1)
           return (
@@ -224,7 +240,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
         />
       ),
     }),
-  ], [tensionesDisponibles, renombrarCircuito, actualizarDescripcion, actualizarTipo,
+  ], [tensionesDisponibles, nomenclatura, renombrarCircuito, actualizarDescripcion, actualizarTipo,
       actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFP, actualizarLargo,
       setPendingTipo, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto])
 }

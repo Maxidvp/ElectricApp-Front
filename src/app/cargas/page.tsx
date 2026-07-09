@@ -126,7 +126,7 @@ export default function TablaCargas() {
 
   const handleAgregar = () => {
     if (!idEfectivo) return
-    const lastFeederIdx = displayData.reduceRight((found, r, i) => found === -1 && r.es_alimentador ? i : found, -1)
+    const lastFeederIdx = displayData.reduceRight((found, r, i) => found === -1 && r.es_acometida ? i : found, -1)
     agregarCircuito(idEfectivo, lastFeederIdx >= 0 ? lastFeederIdx : undefined)
   }
 
@@ -139,7 +139,7 @@ export default function TablaCargas() {
     renombrarCircuito, actualizarDescripcion, actualizarTipo,
     actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFP, actualizarLargo,
     setPendingTipo, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto,
-  })
+  }, proyectoActivo?.nomenclatura_fases ?? 'RST')
 
   const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
     try { return JSON.parse(localStorage.getItem('ea_col_cargas') ?? '{}') } catch { return {} }
@@ -247,7 +247,7 @@ export default function TablaCargas() {
                     >
                       {row.getVisibleCells().map(cell => {
                         const colType  = (cell.column.columnDef.meta as ColMeta | undefined)?.colType
-                        const isFeeder = row.original.es_alimentador
+                        const isFeeder = row.original.es_acometida
                         return (
                           <td key={cell.id} style={{
                             width: cell.column.getSize(),
@@ -315,7 +315,7 @@ export default function TablaCargas() {
 
       {pendingTipo && (
         <ConfirmModal
-          mensaje={pendingTipo.nuevoTipo === 'ALIMENTADOR'
+          mensaje={pendingTipo.nuevoTipo === 'ACOMETIDA'
             ? 'Convertir este circuito en ALIMENTADOR cambiará su comportamiento de cálculo. Se pueden perder datos ingresados manualmente. ¿Continuar?'
             : 'Quitar el tipo ALIMENTADOR puede afectar los cálculos del tablero. Se pueden perder datos. ¿Continuar?'}
           labelConfirmar="Continuar"

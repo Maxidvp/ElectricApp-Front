@@ -5,7 +5,8 @@ export type ProyectoConjunto = { id: number; nombre: string }
 
 export type ProyectoFamilia = { id: number; nombre: string; material: string; aislamiento: string; tipo: string }
 
-export type FormatoFormacion = 'ingles' | 'extendida' | 'copaipa' | 'resumida'
+export type FormatoFormacion  = 'ingles' | 'extendida' | 'copaipa' | 'resumida'
+export type NomenclaturaFases = 'RST' | 'L1L2L3' | 'ABC' | 'UVW'
 
 export type Proyecto = {
   id: number
@@ -15,7 +16,8 @@ export type Proyecto = {
   familias: ProyectoFamilia[]
   tableros: ProyectoTablero[]
   conjuntos: ProyectoConjunto[]
-  formato_formacion: FormatoFormacion
+  formato_formacion:  FormatoFormacion
+  nomenclatura_fases: NomenclaturaFases
 }
 
 export async function getProyectos(): Promise<Proyecto[]> {
@@ -34,7 +36,7 @@ export async function createProyecto(data: { nombre: string; descripcion?: strin
   return res.json()
 }
 
-export async function updateProyecto(id: number, data: { nombre: string; descripcion?: string | null; formato_formacion?: string }): Promise<Proyecto> {
+export async function updateProyecto(id: number, data: { nombre: string; descripcion?: string | null; formato_formacion?: string; nomenclatura_fases?: string }): Promise<Proyecto> {
   const res = await fetch(`${API_URL}/proyectos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

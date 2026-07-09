@@ -22,12 +22,16 @@ export function replaceCirc(tableros: Tablero[], tempId: number, real: Circuito)
 
 // Fusiona el circuito real del back con el estado actual del temp,
 // preservando cualquier edición que el usuario haya hecho antes de que el back respondiera.
+// El problema que resuelve: el usuario puede editar campos (FP, potencia, etc.) antes
+// de que el POST inicial haya respondido con el ID real. Cuando ese ID llega, no queremos
+// pisarle las ediciones — la respuesta del back contiene los valores por defecto, no los
+// que el usuario ya cambió. Regla: el valor del temp gana siempre que no sea null.
 export function mergeWithTemp(real: Circuito, temp: Circuito | undefined): Circuito {
   if (!temp) return real
   return {
     ...real,
     circuito:      temp.circuito,
-    es_alimentador: temp.es_alimentador,
+    es_acometida: temp.es_acometida,
     descripcion:  temp.descripcion  !== null ? temp.descripcion  : real.descripcion,
     tipo:         temp.tipo         !== null ? temp.tipo         : real.tipo,
     FP:           temp.FP           !== null ? temp.FP           : real.FP,
@@ -39,6 +43,9 @@ export function mergeWithTemp(real: Circuito, temp: Circuito | undefined): Circu
 }
 
 // Extrae un Map deduplicado de segmentos a partir de los conjuntos cargados desde el back.
+// Un segmento puede pertenecer a más de un conjunto; el back lo devuelve anidado en
+// cada conjunto al que pertenece, por eso hay que deduplicar por id antes de exponer
+// la lista plana de segmentos al resto de la app.
 export function deriveSegmentos(conjuntos: (Conjunto & { segmentos?: Segmento[] })[]): Segmento[] {
   const map = new Map<number, Segmento>()
   for (const c of conjuntos) {

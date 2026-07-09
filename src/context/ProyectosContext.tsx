@@ -147,7 +147,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     return nuevo
   }
 
-  async function actualizarProyecto(id: number, data: { nombre: string; descripcion?: string | null }) {
+  async function actualizarProyecto(id: number, data: { nombre: string; descripcion?: string | null; formato_formacion?: string; nomenclatura_fases?: string }) {
     const updated = await proyectosApi.updateProyecto(id, data)
     setProyectos(prev => prev.map(p => p.id === id ? updated : p))
     if (proyectoActivo?.id === id) setProyectoActivoState(updated)

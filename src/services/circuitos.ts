@@ -70,13 +70,13 @@ export async function updateDescripcionCircuito(id: number, descripcion: string 
   return res.json()
 }
 
-export async function updateEsAlimentadorCircuito(id: number, es_alimentador: boolean) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/es_alimentador`, {
+export async function updateEsAcometidaCircuito(id: number, es_acometida: boolean) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/es_acometida`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ es_alimentador }),
+    body: JSON.stringify({ es_acometida }),
   })
-  if (!res.ok) throw new Error('Error al actualizar es_alimentador')
+  if (!res.ok) throw new Error('Error al actualizar es_acometida')
   return res.json()
 }
 
@@ -159,6 +159,16 @@ export type FormacionPatch = {
   cable_neutro_id: number | null
   cable_tierra_id: number | null
   disposicion: string | null
+}
+
+export async function actualizarFasesBulk(items: { id: number; fase: string | null }[]) {
+  const res = await fetch(`${API_URL}/circuitos/fase-bulk`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(items),
+  })
+  if (!res.ok) throw new Error('Error al actualizar fases')
+  return res.json()
 }
 
 export async function renombrarCircuitosBulk(items: { id: number; circuito: string }[]) {

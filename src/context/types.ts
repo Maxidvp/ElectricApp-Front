@@ -46,7 +46,7 @@ export type Circuito = {
   Largo: number | null
   tipo_tension: string | null
   fase: string | null
-  es_alimentador: boolean
+  es_acometida: boolean
   potencia: number | null
   role: string | null       // null = principal, 'retorno', 'combinacion'
   parent_id: number | null
@@ -84,7 +84,7 @@ export type ProyectosContextType = {
   proyectoActivo: ProyectoMeta | null
   setProyectoActivo: (p: ProyectoMeta | null) => void
   crearProyecto: (data: { nombre: string; descripcion?: string | null }) => Promise<ProyectoMeta>
-  actualizarProyecto: (id: number, data: { nombre: string; descripcion?: string | null; formato_formacion?: string }) => Promise<void>
+  actualizarProyecto: (id: number, data: { nombre: string; descripcion?: string | null; formato_formacion?: string; nomenclatura_fases?: string }) => Promise<void>
   eliminarProyecto: (id: number) => Promise<void>
   agregarFamiliaProyecto: (familiaId: number) => Promise<void>
   quitarFamiliaProyecto: (familiaId: number) => Promise<void>
@@ -108,8 +108,8 @@ export type ProyectosContextType = {
   actualizarTipoTension: (id: number, tipo: string | null) => void
   actualizarFase: (id: number, fase: string | null) => void
   actualizarTipo: (id: number, tipo: string | null) => void
-  actualizarEsAlimentador: (id: number, val: boolean) => void
-  agregarAlimentador: (tableroId: number, nombre: string, insertIndex: number) => void
+  actualizarEsAcometida: (id: number, val: boolean) => void
+  agregarAcometida: (tableroId: number, nombre: string, insertIndex: number) => void
   crearCircuitoAuxiliar: (parentId: number, role: 'retorno' | 'combinacion') => Promise<Circuito>
   reordenarSubcircuitos: (orderedHijoIds: number[]) => void
   appendSegmentos: (segs: Segmento[]) => void

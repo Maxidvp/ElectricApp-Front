@@ -10,6 +10,10 @@ import type { ToolType } from './_constants'
 
 // ── Split helper ──────────────────────────────────────────────────
 
+// Proyecta el punto (px,py) sobre la línea definida por (x1,y1)-(x2,y2)
+// usando producto escalar: t = [(P-A)·(B-A)] / |B-A|².
+// Si t ≤ 0.02 o t ≥ 0.98 el punto está en los extremos del segmento y no
+// tiene sentido dividirlo ahí — se retorna null para ignorar el snap.
 function closestPtOnSegLine(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
   const dx = x2 - x1, dy = y2 - y1
   const len2 = dx * dx + dy * dy
@@ -27,6 +31,11 @@ function ptInRect(px: number, py: number, rx1: number, ry1: number, rx2: number,
   return px >= xMin && px <= xMax && py >= yMin && py <= yMax
 }
 
+// Test de intersección segmento–rectángulo usando el algoritmo de Cyrus-Beck
+// (parametric line clipping). Se actualizan tMin y tMax para cada uno de los
+// 4 planos (izquierda, derecha, arriba, abajo) del rectángulo. Si en algún
+// momento tMin > tMax no hay intersección. p[i]=0 significa el segmento es
+// paralelo al plano i: si el segmento está fuera del semiespacio se descarta.
 function segIntersectsRect(ax1: number, ay1: number, ax2: number, ay2: number,
                             rx1: number, ry1: number, rx2: number, ry2: number) {
   const xMin = Math.min(rx1, rx2), xMax = Math.max(rx1, rx2)
@@ -107,6 +116,10 @@ export function RuteoCanvas({
     stageRef.current.y(size.h * 0.75)
   }, [size.h])
 
+  // Zoom centrado en el cursor: mantiene el punto del mundo debajo del puntero
+  // fijo durante el escalado. Fórmula: newPos = pointer - (pointer - oldPos) × ratio
+  // donde ratio = newScale/oldScale. La escala Y es negativa porque el eje Y del
+  // canvas de Konva apunta hacia abajo, pero las coordenadas del proyecto apuntan hacia arriba.
   const handleWheel = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault()
     const stage    = stageRef.current!

@@ -1,4 +1,4 @@
-export const TIPOS_CIRCUITO = ['ACU', 'MOTOR', 'VDF', 'IUG', 'TUG', 'IUE', 'TUE', 'APM', 'RESERVA', 'ALIMENTADOR'] as const
+export const TIPOS_CIRCUITO = ['ACU', 'MOTOR', 'VDF', 'IUG', 'TUG', 'IUE', 'TUE', 'APM', 'RESERVA', 'ACOMETIDA'] as const
 
 // Estructura que devuelve el back para un circuito
 export type CircuitoAPI = {
@@ -10,7 +10,7 @@ export type CircuitoAPI = {
   Largo: number | null
   tipo_tension: string | null
   fase: string | null
-  es_alimentador: boolean
+  es_acometida: boolean
   potencia: number | null
   formacion: {
     nombre: string
@@ -37,7 +37,7 @@ export type CircuitoRow = {
   Largo: number | null
   tipo_tension: string | null
   fase: string | null
-  es_alimentador: boolean
+  es_acometida: boolean
   potencia: number | null
   corriente: number | null
   corrientesFase: { R: number; S: number; T: number } | null

@@ -5,6 +5,114 @@ import type { Canio, Bandeja, Segmento } from '@/services/ruteo'
 import CircuitosPanel from '@/components/CircuitosPanel'
 import { calcOcupacionCanio, calcOcupacionBandeja, colorOcupacion as ocupacionColor } from '@/utils/electricidad'
 
+// ── Tipos ──────────────────────────────────────────────────────
+
+type AjusteItem = {
+  seg:      Segmento
+  segIdx:   number
+  oldLabel: string
+  newLabel: string
+  newId:    number
+  direction: 'up' | 'down'
+}
+
+// ── Lógica de ajuste automático ────────────────────────────────
+
+/**
+ * Para cada segmento fuera de la zona verde de ocupación, busca en el catálogo
+ * ordenado (de menor a mayor) el tamaño más económico que devuelve la ocupación
+ * al rango aceptable.
+ *
+ * Zonas válidas:
+ *   Caños   → [10%, 25%]   (muy por debajo de 40% NEC para facilitar tendido)
+ *   Bandejas → [20%, 80%]
+ *
+ * Estrategia de búsqueda:
+ *   - Muy chico (pct > límite superior): recorre el catálogo hacia arriba tomando
+ *     el primer tamaño que baja la ocupación al rango. El primero que cumple es
+ *     el más pequeño posible que resuelve el problema — la elección más económica.
+ *   - Muy grande (pct < límite inferior): recorre el catálogo hacia abajo
+ *     registrando el último tamaño que todavía mantiene la ocupación en verde.
+ *     Así se obtiene el mínimo tamaño posible sin entrar en zona roja — maximiza
+ *     la reducción sin sobrecargar.
+ */
+function computeAjustes(
+  rows:           Segmento[],
+  canios:         Canio[],
+  bandejas:       Bandeja[],
+  canalSegmentos: Segmento[],
+  getFormacion:   (circId: number) => any,
+): AjusteItem[] {
+  const sortedCanios   = [...canios].sort((a, b) => a.diametro_interno - b.diametro_interno)
+  const sortedBandejas = [...bandejas].sort((a, b) => a.ancho - b.ancho)
+  const result: AjusteItem[] = []
+
+  for (const seg of rows) {
+    if (seg.circuitos.length === 0) continue
+    const segIdx = canalSegmentos.findIndex(s => s.id === seg.id) + 1
+
+    if (seg.tipo === 'canio' && seg.canio) {
+      const { pct } = calcOcupacionCanio(seg.canio.diametro_interno, seg.circuitos, getFormacion)
+      if (pct >= 10 && pct <= 25) continue  // ya está en zona verde
+      const idx = sortedCanios.findIndex(c => c.id === seg.canio_id)
+      if (idx === -1) continue  // el caño actual no está en el catálogo
+
+      if (pct > 25) {
+        // Muy chico: avanzar hasta el primer tamaño donde pct ≤ 25
+        for (let j = idx + 1; j < sortedCanios.length; j++) {
+          const { pct: p } = calcOcupacionCanio(sortedCanios[j].diametro_interno, seg.circuitos, getFormacion)
+          if (p <= 25) {
+            result.push({ seg, segIdx, oldLabel: seg.canio.nombre, newLabel: sortedCanios[j].nombre, newId: sortedCanios[j].id, direction: 'up' })
+            break
+          }
+        }
+      } else {
+        // Muy grande (pct < 10): bajar al más chico donde pct siga dentro de [10, 25].
+        // Se guarda el último candidato válido encontrado mientras se itera hacia abajo;
+        // cuando un tamaño supera el 25% se corta porque los siguientes serán aún menores.
+        let target: Canio | null = null
+        for (let j = idx - 1; j >= 0; j--) {
+          const { pct: p } = calcOcupacionCanio(sortedCanios[j].diametro_interno, seg.circuitos, getFormacion)
+          if (p > 25) break        // se pasaría al lado muy chico, detener
+          if (p >= 10) target = sortedCanios[j]  // verde, seguir intentando achicarlo más
+        }
+        if (target) result.push({ seg, segIdx, oldLabel: seg.canio.nombre, newLabel: target.nombre, newId: target.id, direction: 'down' })
+      }
+    }
+
+    if (seg.tipo === 'bandeja' && seg.bandeja) {
+      const { pct } = calcOcupacionBandeja(seg.bandeja.ancho, seg.circuitos, getFormacion)
+      if (pct >= 20 && pct <= 80) continue  // ya está en zona verde
+      const idx = sortedBandejas.findIndex(b => b.id === seg.bandeja_id)
+      if (idx === -1) continue
+      const oldLabel = `${seg.bandeja.nombre ?? 'Bandeja'} — ${seg.bandeja.ancho} mm`
+
+      if (pct > 80) {
+        // Muy chica: avanzar hasta el primer ancho donde pct ≤ 80
+        for (let j = idx + 1; j < sortedBandejas.length; j++) {
+          const { pct: p } = calcOcupacionBandeja(sortedBandejas[j].ancho, seg.circuitos, getFormacion)
+          if (p <= 80) {
+            result.push({ seg, segIdx, oldLabel, newLabel: `${sortedBandejas[j].nombre ?? 'Bandeja'} — ${sortedBandejas[j].ancho} mm`, newId: sortedBandejas[j].id, direction: 'up' })
+            break
+          }
+        }
+      } else {
+        // Muy grande (pct < 20): mismo patrón que caños, busca el más angosto posible en verde
+        let target: Bandeja | null = null
+        for (let j = idx - 1; j >= 0; j--) {
+          const { pct: p } = calcOcupacionBandeja(sortedBandejas[j].ancho, seg.circuitos, getFormacion)
+          if (p > 80) break
+          if (p >= 20) target = sortedBandejas[j]
+        }
+        if (target) result.push({ seg, segIdx, oldLabel, newLabel: `${target.nombre ?? 'Bandeja'} — ${target.ancho} mm`, newId: target.id, direction: 'down' })
+      }
+    }
+  }
+  return result
+}
+
+// ── Barra de ocupación ─────────────────────────────────────────
+
 function OcupacionBar({ pct, tipo }: { pct: number; tipo: 'canio' | 'bandeja' }) {
   const color = ocupacionColor(pct, tipo)
   return (
@@ -28,20 +136,37 @@ export default function OcupacionesPage() {
     asignarCircuito, quitarCircuito,
   } = useProyectos()
 
-  const [selectedId,  setSelectedId]  = useState<number | null>(null)
-  const [showAdd,     setShowAdd]     = useState(false)
-  const [filtroTipo,  setFiltroTipo]  = useState<'todos' | 'canio' | 'bandeja'>('todos')
+  const [selectedId,       setSelectedId]       = useState<number | null>(null)
+  const [showAdd,          setShowAdd]          = useState(false)
+  const [filtroTipo,       setFiltroTipo]       = useState<'todos' | 'canio' | 'bandeja'>('todos')
+  const [ajustesPendientes, setAjustesPendientes] = useState<AjusteItem[] | null>(null)
 
-  const activeConjunto    = conjuntos.find(c => c.id === activeConjuntoId)
+  const activeConjunto     = conjuntos.find(c => c.id === activeConjuntoId)
   const conjuntoTableroIds = new Set(activeConjunto?.tableros.map(t => t.id) ?? [])
   const conjuntoTableros   = tableros.filter(t => conjuntoTableroIds.has(t.id))
 
-  const selectedSeg = segmentos.find(s => s.id === selectedId) ?? null
+  const selectedSeg    = segmentos.find(s => s.id === selectedId) ?? null
   const canalSegmentos = segmentos.filter(s => s.tipo === 'canio' || s.tipo === 'bandeja')
   const rows = canalSegmentos.filter(s =>
     (activeConjuntoId === null || s.conjuntos.some(c => c.id === activeConjuntoId)) &&
     (filtroTipo === 'todos' || s.tipo === filtroTipo)
   )
+
+  const getF = (id: number) => getCircuito(id)?.formacion
+
+  const handleAjusteClick = () => {
+    setAjustesPendientes(computeAjustes(rows, canios, bandejas, canalSegmentos, getF))
+  }
+
+  const handleConfirmAjuste = (ajustes: AjusteItem[]) => {
+    for (const a of ajustes) {
+      if (a.seg.tipo === 'canio')
+        editSegmento(a.seg.id, { canio_id: a.newId })
+      else
+        editSegmento(a.seg.id, { bandeja_id: a.newId })
+    }
+    setAjustesPendientes(null)
+  }
 
   const handleAsignar = (circId: number) => {
     if (!selectedId) return
@@ -63,13 +188,8 @@ export default function OcupacionesPage() {
     })
   }
 
-  const handleChangeCanio = (segId: number, canioId: number | null) => {
-    editSegmento(segId, { canio_id: canioId })
-  }
-
-  const handleChangeBandeja = (segId: number, bandejaId: number | null) => {
-    editSegmento(segId, { bandeja_id: bandejaId })
-  }
+  const handleChangeCanio   = (segId: number, canioId: number | null)   => editSegmento(segId, { canio_id: canioId })
+  const handleChangeBandeja = (segId: number, bandejaId: number | null) => editSegmento(segId, { bandeja_id: bandejaId })
 
   const inlineSelect = 'px-1.5 py-[3px] bg-surface-tonal-a10 border border-info-a10 rounded-[5px] text-font-a0 text-xs cursor-pointer w-full outline-none focus:border-primary-a20'
 
@@ -99,21 +219,30 @@ export default function OcupacionesPage() {
       {/* ── Scrollable content ─── */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
 
-        {/* Filtro tipo */}
-        <div className="flex gap-1.5">
-          {(['todos', 'canio', 'bandeja'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setFiltroTipo(t)}
-              className={`px-3 py-1 rounded-full text-[12px] font-medium border cursor-pointer transition-colors ${
-                filtroTipo === t
-                  ? 'bg-primary-a0 border-primary-a0 text-font-a0'
-                  : 'bg-transparent border-surface-tonal-a20 text-surface-tonal-a40 hover:border-surface-tonal-a30 hover:text-font-a20'
-              }`}
-            >
-              {t === 'todos' ? 'Todos' : t === 'canio' ? 'Caños' : 'Bandejas'}
-            </button>
-          ))}
+        {/* Filtro tipo + botón ajuste */}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1.5">
+            {(['todos', 'canio', 'bandeja'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setFiltroTipo(t)}
+                className={`px-3 py-1 rounded-full text-[12px] font-medium border cursor-pointer transition-colors ${
+                  filtroTipo === t
+                    ? 'bg-primary-a0 border-primary-a0 text-font-a0'
+                    : 'bg-transparent border-surface-tonal-a20 text-surface-tonal-a40 hover:border-surface-tonal-a30 hover:text-font-a20'
+                }`}
+              >
+                {t === 'todos' ? 'Todos' : t === 'canio' ? 'Caños' : 'Bandejas'}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1" />
+          <button
+            onClick={handleAjusteClick}
+            className="px-3.5 py-1.25 rounded-md border border-warning-a10 bg-transparent text-warning-a10 text-[12px] font-medium cursor-pointer transition-colors hover:bg-[rgba(255,200,50,0.08)]"
+          >
+            ⚡ Ajustar automáticamente
+          </button>
         </div>
 
         <div className="datatable-container" style={{ maxWidth: '100%', minWidth: 0 }}>
@@ -132,7 +261,6 @@ export default function OcupacionesPage() {
               {rows.map(seg => {
                 const segIdx = canalSegmentos.findIndex(s => s.id === seg.id) + 1
                 const isSelected = seg.id === selectedId
-                const getF  = (id: number) => getCircuito(id)?.formacion
                 const calcC = seg.tipo === 'canio'   && seg.canio?.diametro_interno
                   ? calcOcupacionCanio(seg.canio.diametro_interno, seg.circuitos, getF) : null
                 const calcB = seg.tipo === 'bandeja' && seg.bandeja?.ancho
@@ -235,9 +363,101 @@ export default function OcupacionesPage() {
         </div>
       </div>
 
+      {ajustesPendientes !== null && (
+        <ConfirmAjusteModal
+          ajustes={ajustesPendientes}
+          onConfirm={handleConfirmAjuste}
+          onClose={() => setAjustesPendientes(null)}
+        />
+      )}
+
       {showAdd && (
         <AddModal canios={canios} bandejas={bandejas} onClose={() => setShowAdd(false)} />
       )}
+    </div>
+  )
+}
+
+// ── Modal de confirmación de ajuste ────────────────────────────
+
+function ConfirmAjusteModal({ ajustes, onConfirm, onClose }: {
+  ajustes:   AjusteItem[]
+  onConfirm: (selected: AjusteItem[]) => void
+  onClose:   () => void
+}) {
+  const [checked, setChecked] = useState<Set<number>>(() => new Set(ajustes.map(a => a.seg.id)))
+
+  const toggle = (id: number) =>
+    setChecked(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+
+  const selected  = ajustes.filter(a => checked.has(a.seg.id))
+  const agrandar  = ajustes.filter(a => a.direction === 'up')
+  const achicar   = ajustes.filter(a => a.direction === 'down')
+
+  const rowCx = 'flex items-center gap-2 text-[12px] text-font-a10 px-2 py-1.25 bg-surface-tonal-a10 rounded-md'
+
+  const CheckRow = ({ a, color }: { a: AjusteItem; color: string }) => (
+    <label key={a.seg.id} className={`${rowCx} cursor-pointer select-none ${!checked.has(a.seg.id) ? 'opacity-40' : ''}`}>
+      <input
+        type="checkbox"
+        checked={checked.has(a.seg.id)}
+        onChange={() => toggle(a.seg.id)}
+        className="cursor-pointer accent-[var(--clr-primary-a0)] shrink-0"
+      />
+      <span className="text-surface-tonal-a40 font-mono text-[11px] shrink-0">#{a.segIdx}</span>
+      <span className="flex-1 truncate">{a.oldLabel}</span>
+      <span className="text-surface-tonal-a40 shrink-0">→</span>
+      <span style={{ color }} className="truncate">{a.newLabel}</span>
+    </label>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200]" onClick={onClose}>
+      <div className="bg-surface-tonal-a0 border border-surface-tonal-a20 rounded-[10px] px-6 py-5 w-[500px] max-w-[95vw] max-h-[80vh] flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+
+        <div className="text-[15px] font-semibold text-font-a0">
+          Ajuste automático
+          {ajustes.length > 0 && <span className="ml-2 text-[13px] font-normal text-font-a20">— {ajustes.length} segmento{ajustes.length !== 1 ? 's' : ''}</span>}
+        </div>
+
+        <div className="flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
+          {ajustes.length === 0 && (
+            <p className="text-[13px] text-font-a20 text-center py-6">
+              Todos los segmentos visibles están en zona verde. No hay cambios necesarios.
+            </p>
+          )}
+
+          {agrandar.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold text-font-a20 uppercase tracking-[0.05em]">▲ Agrandar — muy chicos ({agrandar.length})</span>
+              {agrandar.map(a => <CheckRow key={a.seg.id} a={a} color="var(--clr-success-a10)" />)}
+            </div>
+          )}
+
+          {achicar.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold text-font-a20 uppercase tracking-[0.05em]">▼ Achicar — muy grandes ({achicar.length})</span>
+              {achicar.map(a => <CheckRow key={a.seg.id} a={a} color="var(--clr-warning-a10)" />)}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.75 rounded-md border border-surface-tonal-a30 bg-transparent text-font-a20 text-[13px] cursor-pointer hover:bg-surface-tonal-a10 hover:text-font-a0"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => { onConfirm(selected); onClose() }}
+            disabled={selected.length === 0}
+            className="px-4.5 py-1.75 rounded-md border border-primary-a0 bg-primary-a0 text-font-a0 text-[13px] cursor-pointer transition-colors hover:bg-primary-a10 disabled:opacity-40 disabled:cursor-default"
+          >
+            Aplicar {selected.length} cambio{selected.length !== 1 ? 's' : ''}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -265,7 +485,7 @@ function AddModal({ canios, bandejas, onClose }: {
     onClose()
   }
 
-  const fieldLabel = 'text-[11px] font-medium text-font-a20 uppercase tracking-[0.04em]'
+  const fieldLabel  = 'text-[11px] font-medium text-font-a20 uppercase tracking-[0.04em]'
   const fieldSelect = 'px-[10px] py-1.5 bg-surface-tonal-a10 border border-surface-tonal-a20 rounded-md text-font-a0 text-[13px] outline-none focus:border-primary-a20'
 
   return (

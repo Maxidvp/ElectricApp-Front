@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useProyectos, type ProyectoMeta } from '@/context/ProyectosContext'
 import { useCables } from '@/context/CablesContext'
-import type { FormatoFormacion } from '@/services/proyectos'
+import type { FormatoFormacion, NomenclaturaFases } from '@/services/proyectos'
 
 // ── Estilos compartidos ────────────────────────────────────────────
 
@@ -20,10 +20,17 @@ const cx = {
 type Seccion = 'general' | 'cables' | 'expresiones'
 
 const FORMATOS: { id: FormatoFormacion; label: string; desc: string }[] = [
-  { id: 'ingles',    label: 'Sistema inglés',    desc: 'Ej: 4C#10 AWG (3P-N)+1C#10 AWG (G)' },
+  { id: 'ingles',    label: 'Sistema inglés',      desc: 'Ej: 4C#10 AWG (3P-N)+1C#10 AWG (G)' },
   { id: 'extendida', label: 'Expresión extendida', desc: 'A IMPLEMENTAR' },
   { id: 'copaipa',   label: 'Expresión COPAIPA',   desc: 'A IMPLEMENTAR' },
   { id: 'resumida',  label: 'Expresión resumida',  desc: 'A IMPLEMENTAR' },
+]
+
+const NOMENCLATURAS: { id: NomenclaturaFases; label: string; fases: string; desc: string }[] = [
+  { id: 'RST',    label: 'RST',      fases: 'R · S · T',          desc: 'Tradicional — Europa / Latinoamérica' },
+  { id: 'L1L2L3', label: 'L1 L2 L3', fases: 'L1 · L2 · L3',      desc: 'IEC 60446 actual' },
+  { id: 'ABC',    label: 'ABC',      fases: 'A · B · C',          desc: 'ANSI / IEEE — EE.UU.' },
+  { id: 'UVW',    label: 'UVW',      fases: 'U · V · W',          desc: 'Motores eléctricos (IEC)' },
 ]
 
 function EditarProyecto({ proyecto, onVolver }: { proyecto: ProyectoMeta; onVolver: () => void }) {
@@ -52,7 +59,8 @@ function EditarProyecto({ proyecto, onVolver }: { proyecto: ProyectoMeta; onVolv
 
   const familiaIds = proyectoActivo?.familia_ids ?? proyecto.familia_ids ?? []
 
-  const formatoActivo: FormatoFormacion = (proyectoActivo?.formato_formacion ?? proyecto.formato_formacion ?? 'ingles') as FormatoFormacion
+  const formatoActivo: FormatoFormacion   = (proyectoActivo?.formato_formacion  ?? proyecto.formato_formacion  ?? 'ingles') as FormatoFormacion
+  const nomenclaturaActiva: NomenclaturaFases = (proyectoActivo?.nomenclatura_fases ?? proyecto.nomenclatura_fases ?? 'RST')  as NomenclaturaFases
 
   const secciones: { id: Seccion; label: string }[] = [
     { id: 'general',     label: 'General' },
@@ -137,7 +145,7 @@ function EditarProyecto({ proyecto, onVolver }: { proyecto: ProyectoMeta; onVolv
               </div>
             </>)}
 
-            {seccion === 'expresiones' && (
+            {seccion === 'expresiones' && (<>
               <div className={cx.section}>
                 <div className={cx.hdr}>Formato de expresión de formaciones</div>
                 <div className="p-3 flex flex-col gap-2 bg-surface-a10">
@@ -162,7 +170,33 @@ function EditarProyecto({ proyecto, onVolver }: { proyecto: ProyectoMeta; onVolv
                   })}
                 </div>
               </div>
-            )}
+
+              <div className={cx.section}>
+                <div className={cx.hdr}>Nomenclatura de fases</div>
+                <div className="p-3 flex flex-col gap-2 bg-surface-a10">
+                  {NOMENCLATURAS.map(n => {
+                    const activo = nomenclaturaActiva === n.id
+                    return (
+                      <button
+                        key={n.id}
+                        onClick={() => actualizarProyecto(proyecto.id, { nombre: proyecto.nombre, descripcion: proyecto.descripcion, nomenclatura_fases: n.id })}
+                        className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-[7px] border cursor-pointer transition-colors ${
+                          activo
+                            ? 'border-info-a10 bg-info-a0/10'
+                            : 'border-surface-tonal-a20 bg-surface-tonal-a0 hover:bg-surface-tonal-a10'
+                        }`}
+                      >
+                        <span className={`text-[13px] font-medium w-16 shrink-0 ${activo ? 'text-info-a10' : 'text-font-a0'}`}>
+                          {activo ? '● ' : '○ '}{n.label}
+                        </span>
+                        <span className="text-[12px] font-mono text-font-a0 w-24 shrink-0">{n.fases}</span>
+                        <span className="text-[11px] text-surface-tonal-a40">{n.desc}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </>)}
 
             {seccion === 'cables' && (
               <div className={cx.section}>

@@ -167,13 +167,18 @@ export default function Cortocircuitos() {
   const rows = useMemo((): CortocircRow[] => {
     if (!tablero) return []
     const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
+    // corriente_cc del tablero viene en kA (kiloamperios) → convertir a A para los cálculos
     const Icc_panel_A = tablero.corriente_cc != null ? tablero.corriente_cc * 1000 : null
 
     return sorted.map(c => {
+      // El usuario puede seleccionar un cable diferente al de la formación para
+      // simular distintos escenarios sin modificar el circuito original.
       const overrideId     = cableInputs[c.id] ? Number(cableInputs[c.id]) : null
       const effectiveCable = (overrideId ? cableCache[overrideId] : null) ?? c.formacion?.cable ?? null
       const familia        = (effectiveCable as any)?.familia ?? null
 
+      // Con N conductores en paralelo la resistencia efectiva del lazo se divide por N,
+      // porque la corriente se distribuye igualmente entre ellos.
       const nCondAuto     = effectiveCable?.Nfases ?? null
       const nCondOverride = nCondInputs[c.id] ? Number(nCondInputs[c.id]) : null
       const nCondEff      = (nCondOverride && nCondOverride > 0 ? nCondOverride : null) ?? nCondAuto ?? 1
@@ -188,6 +193,9 @@ export default function Cortocircuitos() {
       ) : null
       const R_km = R_km_single !== null ? R_km_single / nCondEff : null
 
+      // U0 = tensión fase-neutro que conduce la corriente de falla.
+      // Para trifásico se deriva dividiendo la tensión de línea por √3.
+      // Para mono/bi la tensión configurada ya es fase-neutro o fase-fase según el tablero.
       const tipo = c.tipo_tension
       const U0 = tipo === 'mono' ? tablero.tension_mono
                : tipo === 'bi'   ? tablero.tension_bi
@@ -201,6 +209,11 @@ export default function Cortocircuitos() {
       const mat = familia?.material    ?? null
       const ais = familia?.aislamiento ?? null
 
+      // Se usan dos tiempos de despeje para cubrir las dos zonas de protección:
+      //   0.02 s → zona magnética del interruptor (disparos instantáneos, alta Icc)
+      //   0.2 s  → zona térmica (disparos temporizado, Icc menores)
+      // La Icc que se usa aquí es la del panel (aguas arriba), que es la peor condición
+      // para el conductor: la falla más cercana genera la corriente más alta.
       const S_min_002 = Icc_panel_A ? calcSminCable(Icc_panel_A, 0.02, mat, ais) : null
       const S_min_02  = Icc_panel_A ? calcSminCable(Icc_panel_A, 0.2,  mat, ais) : null
 
@@ -345,6 +358,8 @@ export default function Cortocircuitos() {
             </div>
           </div>
 
+          <div className="flex justify-center">
+          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
           <table
             className="datatable"
             style={{ width: table.getTotalSize(), tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}
@@ -391,6 +406,8 @@ export default function Cortocircuitos() {
               ))}
             </tbody>
           </table>
+          </div>
+          </div>
 
           {rows.length === 0 && (
             <p style={{ padding: 16, textAlign: 'center', color: 'var(--clr-surface-tonal-a40)', fontSize: 13 }}>

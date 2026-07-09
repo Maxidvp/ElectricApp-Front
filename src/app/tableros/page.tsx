@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
+import { calcCorriente } from '@/utils/electricidad'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
@@ -100,6 +101,30 @@ function Campo({ label, name, value, onChange, placeholder, required, type = 'te
   )
 }
 
+// Shows auto-computed hint below the field when the user hasn't entered a value manually
+function CampoAuto({ label, name, value, onChange, autoValue, decimals = 1 }: {
+  label: string; name: string; value: string
+  onChange: (v: string) => void; autoValue: number | null; decimals?: number
+}) {
+  const ph = autoValue != null ? String(parseFloat(autoValue.toFixed(decimals))) : undefined
+  return (
+    <div className={cx.field}>
+      <label className={cx.label}>{label}</label>
+      <input
+        className={`${cx.input} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+        name={name}
+        type="number"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={ph}
+      />
+      {autoValue != null && !value.trim() && (
+        <span className="text-[11px] text-font-a30 leading-none">← feeder principal</span>
+      )}
+    </div>
+  )
+}
+
 // ── Página ────────────────────────────────────────────────────────
 
 export default function TablaTableros() {
@@ -167,6 +192,50 @@ export default function TablaTableros() {
     }
   }
 
+  // Derive potencia_inst, potencia_dem, corriente_nom from the last feeder in the tablero
+  const autoValues = useMemo(() => {
+    const circuitos = tablero?.circuitos
+    if (!circuitos?.length) return null
+
+    const sorted = [...circuitos]
+      .filter(c => !c.parent_id)
+      .sort((a, b) => a.orden - b.orden)
+
+    // Last alimentador by orden is the main feeder (summarizes everything above it)
+    const lastFeederIdx = sorted.reduce<number>((found, c, i) => c.es_acometida ? i : found, -1)
+    if (lastFeederIdx === -1) return null
+
+    const above = sorted.slice(0, lastFeederIdx).filter(c => !c.es_acometida)
+    const potencia_inst = above.reduce((s, c) => s + (c.potencia ?? 0), 0) || null
+
+    // Weighted power factor: Σ(FPᵢ·Pᵢ) / ΣPᵢ
+    const conFP = above.filter(c => c.FP != null && (c.potencia ?? 0) > 0)
+    const sumPot = conFP.reduce((s, c) => s + (c.potencia ?? 0), 0)
+    const fp = sumPot > 0 ? conFP.reduce((s, c) => s + c.FP! * (c.potencia ?? 0), 0) / sumPot : null
+
+    const tipo   = form.tension_tri ? 'tri' : form.tension_bi ? 'bi' : form.tension_mono ? 'mono' : null
+    const tension = tipo === 'tri' ? Number(form.tension_tri)
+                  : tipo === 'bi'  ? Number(form.tension_bi)
+                  : tipo === 'mono' ? Number(form.tension_mono)
+                  : null
+
+    const corriente_nom = calcCorriente(potencia_inst, tipo, tension, fp)
+
+    return { potencia_inst, potencia_dem: potencia_inst, corriente_nom }
+  }, [tablero?.circuitos, form.tension_tri, form.tension_bi, form.tension_mono])
+
+  const handleAutocompletar = () => {
+    if (!autoValues) return
+    setForm(prev => ({
+      ...prev,
+      corriente_nom: autoValues.corriente_nom != null ? String(parseFloat(autoValues.corriente_nom.toFixed(1))) : prev.corriente_nom,
+      potencia_inst: autoValues.potencia_inst != null ? String(autoValues.potencia_inst) : prev.potencia_inst,
+      potencia_dem:  autoValues.potencia_dem  != null ? String(autoValues.potencia_dem)  : prev.potencia_dem,
+    }))
+    setDirty(true)
+    setGuardado(false)
+  }
+
   if (loading && !tablero) return <p className="p-6">Cargando...</p>
   if (error) return <p className="p-6 text-danger-a10">Error: {error}</p>
 
@@ -232,30 +301,6 @@ export default function TablaTableros() {
             </div>
           </div>
 
-          {/* Corrientes */}
-          <div className={cx.section}>
-            <div className={cx.hdr}>
-              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#E07070' }} />
-              <span>Corrientes</span>
-            </div>
-            <div className={`${cx.grid} grid-cols-2`}>
-              <Campo label="Corriente nominal (A)"       name="corriente_nom" type="number" value={form.corriente_nom} onChange={v => handleChange('corriente_nom', v)} placeholder="ej. 400" />
-              <Campo label="Corriente de cortocircuito (kA)" name="corriente_cc"  type="number" value={form.corriente_cc}  onChange={v => handleChange('corriente_cc', v)}  placeholder="ej. 25"  />
-            </div>
-          </div>
-
-          {/* Potencias */}
-          <div className={cx.section}>
-            <div className={cx.hdr}>
-              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#6aab6a' }} />
-              <span>Potencias</span>
-            </div>
-            <div className={`${cx.grid} grid-cols-2`}>
-              <Campo label="Potencia instalada (kW)" name="potencia_inst" type="number" value={form.potencia_inst} onChange={v => handleChange('potencia_inst', v)} placeholder="ej. 150" />
-              <Campo label="Potencia demanda (kW)" name="potencia_dem"  type="number" value={form.potencia_dem}  onChange={v => handleChange('potencia_dem', v)}  placeholder="ej. 100" />
-            </div>
-          </div>
-
           {/* Equipo */}
           <div className={cx.section}>
             <div className={cx.hdr}>
@@ -267,6 +312,38 @@ export default function TablaTableros() {
               <Campo label="Modelo"            name="modelo"           value={form.modelo}           onChange={v => handleChange('modelo', v)}           placeholder="ej. SIVACON S8" />
               <Campo label="Norma"             name="norma"            value={form.norma}            onChange={v => handleChange('norma', v)}            placeholder="ej. IEC 61439" />
               <Campo label="Grado de protección" name="grado_proteccion" value={form.grado_proteccion} onChange={v => handleChange('grado_proteccion', v)} placeholder="ej. IP54" />
+            </div>
+          </div>
+
+          {/* Corrientes */}
+          <div className={cx.section}>
+            <div className={cx.hdr}>
+              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#E07070' }} />
+              <span>Corrientes</span>
+              {autoValues && (
+                <button
+                  onClick={handleAutocompletar}
+                  className="ml-auto text-[11px] px-2 py-0.5 rounded border border-surface-tonal-a30 text-font-a30 hover:text-font-a10 hover:border-surface-tonal-a40 transition-colors cursor-pointer"
+                >
+                  Autocompletar desde feeder
+                </button>
+              )}
+            </div>
+            <div className={`${cx.grid} grid-cols-2`}>
+              <CampoAuto label="Corriente nominal (A)"           name="corriente_nom" value={form.corriente_nom} onChange={v => handleChange('corriente_nom', v)} autoValue={autoValues?.corriente_nom ?? null} />
+              <Campo     label="Corriente de cortocircuito (kA)" name="corriente_cc"  type="number" value={form.corriente_cc}  onChange={v => handleChange('corriente_cc', v)}  placeholder="ej. 25" />
+            </div>
+          </div>
+
+          {/* Potencias */}
+          <div className={cx.section}>
+            <div className={cx.hdr}>
+              <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#6aab6a' }} />
+              <span>Potencias</span>
+            </div>
+            <div className={`${cx.grid} grid-cols-2`}>
+              <CampoAuto label="Potencia instalada (kW)" name="potencia_inst" value={form.potencia_inst} onChange={v => handleChange('potencia_inst', v)} autoValue={autoValues?.potencia_inst ?? null} decimals={2} />
+              <CampoAuto label="Potencia demanda (kW)"   name="potencia_dem"  value={form.potencia_dem}  onChange={v => handleChange('potencia_dem', v)}  autoValue={autoValues?.potencia_dem  ?? null} decimals={2} />
             </div>
           </div>
 

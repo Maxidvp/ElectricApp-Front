@@ -46,6 +46,10 @@ const METODOS = [
 
 // ── Cálculo FH ────────────────────────────────────────────────────
 
+// Factor de corrección por altitud (IEC 62271-200).
+// A mayor altitud el aire es menos denso → peor disipación de calor → menor Iadm.
+// La fórmula lineal es válida hasta ~4000 m.s.n.m.; sobre esa altura la norma
+// recomienda usar tablas específicas del fabricante.
 function calcFH(altitud: number): number {
   return 1.02 - 0.00002 * altitud
 }
@@ -190,8 +194,8 @@ export default function Ampacidad() {
       let corriente: number | null
       let tipoEfectivo: string | null
 
-      if ((c as any).es_alimentador) {
-        const above  = sorted.slice(0, idx).filter(x => !(x as any).es_alimentador)
+      if ((c as any).es_acometida) {
+        const above  = sorted.slice(0, idx).filter(x => !(x as any).es_acometida)
         potencia     = above.reduce((s, x) => s + ((x as any).potencia ?? 0), 0) || null
         const conFP  = above.filter(x => (x as any).FP != null && ((x as any).potencia ?? 0) > 0)
         const sumPot = conFP.reduce((s, x) => s + (x as any).potencia!, 0)
@@ -209,12 +213,18 @@ export default function Ampacidad() {
 
       corriente = calcCorriente(potencia, tipoEfectivo, tension_v, fp)
 
-      // Iadm del cable × conductores en paralelo por fase
+      // Iadm del cable × conductores en paralelo por fase.
+      // Si hay N conductores en paralelo, cada uno lleva la misma corriente,
+      // por lo que la capacidad total se multiplica por N.
       const formacion = (c as any).formacion
       const iadm_cable = formacion?.cable?.Iadm ?? null
       const cond_por_fase = formacion?.cond_por_fase ?? 1
       const iadm = iadm_cable !== null ? iadm_cable * cond_por_fase : null
 
+      // Aplicación parcial de factores: si el usuario no ingresó FC o FT se omiten
+      // del producto (no se asume 1.0), para que el resultado sea null en lugar de
+      // mostrar un valor erróneamente optimista. Solo FH siempre se aplica porque
+      // es automático (deriva de la altitud ingresada en el campo global).
       const iadm_corr = iadm !== null && fcNum !== null && ftNum !== null
         ? iadm * fh * fcNum * ftNum
         : iadm !== null && fcNum === null && ftNum === null
@@ -393,6 +403,8 @@ export default function Ampacidad() {
             </div>
           </div>
 
+          <div className="flex justify-center">
+          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
           <table
             className="datatable"
             style={{ width: table.getTotalSize(), tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}
@@ -439,6 +451,8 @@ export default function Ampacidad() {
               ))}
             </tbody>
           </table>
+          </div>
+          </div>
 
           {rows.length === 0 && (
             <p style={{ padding: 16, textAlign: 'center', color: 'var(--clr-surface-tonal-a40)', fontSize: 13 }}>
