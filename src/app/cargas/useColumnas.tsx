@@ -16,10 +16,12 @@ type Acciones = {
   actualizarPotencia:   (id: number, val: number | null) => void
   actualizarFP:         (id: number, val: number | null) => void
   actualizarLargo:      (id: number, val: number | null) => void
-  setPendingTipo:       (val: { id: number; nuevoTipo: string | null } | null) => void
+  setPendingTipo:       (val: { id: number; tipoPrevio: string | null; nuevoTipo: string | null } | null) => void
+  setAlimentadorPicker: (val: { id: number } | null) => void
   setCircuitoEditando:  (id: number | null) => void
   setFormacionSeleccionada: (data: FormacionData | null) => void
   setModalAbierto:      (open: boolean) => void
+  irATablero:           (id: number) => void
 }
 
 const columnHelper = createColumnHelper<CircuitoRow>()
@@ -40,7 +42,8 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
     renombrarCircuito, actualizarDescripcion, actualizarTipo,
     actualizarTipoTension, actualizarFase, actualizarPotencia,
     actualizarFP, actualizarLargo,
-    setPendingTipo, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto,
+    setPendingTipo, setAlimentadorPicker, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto,
+    irATablero,
   } = acciones
 
   const [f1, f2, f3] = getFaseLabels(nomenclatura)
@@ -74,24 +77,36 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       size: 110,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, tipo } = info.row.original
+        const { id, tipo, tablero_destino } = info.row.original
         return (
-          <select
-            value={tipo ?? ''}
-            onChange={e => {
-              const nuevo = e.target.value || null
-              if (nuevo === 'ACOMETIDA' || tipo === 'ACOMETIDA')
-                setPendingTipo({ id, nuevoTipo: nuevo })
-              else
-                actualizarTipo(id, nuevo)
-            }}
-            onClick={e => e.stopPropagation()}
-            className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
-            style={{ background: 'var(--clr-surface-a10)' }}
-          >
-            <option value="">—</option>
-            {TIPOS_CIRCUITO.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
+          <div className="flex flex-col gap-0.5">
+            <select
+              value={tipo ?? ''}
+              onChange={e => {
+                const nuevo = e.target.value || null
+                if (nuevo === 'ALIMENTADOR') setAlimentadorPicker({ id })
+                else if (nuevo === 'ACOMETIDA' || tipo === 'ACOMETIDA' || tipo === 'ALIMENTADOR')
+                  setPendingTipo({ id, tipoPrevio: tipo, nuevoTipo: nuevo })
+                else
+                  actualizarTipo(id, nuevo)
+              }}
+              onClick={e => e.stopPropagation()}
+              className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+              style={{ background: 'var(--clr-surface-a10)' }}
+            >
+              <option value="">—</option>
+              {TIPOS_CIRCUITO.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            {tipo === 'ALIMENTADOR' && tablero_destino && (
+              <span
+                onClick={e => { e.stopPropagation(); irATablero(tablero_destino.id) }}
+                className="text-[10px] text-info-a10 underline decoration-dotted cursor-pointer truncate"
+                title={`Ir a ${tablero_destino.nombre || tablero_destino.tag}`}
+              >
+                → {tablero_destino.nombre || tablero_destino.tag}
+              </span>
+            )}
+          </div>
         )
       },
     }),
@@ -154,7 +169,9 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       size: 110,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        if (info.row.original.es_acometida) {
+        const { es_acometida, tipo, tablero_destino_id } = info.row.original
+        const vinculado = tipo === 'ALIMENTADOR' && tablero_destino_id != null
+        if (es_acometida || vinculado) {
           const v = info.getValue()
           return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
         }
@@ -177,7 +194,9 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       size: 70,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        if (info.row.original.es_acometida) {
+        const { es_acometida, tipo, tablero_destino_id } = info.row.original
+        const vinculado = tipo === 'ALIMENTADOR' && tablero_destino_id != null
+        if (es_acometida || vinculado) {
           const v = info.getValue()
           return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
         }

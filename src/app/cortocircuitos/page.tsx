@@ -4,7 +4,8 @@ import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables, type CableItem } from '@/context/CablesContext'
-import { calcResistencia, calcIccExtremo, calcSminCable, seccionEnMm2 } from '@/utils/electricidad'
+import { calcSminCable, seccionEnMm2 } from '@/utils/electricidad'
+import { calcularProyecto, type EntradaProyecto } from '@/utils/cortocircuito'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
@@ -16,7 +17,10 @@ type CortocircRow = {
   nCondAuto:    number | null
   nCondInput:   string
   S_real_mm2:   number | null
-  Icc_extremo:  number | null
+  Z1_mOhm:      number | null
+  kappa:        number | null
+  Ik_kA:        number | null
+  ip_kA:        number | null
   S_min_002:    number | null
   S_min_02:     number | null
   cable_ok_002: boolean | null
@@ -167,8 +171,12 @@ export default function Cortocircuitos() {
   const rows = useMemo((): CortocircRow[] => {
     if (!tablero) return []
     const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
-    // corriente_cc del tablero viene en kA (kiloamperios) → convertir a A para los cálculos
-    const Icc_panel_A = tablero.corriente_cc != null ? tablero.corriente_cc * 1000 : null
+    // Se usa la Icc máxima del tablero (peor caso para dimensionar el cable) como
+    // fuente equivalente aguas arriba de cada circuito. La mínima no se usa acá,
+    // sirve para coordinar protecciones, no para verificar sección.
+    const Icc_panel_A = tablero.corriente_cc_max != null ? tablero.corriente_cc_max * 1000 : null
+    // Nivel de tensión de la barra: tri > bi > mono, igual criterio que el resto de la app.
+    const nivelBarra = tablero.tension_tri ?? tablero.tension_bi ?? tablero.tension_mono ?? null
 
     return sorted.map(c => {
       // El usuario puede seleccionar un cable diferente al de la formación para
@@ -177,45 +185,57 @@ export default function Cortocircuitos() {
       const effectiveCable = (overrideId ? cableCache[overrideId] : null) ?? c.formacion?.cable ?? null
       const familia        = (effectiveCable as any)?.familia ?? null
 
-      // Con N conductores en paralelo la resistencia efectiva del lazo se divide por N,
-      // porque la corriente se distribuye igualmente entre ellos.
       const nCondAuto     = effectiveCable?.Nfases ?? null
       const nCondOverride = nCondInputs[c.id] ? Number(nCondInputs[c.id]) : null
       const nCondEff      = (nCondOverride && nCondOverride > 0 ? nCondOverride : null) ?? nCondAuto ?? 1
 
       const S_real = effectiveCable ? seccionEnMm2(effectiveCable.seccion_f, effectiveCable.calibre_tipo) : null
-
-      const R_km_single = effectiveCable ? calcResistencia(
-        effectiveCable.seccion_f,
-        effectiveCable.calibre_tipo,
-        familia?.material,
-        familia?.temperatura,
-      ) : null
-      const R_km = R_km_single !== null ? R_km_single / nCondEff : null
-
-      // U0 = tensión fase-neutro que conduce la corriente de falla.
-      // Para trifásico se deriva dividiendo la tensión de línea por √3.
-      // Para mono/bi la tensión configurada ya es fase-neutro o fase-fase según el tablero.
-      const tipo = c.tipo_tension
-      const U0 = tipo === 'mono' ? tablero.tension_mono
-               : tipo === 'bi'   ? tablero.tension_bi
-               : tipo === 'tri'  ? (tablero.tension_tri != null ? tablero.tension_tri / Math.sqrt(3) : null)
-               : null
-
-      const Icc_extremo = R_km && U0 && c.Largo
-        ? calcIccExtremo(U0, R_km, c.Largo)
-        : null
-
       const mat = familia?.material    ?? null
       const ais = familia?.aislamiento ?? null
+      const material: 'COBRE' | 'ALUMINIO' = (mat ?? '').toLowerCase().includes('alu') ? 'ALUMINIO' : 'COBRE'
 
-      // Se usan dos tiempos de despeje para cubrir las dos zonas de protección:
-      //   0.02 s → zona magnética del interruptor (disparos instantáneos, alta Icc)
-      //   0.2 s  → zona térmica (disparos temporizado, Icc menores)
-      // La Icc que se usa aquí es la del panel (aguas arriba), que es la peor condición
-      // para el conductor: la falla más cercana genera la corriente más alta.
-      const S_min_002 = Icc_panel_A ? calcSminCable(Icc_panel_A, 0.02, mat, ais) : null
-      const S_min_02  = Icc_panel_A ? calcSminCable(Icc_panel_A, 0.2,  mat, ais) : null
+      // Motor de cálculo IEC 60909-0 (Front/src/utils/cortocircuito): la barra del
+      // tablero se modela como una red equivalente con la Icc ya conocida, y el
+      // propio circuito como el único conductor entre la barra y el punto de falla
+      // al final del cable. Se piden dos puntos de falla (0.02 s y 0.2 s) para
+      // obtener Ith en las dos zonas de protección con un solo cálculo del mismo Z1.
+      let Z1_mOhm: number | null = null, kappa: number | null = null
+      let Ik_kA: number | null = null, ip_kA: number | null = null
+      let Ith_002_A: number | null = null, Ith_02_A: number | null = null
+
+      if (Icc_panel_A && nivelBarra && S_real && c.Largo) {
+        try {
+          const entrada: EntradaProyecto = {
+            proyecto: { nombre: 'cortocircuitos', frecuencia_hz: 50 },
+            red_alimentacion: { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: Icc_panel_A },
+            transformadores: [],
+            generadores: [],
+            motores: [],
+            conductores: [{
+              id: String(c.id), longitud: c.Largo, seccion: S_real,
+              n_conductores_por_fase: nCondEff, material,
+              nodo_a: 'BARRA', nodo_b: 'FIN',
+            }],
+            puntos_falla: [
+              { id: 'F002', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MAXIMO', duracion_falla: 0.02 },
+              { id: 'F02', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MAXIMO', duracion_falla: 0.2 },
+            ],
+          }
+          const [r002, r02] = calcularProyecto(entrada)
+          Z1_mOhm = Math.hypot(r002.Z1.re, r002.Z1.im) * 1000
+          kappa = r002.kappa
+          Ik_kA = r002.corrientes.Ik_inicial_A / 1000
+          ip_kA = r002.corrientes.ip_A / 1000
+          Ith_002_A = r002.corrientes.Ith_A
+          Ith_02_A = r02.corrientes.Ith_A
+        } catch {
+          // Datos insuficientes o inconsistentes para este circuito puntual (ej. cable
+          // sin sección resuelta todavía) — se deja en blanco, no rompe el resto de la tabla.
+        }
+      }
+
+      const S_min_002 = Ith_002_A ? calcSminCable(Ith_002_A, 0.02, mat, ais) : null
+      const S_min_02  = Ith_02_A  ? calcSminCable(Ith_02_A, 0.2,  mat, ais) : null
 
       const cable_ok_002 = S_min_002 != null && S_real != null ? S_real >= S_min_002 : null
       const cable_ok_02  = S_min_02  != null && S_real != null ? S_real >= S_min_02  : null
@@ -227,7 +247,7 @@ export default function Cortocircuitos() {
         nCondAuto,
         nCondInput: nCondInputs[c.id] ?? '',
         S_real_mm2: S_real != null && !isNaN(S_real) ? S_real : null,
-        Icc_extremo,
+        Z1_mOhm, kappa, Ik_kA, ip_kA,
         S_min_002, S_min_02,
         cable_ok_002, cable_ok_02,
         input: { cable_id: cableInputs[c.id] ?? '' },
@@ -276,10 +296,25 @@ export default function Cortocircuitos() {
       meta: { colType: 'auto' } as ColMeta,
       cell: info => <AutoCell value={info.getValue()} decimals={1} />,
     }),
-    columnHelper.accessor('Icc_extremo', {
-      header: 'Icc extremo (A)', size: 130,
+    columnHelper.accessor('Z1_mOhm', {
+      header: 'Z1 (mΩ)', size: 90,
       meta: { colType: 'auto' } as ColMeta,
-      cell: info => <AutoCell value={info.getValue()} decimals={0} />,
+      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
+    }),
+    columnHelper.accessor('kappa', {
+      header: 'κ', size: 60,
+      meta: { colType: 'auto' } as ColMeta,
+      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
+    }),
+    columnHelper.accessor('Ik_kA', {
+      header: 'I"k (kA)', size: 90,
+      meta: { colType: 'result' } as ColMeta,
+      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
+    }),
+    columnHelper.accessor('ip_kA', {
+      header: 'ip (kA)', size: 90,
+      meta: { colType: 'result' } as ColMeta,
+      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
     }),
     columnHelper.accessor('S_min_002', {
       header: 'S mín 0.02 s (mm²)', size: 140,
@@ -347,8 +382,11 @@ export default function Cortocircuitos() {
             <div className="flex items-center gap-2.5">
               <span className="text-[14px] font-semibold text-font-a0">{tablero.tag}</span>
               {tablero.nombre && <span className="text-[13px] text-surface-tonal-a40">{tablero.nombre}</span>}
-              {tablero.corriente_cc != null && (
-                <span className="text-[12px] text-surface-tonal-a40">Icc = {tablero.corriente_cc} kA</span>
+              {tablero.corriente_cc_max != null && (
+                <span className="text-[12px] text-surface-tonal-a40">
+                  Icc max = {tablero.corriente_cc_max} kA
+                  {tablero.corriente_cc_min != null && <> · Icc min = {tablero.corriente_cc_min} kA</>}
+                </span>
               )}
             </div>
             <div className="flex items-center gap-3.5 text-[11px] text-surface-tonal-a40">
@@ -415,16 +453,71 @@ export default function Cortocircuitos() {
             </p>
           )}
 
-          <div className="px-3.5 py-3 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-1.5">
-            <span>• <b>Icc extremo</b> — falla fase-neutro al final del circuito (IEC 60364):{' '}
-              <InlineMath math="I_{cc} = \dfrac{0{,}8 \cdot U_0}{2 \cdot R \cdot L}" />
-            </span>
-            <span>• <b>Sección mínima adiabática</b> (IEC 60364):{' '}
-              <InlineMath math="\left(\dfrac{I_{CC}}{A}\right)^{\!2} t_{CC} = 0{,}0297 \cdot \log\!\left(\dfrac{T_2 + 234}{T_1 + 234}\right)" />
-              {' '}— equivalente a{' '}<InlineMath math="S_{min} = I_{cc} \cdot \sqrt{t} / k" />
-            </span>
-            <span>• T₁ = 90 °C (op. XLPE) · T₂ = 250 °C (cc XLPE) · t = 0,02 s zona magnética; t = 0,2 s zona térmica.</span>
-            <span>• k: Cu/XLPE = 143 · Cu/PVC = 115 · Al/XLPE = 87 · Al/PVC = 74.</span>
+          <div className="px-3.5 py-3.5 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-3.5">
+            <p>
+              <b className="text-font-a20">Cómo se calcula:</b> para cada circuito se plantea una falla trifásica franca
+              en el extremo del cable (el punto más alejado, donde la corriente de falla es más chica pero el cable
+              está menos protegido). Se usa el método de la fuente de tensión equivalente de la <b>IEC 60909-0</b>: la
+              barra del tablero se modela como una fuente con la Icc máxima ya conocida, y el cable del circuito es el
+              único tramo de impedancia entre esa barra y la falla.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <div>
+                <span className="text-font-a20 font-medium">Z1 (mΩ)</span> — impedancia total entre la barra y el
+                extremo del cable: <InlineMath math="Z_1 = Z_{barra} + Z_{cable}" />.{' '}
+                <b>De dónde sale:</b> <InlineMath math="Z_{barra}" /> se deriva de la Icc máxima que cargaste a mano en
+                el tablero (no se calcula, es un dato de entrada tuyo). <InlineMath math="Z_{cable}" /> sale de la
+                resistencia (sección, material y longitud del cable, a 20 °C — la temperatura más fría posible, que da
+                la Icc más alta y por eso es el peor caso) y de la reactancia (un valor típico de 0,08 Ω/km para cable
+                BT multipolar, si el cable no tiene ese dato cargado).
+              </div>
+
+              <div>
+                <span className="text-font-a20 font-medium">κ (kappa)</span> — factor de cresta: qué tan asimétrico es
+                el primer pico de la corriente de falla respecto a su valor simétrico. Depende de la relación R/X de
+                Z1 (cuanto más resistivo el camino, menos asimetría): <InlineMath math="\kappa = 1{,}15\left(1{,}02 + 0{,}98\, e^{-3R/X}\right)" />.
+                Solo se usa como paso intermedio para calcular <b>ip</b>.
+              </div>
+
+              <div>
+                <span className="text-font-a20 font-medium">I&quot;k (kA)</span> — corriente de cortocircuito inicial
+                simétrica, el resultado principal: <InlineMath math="I''_{k} = \dfrac{c \cdot U_n}{\sqrt{3}\,|Z_1|}" />.{' '}
+                <InlineMath math="U_n" /> es la tensión de línea del tablero; <InlineMath math="c" /> es el factor de
+                tensión de la norma (1,05 para baja tensión en el escenario de corriente máxima, cubre el margen de
+                +6% que puede tener la red real sobre su tensión nominal).
+              </div>
+
+              <div>
+                <span className="text-font-a20 font-medium">ip (kA)</span> — valor de cresta (pico) de la corriente de
+                falla en el primer semiciclo: <InlineMath math="i_p = \kappa \sqrt{2}\, I''_k" />. Sirve para verificar
+                que barras, soportes y equipos aguanten el esfuerzo electrodinámico del golpe inicial, que es mayor
+                que el valor simétrico.
+              </div>
+
+              <div>
+                <span className="text-font-a20 font-medium">S mín (mm²) / ✓</span> — sección mínima que necesita el
+                cable para no dañarse por calentamiento durante la falla, y si la sección real elegida la cumple:{' '}
+                <InlineMath math="S_{min} = I_{th} \cdot \sqrt{t} / k" />. Se usa <InlineMath math="I_{th}" /> (corriente
+                térmica equivalente, <InlineMath math="I_{th} = I''_k \sqrt{m+n}" />) en vez de I&quot;k directo, porque
+                tiene en cuenta el calentamiento extra que aporta la componente de corriente continua durante el
+                transitorio. <InlineMath math="k" /> es una constante del material/aislación del cable (Cu/XLPE = 143 ·
+                Cu/PVC = 115 · Al/XLPE = 87 · Al/PVC = 74).
+              </div>
+
+              <div>
+                Se calcula dos veces (columnas 0,02 s y 0,2 s) porque la protección del circuito tiene dos zonas de
+                disparo con tiempos distintos: <b>0,02 s</b> es la zona magnética (disparo instantáneo ante fallas
+                severas) y <b>0,2 s</b> la zona térmica (disparo temporizado, fallas menos severas que igual hay que
+                despejar). El cable tiene que soportar ambos casos.
+              </div>
+            </div>
+
+            <p>
+              <b className="text-font-a20">Qué no calcula todavía:</b> la Icc máxima/mínima del tablero es un dato que
+              cargás a mano — el motor no reconstruye la red aguas arriba (fuente de alimentación, transformadores,
+              otros tableros en cadena) para derivarla sola. Eso es la próxima pieza a conectar.
+            </p>
           </div>
         </div>
       )}

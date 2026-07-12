@@ -1,4 +1,4 @@
-export const TIPOS_CIRCUITO = ['ACU', 'MOTOR', 'VDF', 'IUG', 'TUG', 'IUE', 'TUE', 'APM', 'RESERVA', 'ACOMETIDA'] as const
+export const TIPOS_CIRCUITO = ['ACU', 'MOTOR', 'VDF', 'IUG', 'TUG', 'IUE', 'TUE', 'APM', 'RESERVA', 'ACOMETIDA', 'ALIMENTADOR'] as const
 
 // Estructura que devuelve el back para un circuito
 export type CircuitoAPI = {
@@ -12,6 +12,8 @@ export type CircuitoAPI = {
   fase: string | null
   es_acometida: boolean
   potencia: number | null
+  tablero_destino_id: number | null
+  tablero_destino: { id: number; tag: string; nombre: string | null } | null
   formacion: {
     nombre: string
     cond_por_fase: number
@@ -43,6 +45,8 @@ export type CircuitoRow = {
   corrientesFase: { R: number; S: number; T: number } | null
   formacion: string
   formacionData: FormacionData | null
+  tablero_destino_id: number | null
+  tablero_destino: { id: number; tag: string; nombre: string | null } | null
 }
 
 // Datos que necesita FormacionModal para pre-cargar un formulario

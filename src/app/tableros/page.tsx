@@ -2,13 +2,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import { calcCorriente } from '@/utils/electricidad'
+import FuentesSection from './FuentesSection'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
 type Form = {
   tag: string; nombre: string; ubicacion: string; tipo: string
   tension_mono: string; tension_bi: string; tension_tri: string; frecuencia: string
-  corriente_nom: string; corriente_cc: string
+  corriente_nom: string; corriente_cc_max: string; corriente_cc_min: string
   potencia_inst: string; potencia_dem: string
   fabricante: string; modelo: string; norma: string; grado_proteccion: string
 }
@@ -16,7 +17,7 @@ type Form = {
 const EMPTY: Form = {
   tag: '', nombre: '', ubicacion: '', tipo: '',
   tension_mono: '', tension_bi: '', tension_tri: '', frecuencia: '',
-  corriente_nom: '', corriente_cc: '',
+  corriente_nom: '', corriente_cc_max: '', corriente_cc_min: '',
   potencia_inst: '', potencia_dem: '',
   fabricante: '', modelo: '', norma: '', grado_proteccion: '',
 }
@@ -33,7 +34,8 @@ function toForm(t: any): Form {
     tension_tri:      n(t.tension_tri),
     frecuencia:       n(t.frecuencia),
     corriente_nom:    n(t.corriente_nom),
-    corriente_cc:     n(t.corriente_cc),
+    corriente_cc_max: n(t.corriente_cc_max),
+    corriente_cc_min: n(t.corriente_cc_min),
     potencia_inst:    n(t.potencia_inst),
     potencia_dem:     n(t.potencia_dem),
     fabricante:       t.fabricante       ?? '',
@@ -56,7 +58,8 @@ function fromForm(form: Form) {
     tension_tri:      num(form.tension_tri),
     frecuencia:       num(form.frecuencia),
     corriente_nom:    num(form.corriente_nom),
-    corriente_cc:     num(form.corriente_cc),
+    corriente_cc_max: num(form.corriente_cc_max),
+    corriente_cc_min: num(form.corriente_cc_min),
     potencia_inst:    num(form.potencia_inst),
     potencia_dem:     num(form.potencia_dem),
     fabricante:       str(form.fabricante),
@@ -128,7 +131,10 @@ function CampoAuto({ label, name, value, onChange, autoValue, decimals = 1 }: {
 // ── Página ────────────────────────────────────────────────────────
 
 export default function TablaTableros() {
-  const { tableros, getTablero, loading, error, agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero } = useProyectos()
+  const {
+    tableros, getTablero, loading, error, agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
+    agregarFuente, actualizarFuente, eliminarFuente,
+  } = useProyectos()
 
   const [tableroId, setTableroId] = useState<number | null>(() => {
     if (typeof document === 'undefined') return null
@@ -329,10 +335,14 @@ export default function TablaTableros() {
                 </button>
               )}
             </div>
-            <div className={`${cx.grid} grid-cols-2`}>
-              <CampoAuto label="Corriente nominal (A)"           name="corriente_nom" value={form.corriente_nom} onChange={v => handleChange('corriente_nom', v)} autoValue={autoValues?.corriente_nom ?? null} />
-              <Campo     label="Corriente de cortocircuito (kA)" name="corriente_cc"  type="number" value={form.corriente_cc}  onChange={v => handleChange('corriente_cc', v)}  placeholder="ej. 25" />
+            <div className={`${cx.grid} grid-cols-3`}>
+              <CampoAuto label="Corriente nominal (A)" name="corriente_nom" value={form.corriente_nom} onChange={v => handleChange('corriente_nom', v)} autoValue={autoValues?.corriente_nom ?? null} />
+              <Campo label="Icc máxima (kA)" name="corriente_cc_max" type="number" value={form.corriente_cc_max} onChange={v => handleChange('corriente_cc_max', v)} placeholder="ej. 25" />
+              <Campo label="Icc mínima (kA)" name="corriente_cc_min" type="number" value={form.corriente_cc_min} onChange={v => handleChange('corriente_cc_min', v)} placeholder="ej. 18" />
             </div>
+            <p className="px-3 pb-2.5 -mt-1.5 text-[11px] text-surface-tonal-a40 bg-surface-a10">
+              Máxima dimensiona equipos (poder de corte, esfuerzos electrodinámicos); mínima ajusta protecciones.
+            </p>
           </div>
 
           {/* Potencias */}
@@ -346,6 +356,16 @@ export default function TablaTableros() {
               <CampoAuto label="Potencia demanda (kW)"   name="potencia_dem"  value={form.potencia_dem}  onChange={v => handleChange('potencia_dem', v)}  autoValue={autoValues?.potencia_dem  ?? null} decimals={2} />
             </div>
           </div>
+
+          {/* Fuente de alimentación */}
+          {!creandoNuevo && tablero && (
+            <FuentesSection
+              fuentes={tablero.fuentes}
+              onAgregar={data => agregarFuente(tablero.id, data)}
+              onActualizar={actualizarFuente}
+              onEliminar={eliminarFuente}
+            />
+          )}
 
           {/* Botón guardar / duplicar / eliminar */}
           <div className="flex items-center justify-between pt-1">

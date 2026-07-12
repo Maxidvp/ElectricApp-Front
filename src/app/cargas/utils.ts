@@ -60,36 +60,43 @@ function calcCorrientesPorFase(above: CircuitoAPI[], tensiones: Tensiones): { R:
   return R === 0 && S === 0 && T === 0 ? null : { R, S, T }
 }
 
-// Mapea los circuitos del back a filas de la tabla, calculando corrientes y
-// agregando los datos de formación. Los alimentadores suman los circuitos anteriores.
-export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones, formato: FormatoFormacion = 'ingles'): CircuitoRow[] {
-  // Tipo predominante del tablero (tri > bi > mono) para alimentadores.
-  // Se usa tri si el tablero tiene tensión trifásica definida, independientemente
-  // de si hay circuitos mono o bifásicos — el alimentador lleva toda la carga.
+// Suma la potencia y el FP ponderado de un conjunto de circuitos (los que alimenta
+// una acometida). FP_equiv = Σ(FPᵢ · Pᵢ) / ΣPᵢ — equivalente a la potencia reactiva
+// promedio ponderada, representa correctamente el factor de potencia de la carga agregada.
+function calcAcometidaAgregada(circuitos: CircuitoAPI[], tensiones: Tensiones) {
   const tipoTablero = tensiones.tri != null ? 'tri' : tensiones.bi != null ? 'bi' : tensiones.mono != null ? 'mono' : null
+  const above   = circuitos.filter(x => !x.es_acometida)
+  const potencia = above.reduce((s, x) => s + (x.potencia ?? 0), 0) || null
+  const conFP   = above.filter(x => x.FP != null && (x.potencia ?? 0) > 0)
+  const sumPot  = conFP.reduce((s, x) => s + x.potencia!, 0)
+  const fp      = sumPot > 0 ? conFP.reduce((s, x) => s + x.FP! * x.potencia!, 0) / sumPot : null
+  const tension_v = tipoTablero === 'tri' ? tensiones.tri : tipoTablero === 'bi' ? tensiones.bi : tensiones.mono
+  return {
+    tipoTablero, potencia, fp,
+    corriente: calcCorriente(potencia, tipoTablero, tension_v, fp ?? null),
+    corrientesFase: calcCorrientesPorFase(above, tensiones),
+  }
+}
 
+// Mapea los circuitos del back a filas de la tabla, calculando corrientes y
+// agregando los datos de formación. La acometida suma los circuitos anteriores.
+// `tableros` (opcional) es la lista completa del proyecto, usada para resolver la
+// demanda de un ALIMENTADOR vinculado a otro tablero (se toma de SU acometida).
+export function mapearCircuitos(
+  data: CircuitoAPI[], tensiones: Tensiones, formato: FormatoFormacion = 'ingles', tableros: any[] = [],
+): CircuitoRow[] {
   return data.map((c, idx) => {
     if (c.es_acometida) {
-      // Un alimentador representa la acometida que alimenta a todos los circuitos
-      // anteriores (encima de él en la tabla). Sumamos sus potencias para obtener
-      // la demanda total, y usamos un FP ponderado por potencia:
-      //   FP_equiv = Σ(FPᵢ · Pᵢ) / ΣPᵢ
-      // Esto es equivalente a la potencia reactiva promedio ponderada y representa
-      // correctamente el factor de potencia de la carga agregada.
-      const above   = data.slice(0, idx).filter(x => !x.es_acometida)
-      const potencia = above.reduce((s, x) => s + (x.potencia ?? 0), 0) || null
-      const conFP   = above.filter(x => x.FP != null && (x.potencia ?? 0) > 0)
-      const sumPot  = conFP.reduce((s, x) => s + x.potencia!, 0)
-      const fp      = sumPot > 0 ? conFP.reduce((s, x) => s + x.FP! * x.potencia!, 0) / sumPot : null
-      const tension_v = tipoTablero === 'tri' ? tensiones.tri : tipoTablero === 'bi' ? tensiones.bi : tensiones.mono
+      const agregado = calcAcometidaAgregada(data.slice(0, idx), tensiones)
       return {
         id: c.id, circuito: c.circuito, descripcion: c.descripcion, tipo: c.tipo,
-        FP: fp ?? null, Largo: c.Largo, tipo_tension: tipoTablero, fase: c.fase,
-        es_acometida: true, potencia,
-        corriente: calcCorriente(potencia, tipoTablero, tension_v, fp ?? null),
-        corrientesFase: calcCorrientesPorFase(above, tensiones),
+        FP: agregado.fp, Largo: c.Largo, tipo_tension: agregado.tipoTablero, fase: c.fase,
+        es_acometida: true, potencia: agregado.potencia,
+        corriente: agregado.corriente,
+        corrientesFase: agregado.corrientesFase,
         formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
         formacionData: formacionData(c),
+        tablero_destino_id: null, tablero_destino: null,
       }
     }
 
@@ -102,6 +109,29 @@ export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones, forma
                     : tipoEfectivo === 'bi'   ? tensiones.bi
                     : tipoEfectivo === 'tri'  ? tensiones.tri
                     : null
+
+    // ALIMENTADOR vinculado: la demanda no se carga a mano, se toma de la acometida
+    // del tablero destino (su demanda total es lo que este cable tiene que llevar).
+    if (c.tipo === 'ALIMENTADOR' && c.tablero_destino_id != null) {
+      const destino = tableros.find((t: any) => t.id === c.tablero_destino_id)
+      if (destino) {
+        const agregado = calcAcometidaAgregada(destino.circuitos, {
+          mono: destino.tension_mono, bi: destino.tension_bi, tri: destino.tension_tri,
+        })
+        return {
+          id: c.id, circuito: c.circuito, descripcion: c.descripcion, tipo: c.tipo,
+          FP: agregado.fp, Largo: c.Largo, tipo_tension: c.tipo_tension, fase: c.fase,
+          es_acometida: false,
+          potencia: agregado.potencia,
+          corriente: calcCorriente(agregado.potencia, tipoEfectivo ?? agregado.tipoTablero, tension_v, agregado.fp),
+          corrientesFase: null,
+          formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
+          formacionData: formacionData(c),
+          tablero_destino_id: c.tablero_destino_id, tablero_destino: c.tablero_destino,
+        }
+      }
+    }
+
     return {
       id: c.id, circuito: c.circuito, descripcion: c.descripcion, tipo: c.tipo,
       FP: c.FP, Largo: c.Largo, tipo_tension: c.tipo_tension, fase: c.fase,
@@ -111,6 +141,7 @@ export function mapearCircuitos(data: CircuitoAPI[], tensiones: Tensiones, forma
       corrientesFase: null,
       formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
       formacionData: formacionData(c),
+      tablero_destino_id: c.tablero_destino_id, tablero_destino: c.tablero_destino,
     }
   })
 }

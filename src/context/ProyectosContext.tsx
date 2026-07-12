@@ -3,16 +3,18 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import * as ruteoApi    from '@/services/ruteo'
 import * as tablerosApi from '@/services/tableros'
 import * as proyectosApi from '@/services/proyectos'
+import * as fuentesApi  from '@/services/fuentesAlimentacion'
 import type { Canio, Bandeja, Segmento, Conjunto, Arquitectura, Pared } from '@/services/ruteo'
 import { prefetchCablesFamilias } from '@/context/CablesContext'
 
-import type { Tablero, Circuito, ProyectosContextType, ProyectoMeta } from './types'
+import type { Tablero, Circuito, FuenteAlimentacion, ProyectosContextType, ProyectoMeta } from './types'
 import { deriveSegmentos } from './helpers'
 import { useCircuitosActions } from './useCircuitosActions'
 import { useRuteoActions } from './useRuteoActions'
 
 export type { ProyectoMeta }
 export type { Pared, Arquitectura }
+export type { FuenteAlimentacion }
 
 // ── Context ───────────────────────────────────────────────────────
 const ProyectosContext = createContext<ProyectosContextType | null>(null)
@@ -188,13 +190,13 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   async function agregarTablero(data: any): Promise<Tablero> {
     const real = await tablerosApi.createTablero({ ...data, proyecto_id: proyectoActivo?.id ?? null }) as Tablero
-    setTableros(prev => [...prev, { ...real, circuitos: [] }])
+    setTableros(prev => [...prev, { ...real, circuitos: [], fuentes: [] }])
     return real
   }
 
   async function duplicarTablero(id: number): Promise<Tablero> {
     const real = await tablerosApi.duplicarTablero(id) as Tablero
-    setTableros(prev => [...prev, { ...real, circuitos: real.circuitos ?? [] }])
+    setTableros(prev => [...prev, { ...real, circuitos: real.circuitos ?? [], fuentes: real.fuentes ?? [] }])
     return real
   }
 
@@ -206,6 +208,25 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   async function eliminarTablero(id: number) {
     setTableros(prev => prev.filter(t => t.id !== id))
     await tablerosApi.deleteTablero(id).catch(console.error)
+  }
+
+  // ── Fuentes de alimentación CRUD ───────────────────────────────
+  async function agregarFuente(tableroId: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) {
+    const real: FuenteAlimentacion = await fuentesApi.createFuenteAlimentacion({ ...data, tablero_id: tableroId })
+    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, fuentes: [...t.fuentes, real] } : t))
+  }
+
+  async function actualizarFuente(id: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) {
+    setTableros(prev => prev.map(t => ({
+      ...t,
+      fuentes: t.fuentes.map(f => f.id === id ? { ...f, ...data } : f),
+    })))
+    await fuentesApi.updateFuenteAlimentacion(id, data).catch(console.error)
+  }
+
+  async function eliminarFuente(id: number) {
+    setTableros(prev => prev.map(t => ({ ...t, fuentes: t.fuentes.filter(f => f.id !== id) })))
+    await fuentesApi.deleteFuenteAlimentacion(id).catch(console.error)
   }
 
   // ── Domain action hooks ───────────────────────────────────────
@@ -228,6 +249,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
+      agregarFuente, actualizarFuente, eliminarFuente,
       ...circuitos,
       segmentos, canios, bandejas, conjuntos,
       activeConjuntoId, setActiveConjuntoId,

@@ -6,6 +6,7 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-ki
 import { InlineMath } from 'react-katex'
 import FormacionModal from '@/components/FormacionModal'
 import ConfirmModal   from '@/components/ConfirmModal'
+import AlimentadorModal from '@/components/AlimentadorModal'
 import { useProyectos } from '@/context/ProyectosContext'
 
 import SortableRow  from './SortableRow'
@@ -20,6 +21,7 @@ export default function TablaCargas() {
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos, actualizarDescripcion, actualizarTipo, actualizarFormacion,
     actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia,
+    vincularTableroAlimentador,
     proyectoActivo,
   } = useProyectos()
 
@@ -32,7 +34,8 @@ export default function TablaCargas() {
   const [rowSeleccionada,       setRowSeleccionada]       = useState<number | null>(null)
   const [draggingId,            setDraggingId]            = useState<string | null>(null)
   const [confirmEliminar,       setConfirmEliminar]       = useState(false)
-  const [pendingTipo,           setPendingTipo]           = useState<{ id: number; nuevoTipo: string | null } | null>(null)
+  const [pendingTipo,           setPendingTipo]           = useState<{ id: number; tipoPrevio: string | null; nuevoTipo: string | null } | null>(null)
+  const [alimentadorPicker,     setAlimentadorPicker]     = useState<{ id: number } | null>(null)
   const [newCircuitIds,         setNewCircuitIds]         = useState<Set<number>>(new Set())
   const prevDisplayIdsRef = useRef<Set<number>>(new Set())
 
@@ -54,14 +57,28 @@ export default function TablaCargas() {
     setRowSeleccionada(null)
   }
 
+  // Tableros del proyecto que se pueden elegir como destino de un ALIMENTADOR:
+  // no el propio, y no uno que ya reciba de otro alimentador (vínculo 1 a 1).
+  const tablerosDisponibles = useMemo(() => {
+    if (!idEfectivo) return []
+    const yaAlimentados = new Set(
+      tableros.flatMap(t => t.circuitos)
+        .filter(c => c.tipo === 'ALIMENTADOR' && c.tablero_destino_id != null)
+        .map(c => c.tablero_destino_id)
+    )
+    return tableros
+      .filter(t => t.id !== idEfectivo && !yaAlimentados.has(t.id))
+      .map(t => ({ id: t.id, tag: t.tag, nombre: t.nombre }))
+  }, [tableros, idEfectivo])
+
   // ── Datos ─────────────────────────────────────────────────────
 
   const contextData = useMemo(() => {
     if (!tablero) return []
     const sorted = [...tablero.circuitos].filter(c => (c as any).parent_id === null).sort((a, b) => (a as any).orden - (b as any).orden)
     const tensiones: Tensiones = { mono: tablero.tension_mono, bi: tablero.tension_bi, tri: tablero.tension_tri }
-    return mapearCircuitos(sorted as any, tensiones, (proyectoActivo?.formato_formacion as any) ?? 'ingles')
-  }, [tablero, proyectoActivo?.formato_formacion])
+    return mapearCircuitos(sorted as any, tensiones, (proyectoActivo?.formato_formacion as any) ?? 'ingles', tableros)
+  }, [tablero, proyectoActivo?.formato_formacion, tableros])
 
   const [displayData, setDisplayData] = useState<CircuitoRow[]>([])
 
@@ -138,7 +155,8 @@ export default function TablaCargas() {
   const columns = useColumnas(tensionesDisponibles, {
     renombrarCircuito, actualizarDescripcion, actualizarTipo,
     actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFP, actualizarLargo,
-    setPendingTipo, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto,
+    setPendingTipo, setAlimentadorPicker, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto,
+    irATablero: cambiarTablero,
   }, proyectoActivo?.nomenclatura_fases ?? 'RST')
 
   const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
@@ -315,12 +333,28 @@ export default function TablaCargas() {
 
       {pendingTipo && (
         <ConfirmModal
-          mensaje={pendingTipo.nuevoTipo === 'ACOMETIDA'
-            ? 'Convertir este circuito en ALIMENTADOR cambiará su comportamiento de cálculo. Se pueden perder datos ingresados manualmente. ¿Continuar?'
-            : 'Quitar el tipo ALIMENTADOR puede afectar los cálculos del tablero. Se pueden perder datos. ¿Continuar?'}
+          mensaje={
+            pendingTipo.nuevoTipo === 'ACOMETIDA'
+              ? 'Convertir este circuito en ACOMETIDA cambiará su comportamiento de cálculo. Se pueden perder datos ingresados manualmente. ¿Continuar?'
+              : pendingTipo.tipoPrevio === 'ACOMETIDA'
+              ? 'Quitar el tipo ACOMETIDA puede afectar los cálculos del tablero. Se pueden perder datos. ¿Continuar?'
+              : 'Quitar el tipo ALIMENTADOR eliminará el vínculo con el tablero conectado. ¿Continuar?'
+          }
           labelConfirmar="Continuar"
           onConfirmar={() => { actualizarTipo(pendingTipo.id, pendingTipo.nuevoTipo); setPendingTipo(null) }}
           onCancelar={() => setPendingTipo(null)}
+        />
+      )}
+
+      {alimentadorPicker && (
+        <AlimentadorModal
+          tableros={tablerosDisponibles}
+          onCargaEquivalente={() => { actualizarTipo(alimentadorPicker.id, 'ALIMENTADOR'); setAlimentadorPicker(null) }}
+          onVincular={tableroDestinoId => {
+            vincularTableroAlimentador(alimentadorPicker.id, tableroDestinoId)
+            setAlimentadorPicker(null)
+          }}
+          onCancelar={() => setAlimentadorPicker(null)}
         />
       )}
 

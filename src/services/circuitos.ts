@@ -151,6 +151,19 @@ export async function updateTipoCircuito(id: number, tipo: string | null) {
   return res.json()
 }
 
+export async function updateTableroDestinoCircuito(id: number, tablero_destino_id: number | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/tablero-destino`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tablero_destino_id }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => null)
+    throw new Error(error?.error || 'Error al vincular el tablero destino')
+  }
+  return res.json()
+}
+
 export type FormacionPatch = {
   cable_id: number
   cond_por_fase: number

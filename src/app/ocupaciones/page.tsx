@@ -36,6 +36,10 @@ type AjusteItem = {
  *     Así se obtiene el mínimo tamaño posible sin entrar en zona roja — maximiza
  *     la reducción sin sobrecargar.
  */
+// Caño con diámetro interno cargado — es el único dato que necesita el cálculo
+// de ocupación, por eso los caños sin este dato quedan afuera del catálogo de ajuste.
+type CanioConDiametro = Canio & { diametro_interno: number }
+
 function computeAjustes(
   rows:           Segmento[],
   canios:         Canio[],
@@ -43,7 +47,9 @@ function computeAjustes(
   canalSegmentos: Segmento[],
   getFormacion:   (circId: number) => any,
 ): AjusteItem[] {
-  const sortedCanios   = [...canios].sort((a, b) => a.diametro_interno - b.diametro_interno)
+  const sortedCanios: CanioConDiametro[] = canios
+    .filter((c): c is CanioConDiametro => c.diametro_interno != null)
+    .sort((a, b) => a.diametro_interno - b.diametro_interno)
   const sortedBandejas = [...bandejas].sort((a, b) => a.ancho - b.ancho)
   const result: AjusteItem[] = []
 
@@ -51,7 +57,8 @@ function computeAjustes(
     if (seg.circuitos.length === 0) continue
     const segIdx = canalSegmentos.findIndex(s => s.id === seg.id) + 1
 
-    if (seg.tipo === 'canio' && seg.canio) {
+    if (seg.tipo === 'canio' && seg.canio && seg.canio.diametro_interno != null) {
+      const canioActual = seg.canio.nombre ?? 'Caño'
       const { pct } = calcOcupacionCanio(seg.canio.diametro_interno, seg.circuitos, getFormacion)
       if (pct >= 10 && pct <= 25) continue  // ya está en zona verde
       const idx = sortedCanios.findIndex(c => c.id === seg.canio_id)
@@ -62,7 +69,7 @@ function computeAjustes(
         for (let j = idx + 1; j < sortedCanios.length; j++) {
           const { pct: p } = calcOcupacionCanio(sortedCanios[j].diametro_interno, seg.circuitos, getFormacion)
           if (p <= 25) {
-            result.push({ seg, segIdx, oldLabel: seg.canio.nombre, newLabel: sortedCanios[j].nombre, newId: sortedCanios[j].id, direction: 'up' })
+            result.push({ seg, segIdx, oldLabel: canioActual, newLabel: sortedCanios[j].nombre ?? 'Caño', newId: sortedCanios[j].id, direction: 'up' })
             break
           }
         }
@@ -70,13 +77,13 @@ function computeAjustes(
         // Muy grande (pct < 10): bajar al más chico donde pct siga dentro de [10, 25].
         // Se guarda el último candidato válido encontrado mientras se itera hacia abajo;
         // cuando un tamaño supera el 25% se corta porque los siguientes serán aún menores.
-        let target: Canio | null = null
+        let target: CanioConDiametro | null = null
         for (let j = idx - 1; j >= 0; j--) {
           const { pct: p } = calcOcupacionCanio(sortedCanios[j].diametro_interno, seg.circuitos, getFormacion)
           if (p > 25) break        // se pasaría al lado muy chico, detener
           if (p >= 10) target = sortedCanios[j]  // verde, seguir intentando achicarlo más
         }
-        if (target) result.push({ seg, segIdx, oldLabel: seg.canio.nombre, newLabel: target.nombre, newId: target.id, direction: 'down' })
+        if (target) result.push({ seg, segIdx, oldLabel: canioActual, newLabel: target.nombre ?? 'Caño', newId: target.id, direction: 'down' })
       }
     }
 

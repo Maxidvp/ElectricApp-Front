@@ -50,6 +50,31 @@ export type Circuito = {
   potencia: number | null
   role: string | null       // null = principal, 'retorno', 'combinacion'
   parent_id: number | null
+  // Solo aplica si tipo === 'ALIMENTADOR': tablero al que este circuito alimenta
+  tablero_destino_id: number | null
+  tablero_destino: { id: number; tag: string; nombre: string | null } | null
+}
+
+export type FuenteAlimentacion = {
+  id: number
+  tipo: string   // 'RED' | 'GENERADOR' | 'UPS' | 'PANEL_SOLAR' | 'TRANSFORMADOR'
+  nombre: string | null
+  tablero_id: number
+  tension_nominal: number | null
+  potencia_nominal: number | null
+  potencia_cc: number | null
+  corriente_cc: number | null
+  relacion_rx: number | null
+  xd_subtransitoria_pct: number | null
+  factor_potencia: number | null
+  rg_sobre_xd: number | null
+  corriente_limitada_pu: number | null
+  tension_primaria: number | null
+  ukr_porcentaje: number | null
+  perdidas_cobre_w: number | null
+  uRr_porcentaje: number | null
+  grupo_conexion: string | null
+  impedancia_homopolar_ratio: number | null
 }
 
 export type Tablero = {
@@ -63,7 +88,8 @@ export type Tablero = {
   tension_tri: number | null
   frecuencia: number | null
   corriente_nom: number | null
-  corriente_cc: number | null
+  corriente_cc_max: number | null
+  corriente_cc_min: number | null
   potencia_inst: number | null
   potencia_dem: number | null
   fabricante: string | null
@@ -72,6 +98,7 @@ export type Tablero = {
   grado_proteccion: string | null
   modulos: number | null
   circuitos: Circuito[]
+  fuentes: FuenteAlimentacion[]
 }
 
 export type SegPatch = Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>
@@ -109,6 +136,7 @@ export type ProyectosContextType = {
   actualizarFase: (id: number, fase: string | null) => void
   actualizarTipo: (id: number, tipo: string | null) => void
   actualizarEsAcometida: (id: number, val: boolean) => void
+  vincularTableroAlimentador: (id: number, tableroDestinoId: number | null) => void
   agregarAcometida: (tableroId: number, nombre: string, insertIndex: number) => void
   crearCircuitoAuxiliar: (parentId: number, role: 'retorno' | 'combinacion') => Promise<Circuito>
   reordenarSubcircuitos: (orderedHijoIds: number[]) => void
@@ -117,8 +145,11 @@ export type ProyectosContextType = {
   actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
   agregarTablero: (data: any) => Promise<Tablero>
   duplicarTablero: (id: number) => Promise<Tablero>
-  actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) => Promise<void>
+  actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos' | 'fuentes'>>) => Promise<void>
   eliminarTablero: (id: number) => Promise<void>
+  agregarFuente: (tableroId: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) => Promise<void>
+  actualizarFuente: (id: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) => Promise<void>
+  eliminarFuente: (id: number) => Promise<void>
 
   // Ruteo: segmentos & conjuntos
   segmentos: Segmento[]

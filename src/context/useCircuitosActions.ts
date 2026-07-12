@@ -47,7 +47,7 @@ export function useCircuitosActions(
         id: tempId, orden: i, circuito: tag, descripcion: null, tipo: null,
         tablero_id: tableroId, formacion_id: null, formacion: null,
         FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: false, potencia: null,
-        role: null, parent_id: null,
+        role: null, parent_id: null, tablero_destino_id: null, tablero_destino: null,
       })
       const reordered = s.map((c, j) => ({ ...c, orden: j }))
       capturedOrder = reordered.map((c, j) => ({ id: c.id, orden: j }))
@@ -94,7 +94,11 @@ export function useCircuitosActions(
     } else {
       tag = `${tablero.tag}-C${tablero.circuitos.length + 1}`
     }
-    const temp: Circuito = { ...original, id: tempId, circuito: tag, orden: tablero.circuitos.length }
+    // Un duplicado nunca hereda el vínculo ALIMENTADOR del original (el back tampoco lo copia).
+    const temp: Circuito = {
+      ...original, id: tempId, circuito: tag, orden: tablero.circuitos.length,
+      tablero_destino_id: null, tablero_destino: null,
+    }
     setTableros(prev => addCirc(prev, tablero.id, temp))
     const promise = circuitosApi.duplicarCircuito(circuitoId)
       .then(real => {
@@ -180,7 +184,11 @@ export function useCircuitosActions(
 
   function actualizarTipo(id: number, tipo: string | null) {
     const esAcometida = tipo === 'ACOMETIDA'
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo, es_acometida: esAcometida })))
+    setTableros(prev => mapCirc(prev, id, c => ({
+      ...c, tipo, es_acometida: esAcometida,
+      // Si deja de ser ALIMENTADOR se pierde el vínculo con el tablero destino.
+      ...(tipo !== 'ALIMENTADOR' ? { tablero_destino_id: null, tablero_destino: null } : {}),
+    })))
     firePending(id, pendingCircuitos, rid => circuitosApi.updateTipoCircuito(rid, tipo).catch(console.error))
   }
 
@@ -189,13 +197,32 @@ export function useCircuitosActions(
     firePending(id, pendingCircuitos, rid => circuitosApi.updateEsAcometidaCircuito(rid, val).catch(console.error))
   }
 
+  // Vincula (o desvincula, con tableroDestinoId null) un circuito ALIMENTADOR a otro tablero.
+  // La validación de ciclos/duplicados vive en el back, por eso ante un error se recarga
+  // el proyecto en vez de confiar en el estado optimista (podría haber quedado inconsistente).
+  function vincularTableroAlimentador(id: number, tableroDestinoId: number | null) {
+    const destino = tableroDestinoId != null
+      ? tableros.find(t => t.id === tableroDestinoId)
+      : null
+    setTableros(prev => mapCirc(prev, id, c => ({
+      ...c,
+      // El back fuerza tipo=ALIMENTADOR en la misma escritura cuando se vincula a un destino.
+      ...(destino ? { tipo: 'ALIMENTADOR', es_acometida: false } : {}),
+      tablero_destino_id: tableroDestinoId,
+      tablero_destino: destino ? { id: destino.id, tag: destino.tag, nombre: destino.nombre } : null,
+    })))
+    firePending(id, pendingCircuitos, rid =>
+      circuitosApi.updateTableroDestinoCircuito(rid, tableroDestinoId).catch(err => { console.error(err); recargar() })
+    )
+  }
+
   function agregarAcometida(tableroId: number, nombre: string, insertIndex: number) {
     const tempId = nextTempId()
     const temp: Circuito = {
       id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tipo: 'ACOMETIDA',
       tablero_id: tableroId, formacion_id: null, formacion: null,
       FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: true, potencia: null,
-      role: null, parent_id: null,
+      role: null, parent_id: null, tablero_destino_id: null, tablero_destino: null,
     }
     let capturedOrderAlim: { id: number; orden: number }[] = []
     setTableros(prev => {
@@ -262,6 +289,7 @@ export function useCircuitosActions(
     reordenarCircuitos,
     actualizarDescripcion, actualizarFP, actualizarLargo, actualizarPotencia,
     actualizarTipoTension, actualizarFase, actualizarTipo, actualizarEsAcometida,
+    vincularTableroAlimentador,
     agregarAcometida, actualizarFormacion, crearCircuitoAuxiliar, reordenarSubcircuitos,
   }
 }
