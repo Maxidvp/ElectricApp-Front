@@ -4,8 +4,11 @@ import { getFamiliasCables } from '@/services/familiasCables'
 import { getCablesPorFamilia } from '@/services/cables'
 import { useProyectos } from '@/context/ProyectosContext'
 
-type FamiliaCable = { id: number; nombre: string }
-export type CableItem = { id: number; nombre: string; seccion_f: string; calibre_tipo: string; diametro: number | null; familia_id: number; Nfases: number; Iadm: number }
+type FamiliaCable = { id: number; nombre: string; tipo: string }
+export type CableItem = {
+  id: number; nombre: string; seccion_f: string; calibre_tipo: string; diametro: number | null
+  familia_id: number; Nfases: number; Nneutro: number; Ntierra: number; Iadm: number
+}
 
 type CablesContextType = {
   familias:          FamiliaCable[]   // todas las familias (para la página de cables)

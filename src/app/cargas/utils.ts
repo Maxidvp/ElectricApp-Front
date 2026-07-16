@@ -8,6 +8,7 @@ export function formacionData(c: CircuitoAPI): FormacionData | null {
     cable_fase_id:     String(c.formacion.cable_id),
     cond_por_fase:     String(c.formacion.cond_por_fase),
     Nfases:            String(c.formacion.Nfases),
+    familia_neutro_id: c.formacion.cable_neutro_id ? String(c.formacion.cable.familia_id) : '',
     cable_neutro_id:   c.formacion.cable_neutro_id ? String(c.formacion.cable_neutro_id) : '',
     Nneutro:           String(c.formacion.Nneutro),
     familia_tierra_id: c.formacion.cable_tierra_id ? String(c.formacion.cable.familia_id) : '',

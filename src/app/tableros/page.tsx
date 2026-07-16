@@ -7,15 +7,32 @@ import FuentesSection from './FuentesSection'
 // ── Tipos ─────────────────────────────────────────────────────────
 
 type Form = {
-  tag: string; nombre: string; ubicacion: string; tipo: string
+  tag: string; nombre: string; ubicacion: string; tipo: string; categoria: string; sistema_montaje: string
   tension_mono: string; tension_bi: string; tension_tri: string; frecuencia: string
   corriente_nom: string; corriente_cc_max: string; corriente_cc_min: string
   potencia_inst: string; potencia_dem: string
   fabricante: string; modelo: string; norma: string; grado_proteccion: string
 }
 
+// Categoría = qué diagramas/rutas de la app aplican a este tablero. `tipo` sigue
+// siendo texto libre para el subtipo (Principal, Seccional, MCC, etc.) dentro de ella.
+const CATEGORIAS = [
+  { value: 'POTENCIA', label: 'Potencia (unifilar)' },
+  { value: 'CONTROL',  label: 'Control / instrumentación (lazo)' },
+  { value: 'DATOS',    label: 'Datos / comunicaciones' },
+]
+
+// Sistema de montaje — solo tiene sentido cuando categoria = POTENCIA.
+const SISTEMAS_MONTAJE = [
+  { value: 'RIEL_DIN',       label: 'Riel DIN (IEC 61439)' },
+  { value: 'PANELBOARD',     label: 'Panelboard / Load Center (UL 67)' },
+  { value: 'SWITCHBOARD',    label: 'Switchboard / barras abiertas (UL 891 / IEC 61439 PSC)' },
+  { value: 'SWITCHGEAR_MT',  label: 'Switchgear metal-clad (media tensión)' },
+  { value: 'MCC_BUCKETS',    label: 'MCC por cubículos extraíbles' },
+]
+
 const EMPTY: Form = {
-  tag: '', nombre: '', ubicacion: '', tipo: '',
+  tag: '', nombre: '', ubicacion: '', tipo: '', categoria: '', sistema_montaje: '',
   tension_mono: '', tension_bi: '', tension_tri: '', frecuencia: '',
   corriente_nom: '', corriente_cc_max: '', corriente_cc_min: '',
   potencia_inst: '', potencia_dem: '',
@@ -29,6 +46,8 @@ function toForm(t: any): Form {
     nombre:           t.nombre           ?? '',
     ubicacion:        t.ubicacion        ?? '',
     tipo:             t.tipo             ?? '',
+    categoria:        t.categoria        ?? '',
+    sistema_montaje:  t.sistema_montaje  ?? '',
     tension_mono:     n(t.tension_mono),
     tension_bi:       n(t.tension_bi),
     tension_tri:      n(t.tension_tri),
@@ -53,6 +72,8 @@ function fromForm(form: Form) {
     nombre:           str(form.nombre),
     ubicacion:        str(form.ubicacion),
     tipo:             str(form.tipo),
+    categoria:        str(form.categoria),
+    sistema_montaje:  form.categoria === 'POTENCIA' ? str(form.sistema_montaje) : null,
     tension_mono:     num(form.tension_mono),
     tension_bi:       num(form.tension_bi),
     tension_tri:      num(form.tension_tri),
@@ -163,7 +184,11 @@ export default function TablaTableros() {
   }
 
   const handleChange = (field: keyof Form, value: string) => {
-    setForm(prev => ({ ...prev, [field]: value }))
+    setForm(prev => ({
+      ...prev, [field]: value,
+      // sistema_montaje solo tiene sentido con categoria POTENCIA — se limpia si se cambia a otra
+      ...(field === 'categoria' && value !== 'POTENCIA' ? { sistema_montaje: '' } : {}),
+    }))
     setDirty(true)
     setGuardado(false)
   }
@@ -290,6 +315,30 @@ export default function TablaTableros() {
               <Campo label="Nombre" name="nombre" value={form.nombre} onChange={v => handleChange('nombre', v)} placeholder="ej. Tablero general" />
               <Campo label="Ubicación" name="ubicacion" value={form.ubicacion} onChange={v => handleChange('ubicacion', v)} placeholder="ej. Sala eléctrica piso 2" />
               <Campo label="Tipo" name="tipo" value={form.tipo} onChange={v => handleChange('tipo', v)} placeholder="ej. Principal, Seccional" />
+              <div className={cx.field}>
+                <label className={cx.label}>Categoría</label>
+                <select
+                  className={cx.input}
+                  value={form.categoria}
+                  onChange={e => handleChange('categoria', e.target.value)}
+                >
+                  <option value="">—</option>
+                  {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              {form.categoria === 'POTENCIA' && (
+                <div className={cx.field}>
+                  <label className={cx.label}>Sistema de montaje</label>
+                  <select
+                    className={cx.input}
+                    value={form.sistema_montaje}
+                    onChange={e => handleChange('sistema_montaje', e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {SISTEMAS_MONTAJE.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 

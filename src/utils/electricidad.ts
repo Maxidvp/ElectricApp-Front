@@ -3,6 +3,7 @@
 export interface CableInfo {
   nombre: string
   diametro: number | null
+  Nfases?: number  // Nfases propio del CABLE (no de la formación) — >1 si el cable es multipolar
 }
 
 export interface FormacionInfo {
@@ -33,9 +34,11 @@ export interface CaidaInput {
  */
 // Convierte "1x6 AWG" → "#6 AWG", "3x95 mm²" → "#95 mm²"
 // El prefijo Nx del nombre indica el número de conductores del cable; lo quitamos
-// porque en la formación el conteo real lo calculamos nosotros.
-function cableBase(nombre: string): string {
-  return '#' + nombre.replace(/^\d+x/, '')
+// porque en la formación el conteo real lo calculamos nosotros — pero solo para
+// cables unipolares. En un cable multipolar (ej. "3x25+PE6") ese prefijo es parte
+// del nombre real del producto, no una cuenta redundante, así que se conserva.
+function cableBase(nombre: string, esMultipolar: boolean): string {
+  return '#' + (esMultipolar ? nombre : nombre.replace(/^\d+x/, ''))
 }
 
 export type FormatoFormacion = 'ingles' | 'extendida' | 'copaipa' | 'resumida'
@@ -47,22 +50,23 @@ function generarFormacionIngles(f: FormacionInfo): string {
   const partes: string[] = []
   const nFaseCond = f.Nfases * f.cond_por_fase
   const mismoNombre = f.cable_neutro?.nombre === f.cable.nombre
+  const faseEsMultipolar = (f.cable.Nfases ?? 1) > 1
 
   const pLabel = nFaseCond === 1 ? 'P' : `${nFaseCond}P`
 
   if (f.Nneutro > 0 && mismoNombre) {
     const nLabel = f.Nneutro === 1 ? 'N' : `${f.Nneutro}N`
-    partes.push(`${nFaseCond + f.Nneutro}C${cableBase(f.cable.nombre)} (${pLabel}-${nLabel})`)
+    partes.push(`${nFaseCond + f.Nneutro}C${cableBase(f.cable.nombre, faseEsMultipolar)} (${pLabel}-${nLabel})`)
   } else {
-    partes.push(`${nFaseCond}C${cableBase(f.cable.nombre)} (${pLabel})`)
+    partes.push(`${nFaseCond}C${cableBase(f.cable.nombre, faseEsMultipolar)} (${pLabel})`)
     if (f.cable_neutro && f.Nneutro > 0) {
       const nLabel = f.Nneutro === 1 ? 'N' : `${f.Nneutro}N`
-      partes.push(`${f.Nneutro}C${cableBase(f.cable_neutro.nombre)} (${nLabel})`)
+      partes.push(`${f.Nneutro}C${cableBase(f.cable_neutro.nombre, false)} (${nLabel})`)
     }
   }
 
   if (f.cable_tierra) {
-    partes.push(`1C${cableBase(f.cable_tierra.nombre)} (G)`)
+    partes.push(`1C${cableBase(f.cable_tierra.nombre, false)} (G)`)
   }
 
   return partes.join('+')
@@ -418,3 +422,27 @@ export function colorOcupacion(pct: number, tipo: 'canio' | 'bandeja'): string {
     : pct > 25 || pct < 10    ? 'var(--clr-warning-a10)'
     : 'var(--clr-success-a10)'
 }
+
+// ── Bancos de cañeros enterrados ────────────────────────────────────────────
+
+/**
+ * Tapada mínima [m] sugerida según nivel de tensión (AEA 90364 / IEC 60364-5-52),
+ * medida desde el nivel de suelo hasta la parte más alta del caño. Es un
+ * requisito de protección mecánica (evitar daño por excavación/tránsito), no
+ * un cálculo térmico — por eso es un valor de tabla, no una fórmula. Editable
+ * a mano si el proyecto exige otra cosa.
+ */
+export function tapadaSugerida(nivel: 'BT' | 'MT'): number {
+  return nivel === 'MT' ? 1.0 : 0.5
+}
+
+// Espaciamientos típicos entre ejes de caños enterrados [m] — IEC 60364-5-52
+// Anexo B (tabla B.52.17): a mayor separación, menor interacción térmica entre
+// caños y menor derating por agrupamiento de la corriente admisible.
+export const ESPACIAMIENTOS_TIPICOS_M = [0.125, 0.25, 0.5, 1.0]
+
+// Recubrimiento mínimo de hormigón alrededor de la grilla de caños [m], para
+// un caniero hormigonado (encofrado) en vez de enterrado directo en tierra —
+// valor típico de práctica de diseño de duct banks (IEEE/NEMA, ~75 mm / 3").
+// Editable: normas locales o el propio proyecto pueden pedir más.
+export const RECUBRIMIENTO_HORMIGON_M = 0.075

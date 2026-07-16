@@ -18,6 +18,7 @@ function formacionToData(f: Formacion): FormacionData {
     cable_fase_id:     String(f.cable_id),
     cond_por_fase:     String(f.cond_por_fase),
     Nfases:            String(f.Nfases),
+    familia_neutro_id: String(f.cable_neutro?.familia_id ?? ''),
     cable_neutro_id:   String(f.cable_neutro_id ?? ''),
     Nneutro:           String(f.Nneutro),
     familia_tierra_id: String(f.cable_tierra?.familia_id ?? ''),

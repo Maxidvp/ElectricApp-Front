@@ -55,6 +55,7 @@ export type FormacionData = {
   cable_fase_id: string
   cond_por_fase: string
   Nfases: string
+  familia_neutro_id: string
   cable_neutro_id: string
   Nneutro: string
   familia_tierra_id: string

@@ -239,7 +239,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
           setCircuitoEditando(info.row.original.id)
           setFormacionSeleccionada(fd ?? {
             familia_id: '', cable_fase_id: '', cond_por_fase: '1',
-            Nfases: '3', cable_neutro_id: '', Nneutro: '1',
+            Nfases: '3', familia_neutro_id: '', cable_neutro_id: '', Nneutro: '1',
             familia_tierra_id: '', cable_tierra_id: '', disposicion: '',
           })
           setModalAbierto(true)

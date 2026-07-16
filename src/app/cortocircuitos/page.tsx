@@ -4,7 +4,7 @@ import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables, type CableItem } from '@/context/CablesContext'
-import { calcSminCable, seccionEnMm2 } from '@/utils/electricidad'
+import { calcSminCable, seccionEnMm2, calcReactancia } from '@/utils/electricidad'
 import { calcularProyecto, type EntradaProyecto } from '@/utils/cortocircuito'
 
 // ── Tipos ─────────────────────────────────────────────────────────
@@ -185,7 +185,9 @@ export default function Cortocircuitos() {
       const effectiveCable = (overrideId ? cableCache[overrideId] : null) ?? c.formacion?.cable ?? null
       const familia        = (effectiveCable as any)?.familia ?? null
 
-      const nCondAuto     = effectiveCable?.Nfases ?? null
+      // n_conductores_por_fase = conductores en paralelo por fase (Formacion.cond_por_fase),
+      // no el Nfases propio del cable (que en un cable multipolar cuenta núcleos internos).
+      const nCondAuto     = c.formacion?.cond_por_fase ?? null
       const nCondOverride = nCondInputs[c.id] ? Number(nCondInputs[c.id]) : null
       const nCondEff      = (nCondOverride && nCondOverride > 0 ? nCondOverride : null) ?? nCondAuto ?? 1
 
@@ -193,6 +195,14 @@ export default function Cortocircuitos() {
       const mat = familia?.material    ?? null
       const ais = familia?.aislamiento ?? null
       const material: 'COBRE' | 'ALUMINIO' = (mat ?? '').toLowerCase().includes('alu') ? 'ALUMINIO' : 'COBRE'
+
+      // Reactancia propia de la formación (según disposición unipolar/multipolar y
+      // geometría real del cable) en vez del default genérico del motor de CC.
+      // calcReactancia devuelve Ω/km, el motor espera Ω/m.
+      const xUnitario = effectiveCable
+        ? calcReactancia(effectiveCable.diametro, effectiveCable.seccion_f, effectiveCable.calibre_tipo, c.formacion?.disposicion ?? null, effectiveCable.Nfases)
+        : null
+      const reactanciaUnitaria = xUnitario != null ? xUnitario / 1000 : undefined
 
       // Motor de cálculo IEC 60909-0 (Front/src/utils/cortocircuito): la barra del
       // tablero se modela como una red equivalente con la Icc ya conocida, y el
@@ -214,6 +224,7 @@ export default function Cortocircuitos() {
             conductores: [{
               id: String(c.id), longitud: c.Largo, seccion: S_real,
               n_conductores_por_fase: nCondEff, material,
+              reactancia_unitaria: reactanciaUnitaria,
               nodo_a: 'BARRA', nodo_b: 'FIN',
             }],
             puntos_falla: [
@@ -469,8 +480,10 @@ export default function Cortocircuitos() {
                 <b>De dónde sale:</b> <InlineMath math="Z_{barra}" /> se deriva de la Icc máxima que cargaste a mano en
                 el tablero (no se calcula, es un dato de entrada tuyo). <InlineMath math="Z_{cable}" /> sale de la
                 resistencia (sección, material y longitud del cable, a 20 °C — la temperatura más fría posible, que da
-                la Icc más alta y por eso es el peor caso) y de la reactancia (un valor típico de 0,08 Ω/km para cable
-                BT multipolar, si el cable no tiene ese dato cargado).
+                la Icc más alta y por eso es el peor caso) y de la reactancia, calculada según la geometría real de la
+                formación (disposición trébol/plana para unipolares, o geometría interna para multipolares — misma
+                fórmula que en la página de Caídas). Si el cable no tiene diámetro cargado, se usa un valor típico de
+                0,08 Ω/km para cable BT multipolar.
               </div>
 
               <div>

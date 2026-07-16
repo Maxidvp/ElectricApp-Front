@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const NAV_LINKS = [
+  { href: '/proyectos',   label: 'Proyecto'    },
   { href: '/tableros',    label: 'Tableros'    },
   { href: '/locales',     label: 'Locales'     },
   { href: '/cargas',      label: 'Cargas'      },
@@ -11,6 +12,7 @@ const NAV_LINKS = [
   { href: '/ampacidad',       label: 'Ampacidad'       },
   { href: '/ruteo',       label: 'Ruteo'       },
   { href: '/ocupaciones', label: 'Ocupaciones' },
+  { href: '/caneros',     label: 'Cañeros'     },
   { href: '/importador',  label: 'Importador'  },
   { href: '/nec_panel_tag', label: 'NEC Panel'  },
   { href: '/cables',      label: 'Cables'      },

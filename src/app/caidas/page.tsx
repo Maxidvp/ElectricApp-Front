@@ -182,8 +182,11 @@ export default function CaidaTension() {
       const overrideId = input.cable_id ? Number(input.cable_id) : null
       const effectiveCable = (overrideId ? cableCache[overrideId] : null) ?? c.formacion?.cable ?? null
 
-      const nfases    = c.formacion?.Nfases ?? 3
-      const cfAuto    = effectiveCable?.Nfases ?? null
+      // Para formaciones multipolares, Formacion.Nfases queda forzado a 1 (representa
+      // "un mazo"); el N° de fases real hay que tomarlo del propio cable seleccionado.
+      const cableEsMultipolar = (effectiveCable?.Nfases ?? 1) > 1
+      const nfases = cableEsMultipolar ? (effectiveCable?.Nfases ?? 3) : (c.formacion?.Nfases ?? 3)
+      const cfAuto = c.formacion?.cond_por_fase ?? null
       const fpAuto    = c.FP ?? null
       const largoAuto = c.Largo ?? null
       const tipo      = c.tipo_tension

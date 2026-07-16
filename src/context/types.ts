@@ -83,6 +83,8 @@ export type Tablero = {
   nombre: string | null
   ubicacion: string | null
   tipo: string | null
+  categoria: string | null   // 'POTENCIA' | 'CONTROL' | 'DATOS'
+  sistema_montaje: string | null   // solo aplica si categoria = POTENCIA
   tension_mono: number | null
   tension_bi: number | null
   tension_tri: number | null
