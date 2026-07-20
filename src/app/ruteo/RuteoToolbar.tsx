@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { TOOLS, COLORS } from './_constants'
-import type { ToolType } from './_constants'
+import type { ToolType, ActiveItem } from './_constants'
 import { RuteoIcon } from './icons/RuteoIcon'
 
 function ZInput({ valueCm, onChange, title, className }: {
@@ -39,8 +39,8 @@ interface Props {
   conjuntos: { id: number; nombre: string }[]
   activeConjuntoId: number | null
   drawStart: { x: number; y: number } | null
-  activeCircId: number | null
-  activeCirc: { circuito: string } | null
+  activeItem: ActiveItem
+  activeCirc: { nombre: string } | null
   selectedId: number | null
   verticalZMax: number
   verticalZMin: number
@@ -58,7 +58,7 @@ interface Props {
 
 export function RuteoToolbar({
   tool, drawZ, conjuntos, activeConjuntoId, drawStart,
-  activeCircId, activeCirc, selectedId,
+  activeItem, activeCirc, selectedId,
   verticalZMax, verticalZMin, continuarCanalizacion, verticalTipo,
   onChangeTool, onChangeDrawZ, onChangeConjunto, onOpenConjuntos,
   onChangeVerticalZMax, onChangeVerticalZMin, onToggleContinuar, onChangeVerticalTipo,
@@ -170,9 +170,9 @@ export function RuteoToolbar({
       ) : drawStart ? (
         <span className="ml-3 text-xs text-surface-tonal-a40">Click para colocar el punto final · Esc para cancelar</span>
       ) : tool === 'asignar' ? (
-        activeCircId
-          ? <span className="ml-3 text-xs text-surface-tonal-a40">Circuito activo: <strong>{activeCirc?.circuito}</strong> · Click en caños/bandejas · Esc para deseleccionar</span>
-          : <span className="ml-3 text-xs text-surface-tonal-a40">Seleccioná un circuito en el panel para activarlo</span>
+        activeItem
+          ? <span className="ml-3 text-xs text-surface-tonal-a40">Activo: <strong>{activeCirc?.nombre}</strong> · Click en caños/bandejas · Esc para deseleccionar</span>
+          : <span className="ml-3 text-xs text-surface-tonal-a40">Seleccioná un circuito, lazo o puerto en el panel para activarlo</span>
       ) : selectedId && tool === 'seleccionar' ? (
         <span className="ml-3 text-xs text-surface-tonal-a40">Arrastrá los extremos para estirar · Supr para eliminar</span>
       ) : null}

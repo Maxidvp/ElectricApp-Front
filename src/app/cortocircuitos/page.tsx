@@ -6,6 +6,7 @@ import { useProyectos } from '@/context/ProyectosContext'
 import { useCables, type CableItem } from '@/context/CablesContext'
 import { calcSminCable, seccionEnMm2, calcReactancia } from '@/utils/electricidad'
 import { calcularProyecto, type EntradaProyecto } from '@/utils/cortocircuito'
+import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
@@ -139,22 +140,23 @@ function CableSelect({ familiaId, value, defaultId, onChange }: {
 export default function Cortocircuitos() {
   const { tableros, getTablero, loading, error } = useProyectos()
 
-  const [tableroId, setTableroId] = useState<number | null>(() => {
-    try {
-      const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
-      return m ? Number(m[1]) : null
-    } catch { return null }
-  })
+  const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
   const [cableCache,    setCableCache]    = useState<Record<number, CableItem>>({})
   const [cableInputs,   setCableInputs]   = useState<Record<number, string>>({})
   const [nCondInputs,   setNCondInputs]   = useState<Record<number, string>>({})
 
-  const idEfectivo = tableroId ?? tableros[0]?.id ?? null
+  // Cálculo de cortocircuito: circuitos de potencia — no aplica a tableros
+  // CONTROL/DATOS. Los tableros sin categoria (legado) se consideran POTENCIA.
+  const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
+
+  const idEfectivo = tableroId != null && tablerosPotencia.some(t => t.id === tableroId)
+    ? tableroId
+    : tablerosPotencia[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
   const cambiarTablero = (id: number) => {
-    document.cookie = `last_tablero_id=${id};path=/;max-age=31536000`
+    setLastTableroId(id)
     setTableroId(id)
   }
 
@@ -370,7 +372,7 @@ export default function Cortocircuitos() {
   return (
     <div className="subcontainer">
       <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
-        {tableros.map(t => (
+        {tablerosPotencia.map(t => (
           <button
             key={t.id}
             onClick={() => cambiarTablero(t.id)}

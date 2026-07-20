@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import * as ruteoApi from '@/services/ruteo'
-import type { Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura, Canio, Bandeja } from '@/services/ruteo'
+import type { Segmento, SegmentoCircuito, SegmentoLazo, SegmentoPuertoRed, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura, Canio, Bandeja } from '@/services/ruteo'
 import type { ProyectoMeta, SegPatch } from './types'
 import { nextTempId } from './helpers'
 
@@ -54,6 +54,8 @@ export function useRuteoActions(
       canio:     data.canio_id   != null ? (canios.find(c => c.id === data.canio_id)     ?? null) : null,
       bandeja:   data.bandeja_id != null ? (bandejas.find(b => b.id === data.bandeja_id) ?? null) : null,
       circuitos: [],
+      lazos: [],
+      puertos_red: [],
       conjuntos: conjOptimistic,
     }
     setSegmentos(prev => [...prev, optimistic])
@@ -169,6 +171,52 @@ export function useRuteoActions(
     ))
     firePendingSeg(segId, realId =>
       ruteoApi.removeCircuitoFromSegmento(realId, circId)
+        .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
+        .catch(console.error)
+    )
+  }
+
+  function asignarLazo(segId: number, lazoId: number, lazo: SegmentoLazo) {
+    setSegmentos(prev => prev.map(s =>
+      s.id === segId && !s.lazos.find(l => l.id === lazoId)
+        ? { ...s, lazos: [...s.lazos, lazo] } : s
+    ))
+    firePendingSeg(segId, realId =>
+      ruteoApi.addLazoToSegmento(realId, lazoId)
+        .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
+        .catch(console.error)
+    )
+  }
+
+  function quitarLazo(segId: number, lazoId: number) {
+    setSegmentos(prev => prev.map(s =>
+      s.id === segId ? { ...s, lazos: s.lazos.filter(l => l.id !== lazoId) } : s
+    ))
+    firePendingSeg(segId, realId =>
+      ruteoApi.removeLazoFromSegmento(realId, lazoId)
+        .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
+        .catch(console.error)
+    )
+  }
+
+  function asignarPuertoRed(segId: number, puertoId: number, puerto: SegmentoPuertoRed) {
+    setSegmentos(prev => prev.map(s =>
+      s.id === segId && !s.puertos_red.find(p => p.id === puertoId)
+        ? { ...s, puertos_red: [...s.puertos_red, puerto] } : s
+    ))
+    firePendingSeg(segId, realId =>
+      ruteoApi.addPuertoRedToSegmento(realId, puertoId)
+        .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
+        .catch(console.error)
+    )
+  }
+
+  function quitarPuertoRed(segId: number, puertoId: number) {
+    setSegmentos(prev => prev.map(s =>
+      s.id === segId ? { ...s, puertos_red: s.puertos_red.filter(p => p.id !== puertoId) } : s
+    ))
+    firePendingSeg(segId, realId =>
+      ruteoApi.removePuertoRedFromSegmento(realId, puertoId)
         .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
         .catch(console.error)
     )
@@ -357,7 +405,8 @@ export function useRuteoActions(
 
   return {
     addSegmento, previewSegmento, editSegmento, removeSegmento, removeSegmentos, editSegmentosZ, splitSegmento,
-    asignarCircuito, quitarCircuito, appendSegmentos, hasPendingSegmento,
+    asignarCircuito, quitarCircuito, asignarLazo, quitarLazo, asignarPuertoRed, quitarPuertoRed,
+    appendSegmentos, hasPendingSegmento,
     addConjunto, renameConjunto, deleteConjunto,
     addSegmentoToConjunto, removeSegmentoFromConjunto,
     addTableroToConjunto, removeTableroFromConjunto,

@@ -111,20 +111,26 @@ export function mapearCircuitos(
                     : tipoEfectivo === 'tri'  ? tensiones.tri
                     : null
 
-    // ALIMENTADOR vinculado: la demanda no se carga a mano, se toma de la acometida
-    // del tablero destino (su demanda total es lo que este cable tiene que llevar).
+    // ALIMENTADOR vinculado: la demanda no se carga a mano, se toma del tablero destino.
+    // Si es POTENCIA, se suma su acometida (circuitos propios). Si es CONTROL/DATOS no
+    // tiene circuitos propios — es una carga simple, se toma directo su potencia_inst/FP.
     if (c.tipo === 'ALIMENTADOR' && c.tablero_destino_id != null) {
       const destino = tableros.find((t: any) => t.id === c.tablero_destino_id)
       if (destino) {
-        const agregado = calcAcometidaAgregada(destino.circuitos, {
+        const esCargaSimple = destino.categoria === 'CONTROL' || destino.categoria === 'DATOS'
+        const potencia = esCargaSimple ? (destino.potencia_inst ?? null) : null
+        const fp       = esCargaSimple ? (destino.factor_potencia ?? null) : null
+        const agregado = esCargaSimple ? null : calcAcometidaAgregada(destino.circuitos, {
           mono: destino.tension_mono, bi: destino.tension_bi, tri: destino.tension_tri,
         })
+        const potenciaFinal = esCargaSimple ? potencia : agregado!.potencia
+        const fpFinal       = esCargaSimple ? fp : agregado!.fp
         return {
           id: c.id, circuito: c.circuito, descripcion: c.descripcion, tipo: c.tipo,
-          FP: agregado.fp, Largo: c.Largo, tipo_tension: c.tipo_tension, fase: c.fase,
+          FP: fpFinal, Largo: c.Largo, tipo_tension: c.tipo_tension, fase: c.fase,
           es_acometida: false,
-          potencia: agregado.potencia,
-          corriente: calcCorriente(agregado.potencia, tipoEfectivo ?? agregado.tipoTablero, tension_v, agregado.fp),
+          potencia: potenciaFinal,
+          corriente: calcCorriente(potenciaFinal, tipoEfectivo ?? (agregado?.tipoTablero ?? null), tension_v, fpFinal),
           corrientesFase: null,
           formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
           formacionData: formacionData(c),

@@ -13,7 +13,7 @@ import SortableRow  from './SortableRow'
 import { useColumnas } from './useColumnas'
 import { mapearCircuitos } from './utils'
 import type { CircuitoRow, ColMeta, FormacionData, Tensiones } from './types'
-import { getLastTableroId } from '@/utils/cookies'
+import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 export default function TablaCargas() {
   const {
@@ -39,7 +39,14 @@ export default function TablaCargas() {
   const [newCircuitIds,         setNewCircuitIds]         = useState<Set<number>>(new Set())
   const prevDisplayIdsRef = useRef<Set<number>>(new Set())
 
-  const idEfectivo = tableroId ?? tableros[0]?.id ?? null
+  // Esta tabla es de circuitos de potencia — no aplica a tableros de categoría
+  // CONTROL/DATOS (esos usan /instrumentos y /rack). Los tableros sin categoria
+  // (legado, previo a la migración) se consideran POTENCIA por defecto.
+  const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
+
+  const idEfectivo = tableroId != null && tablerosPotencia.some(t => t.id === tableroId)
+    ? tableroId
+    : tablerosPotencia[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
   const tensionesDisponibles = useMemo(() => {
@@ -52,7 +59,7 @@ export default function TablaCargas() {
   }, [tablero])
 
   const cambiarTablero = (id: number) => {
-    document.cookie = `last_tablero_id=${id};path=/;max-age=31536000`
+    setLastTableroId(id)
     setTableroId(id)
     setRowSeleccionada(null)
   }
@@ -183,9 +190,9 @@ export default function TablaCargas() {
 
   return (
     <div className="bg-surface-a10 w-full">
-      {/* Selector de tablero */}
+      {/* Selector de tablero — solo los de categoría Potencia */}
       <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
-        {tableros.map(t => (
+        {tablerosPotencia.map(t => (
           <button
             key={t.id}
             onClick={() => cambiarTablero(t.id)}

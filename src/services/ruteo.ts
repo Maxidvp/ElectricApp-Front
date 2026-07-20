@@ -22,6 +22,18 @@ export type SegmentoCircuito = {
   tablero: { tag: string }
 }
 
+export type SegmentoLazo = {
+  id: number
+  tag_lazo: string
+  tablero: { tag: string }
+}
+
+export type SegmentoPuertoRed = {
+  id: number
+  puerto: string
+  tablero: { tag: string }
+}
+
 export type Conjunto = {
   id: number
   nombre: string
@@ -40,10 +52,12 @@ export type Segmento = {
   canio: Canio | null
   bandeja: Bandeja | null
   circuitos: SegmentoCircuito[]
+  lazos: SegmentoLazo[]
+  puertos_red: SegmentoPuertoRed[]
   conjuntos: Conjunto[]
 }
 
-export type CreateSegmentoInput = Omit<Segmento, 'id' | 'canio' | 'bandeja' | 'circuitos' | 'conjuntos' | 'color'> & {
+export type CreateSegmentoInput = Omit<Segmento, 'id' | 'canio' | 'bandeja' | 'circuitos' | 'lazos' | 'puertos_red' | 'conjuntos' | 'color'> & {
   color?: string | null
   conjunto_ids?: number[]
 }
@@ -146,7 +160,7 @@ export async function updateSegmentosZBulk(ids: number[], z: number): Promise<vo
   if (!res.ok) throw new Error('Error al actualizar Z')
 }
 
-export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>): Promise<Segmento> {
+export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'lazos' | 'puertos_red' | 'conjuntos'>>): Promise<Segmento> {
   const res = await fetch(`${API}/segmentos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -180,6 +194,30 @@ export async function addCircuitoToSegmento(segmentoId: number, circuitoId: numb
 export async function removeCircuitoFromSegmento(segmentoId: number, circuitoId: number): Promise<Segmento> {
   const res = await fetch(`${API}/segmentos/${segmentoId}/circuitos/${circuitoId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar circuito')
+  return res.json()
+}
+
+export async function addLazoToSegmento(segmentoId: number, lazoId: number): Promise<Segmento> {
+  const res = await fetch(`${API}/segmentos/${segmentoId}/lazos/${lazoId}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Error al agregar lazo')
+  return res.json()
+}
+
+export async function removeLazoFromSegmento(segmentoId: number, lazoId: number): Promise<Segmento> {
+  const res = await fetch(`${API}/segmentos/${segmentoId}/lazos/${lazoId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al quitar lazo')
+  return res.json()
+}
+
+export async function addPuertoRedToSegmento(segmentoId: number, puertoId: number): Promise<Segmento> {
+  const res = await fetch(`${API}/segmentos/${segmentoId}/puertos_red/${puertoId}`, { method: 'POST' })
+  if (!res.ok) throw new Error('Error al agregar puerto de red')
+  return res.json()
+}
+
+export async function removePuertoRedFromSegmento(segmentoId: number, puertoId: number): Promise<Segmento> {
+  const res = await fetch(`${API}/segmentos/${segmentoId}/puertos_red/${puertoId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Error al quitar puerto de red')
   return res.json()
 }
 

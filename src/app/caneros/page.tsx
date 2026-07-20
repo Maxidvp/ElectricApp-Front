@@ -121,11 +121,15 @@ function DiagramaCaniero({ caniero, getF }: { caniero: Caniero; getF: (id: numbe
         </text>
       </g>
 
-      {/* Cota de espaciamiento horizontal (primer par de la fila más ancha) */}
+      {/* Cota de espaciamiento horizontal (primer par de la fila más ancha) — se mide
+          entre los extremos más próximos de los dos caños (no entre centros),
+          igual que el propio espaciamiento configurado. */}
       {rows[0].items.length > 1 && (() => {
         const a = rows[0].items[0], b = rows[0].items[1]
+        const radiusA = a.camisaR ?? a.canoR
+        const radiusB = b.camisaR ?? b.canoR
         const offsetMM = (contentW - rows[0].widthMM) / 2
-        const x1 = px(offsetMM + a.localXMM), x2 = px(offsetMM + b.localXMM)
+        const x1 = px(offsetMM + a.localXMM + radiusA), x2 = px(offsetMM + b.localXMM - radiusB)
         const y = topFirstRowY - 12
         return (
           <g>
@@ -137,15 +141,21 @@ function DiagramaCaniero({ caniero, getF }: { caniero: Caniero; getF: (id: numbe
         )
       })()}
 
-      {/* Cota de espaciamiento vertical (fila 0→1, alineada a la izquierda del contenido) */}
-      {filas > 1 && (
+      {/* Cota de espaciamiento vertical (fila 0→1, alineada a la izquierda del contenido) —
+          igual que la horizontal, se mide entre los extremos más próximos de las dos
+          filas (no entre centros). */}
+      {filas > 1 && (() => {
+        const yTop = py(0) + rows[0].maxRadiusDown * scale
+        const yBottom = py(rowOffsetMM[1]) - rows[1].maxRadiusUp * scale
+        return (
         <g>
-          <line x1={marginL - 20} y1={py(0)} x2={marginL - 20} y2={py(rowOffsetMM[1])} stroke="var(--clr-surface-tonal-a40)" />
-          <text x={marginL - 26} y={(py(0) + py(rowOffsetMM[1])) / 2} textAnchor="end" dominantBaseline="middle" className={dimTextCx}>
+          <line x1={marginL - 20} y1={yTop} x2={marginL - 20} y2={yBottom} stroke="var(--clr-surface-tonal-a40)" />
+          <text x={marginL - 26} y={(yTop + yBottom) / 2} textAnchor="end" dominantBaseline="middle" className={dimTextCx}>
             {(espV / 1000).toFixed(3)} m
           </text>
         </g>
-      )}
+        )
+      })()}
 
       {/* Bloque de hormigón */}
       {caniero.hormigonado && (() => {

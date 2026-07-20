@@ -4,7 +4,7 @@ import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
 import { calcCorriente } from '@/utils/electricidad'
-import { getLastTableroId } from '@/utils/cookies'
+import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
@@ -157,14 +157,20 @@ export default function Ampacidad() {
     try { return JSON.parse(localStorage.getItem('ea_col_ampacidad') ?? '{}') } catch { return {} }
   })
 
-  const idEfectivo = tableroId ?? tableros[0]?.id ?? null
+  // Verificación de ampacidad: circuitos de potencia — no aplica a tableros
+  // CONTROL/DATOS. Los tableros sin categoria (legado) se consideran POTENCIA.
+  const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
+
+  const idEfectivo = tableroId != null && tablerosPotencia.some(t => t.id === tableroId)
+    ? tableroId
+    : tablerosPotencia[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
   const altitudNum = parseFloat(altitud) || 0
   const fh = calcFH(altitudNum)
 
   const cambiarTablero = (id: number) => {
-    document.cookie = `last_tablero_id=${id};path=/;max-age=31536000`
+    setLastTableroId(id)
     setTableroId(id)
   }
 
@@ -349,7 +355,7 @@ export default function Ampacidad() {
       {/* Selector de tablero + parámetro altitud */}
       <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-2 flex-wrap">
         <div className="flex gap-1.5 flex-wrap">
-          {tableros.map(t => (
+          {tablerosPotencia.map(t => (
             <button
               key={t.id}
               onClick={() => cambiarTablero(t.id)}

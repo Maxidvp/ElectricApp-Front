@@ -1,25 +1,54 @@
 'use client'
+import { useEffect, useReducer } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useProyectos } from '@/context/ProyectosContext'
+import { getLastTableroId, TABLERO_ID_EVENT } from '@/utils/cookies'
 
-const NAV_LINKS = [
-  { href: '/proyectos',   label: 'Proyecto'    },
-  { href: '/tableros',    label: 'Tableros'    },
-  { href: '/locales',     label: 'Locales'     },
-  { href: '/cargas',      label: 'Cargas'      },
-  { href: '/caidas',          label: 'Caídas'          },
-  { href: '/cortocircuitos',  label: 'Cortocircuitos'  },
-  { href: '/ampacidad',       label: 'Ampacidad'       },
-  { href: '/ruteo',       label: 'Ruteo'       },
-  { href: '/ocupaciones', label: 'Ocupaciones' },
-  { href: '/caneros',     label: 'Cañeros'     },
-  { href: '/importador',  label: 'Importador'  },
-  { href: '/nec_panel_tag', label: 'NEC Panel'  },
-  { href: '/cables',      label: 'Cables'      },
+// `categoria: null` = siempre visible, no depende del tablero seleccionado.
+type NavCategoria = 'POTENCIA' | 'CONTROL' | 'DATOS' | null
+
+const NAV_LINKS: { href: string; label: string; categoria: NavCategoria }[] = [
+  { href: '/proyectos',      label: 'Proyecto',       categoria: null },
+  { href: '/tableros',       label: 'Tableros',       categoria: null },
+  { href: '/locales',        label: 'Locales',        categoria: null },
+  { href: '/cargas',         label: 'Cargas',         categoria: 'POTENCIA' },
+  { href: '/instrumentos',   label: 'Instrumentos',   categoria: 'CONTROL' },
+  { href: '/rack',           label: 'Rack',           categoria: 'DATOS' },
+  { href: '/caidas',         label: 'Caídas',         categoria: 'POTENCIA' },
+  { href: '/cortocircuitos', label: 'Cortocircuitos', categoria: 'POTENCIA' },
+  { href: '/ampacidad',      label: 'Ampacidad',      categoria: 'POTENCIA' },
+  { href: '/ruteo',          label: 'Ruteo',          categoria: null },
+  { href: '/ocupaciones',    label: 'Ocupaciones',    categoria: null },
+  { href: '/caneros',        label: 'Cañeros',        categoria: null },
+  { href: '/importador',     label: 'Importador',     categoria: null },
+  { href: '/nec_panel_tag',  label: 'NEC Panel',      categoria: 'POTENCIA' },
+  { href: '/cables',         label: 'Cables',         categoria: null },
 ]
 
 export default function Navbar() {
   const pathname = usePathname()
+  const { tableros } = useProyectos()
+
+  // El cambio de tablero se persiste en una cookie leída por cada página (no en
+  // el contexto), así que este componente no se entera solo con el re-render
+  // normal de React — necesita escuchar el evento que dispara setLastTableroId
+  // para actualizarse aunque el usuario no haya navegado a otra ruta.
+  const [, forceUpdate] = useReducer(x => x + 1, 0)
+  useEffect(() => {
+    window.addEventListener(TABLERO_ID_EVENT, forceUpdate)
+    return () => window.removeEventListener(TABLERO_ID_EVENT, forceUpdate)
+  }, [])
+
+  const tableroIdSeleccionado = getLastTableroId()
+  const tableroSeleccionado = tableros.find(t => t.id === tableroIdSeleccionado) ?? tableros[0]
+  // Sin categoria asignada (tableros legado) o sin tablero aún: se asume POTENCIA.
+  const categoriaActiva: 'POTENCIA' | 'CONTROL' | 'DATOS' =
+    tableroSeleccionado?.categoria === 'CONTROL' || tableroSeleccionado?.categoria === 'DATOS'
+      ? tableroSeleccionado.categoria
+      : 'POTENCIA'
+
+  const linksVisibles = NAV_LINKS.filter(l => l.categoria === null || l.categoria === categoriaActiva)
 
   return (
     <nav className="h-12 bg-surface-tonal-a0 border-b border-surface-tonal-a20 flex items-center px-5 gap-6 sticky top-0 z-[100]">
@@ -30,7 +59,7 @@ export default function Navbar() {
       <div className="w-px h-[22px] bg-surface-tonal-a20 shrink-0" />
 
       <div className="flex gap-1 flex-1">
-        {NAV_LINKS.map(l => (
+        {linksVisibles.map(l => (
           <Link
             key={l.href}
             href={l.href}

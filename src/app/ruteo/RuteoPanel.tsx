@@ -1,18 +1,19 @@
 'use client'
 import { useMemo, useEffect, useState, useRef } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
-import { COLORS } from './_constants'
-import type { ToolType } from './_constants'
+import { COLORS, segContieneItem } from './_constants'
+import type { ToolType, ActiveItem } from './_constants'
 import { DeferredInput } from './DeferredInput'
 import { SubcircuitosModal } from './SubcircuitosModal'
 import { calcOcupacionCanio, calcOcupacionBandeja, colorOcupacion } from '@/utils/electricidad'
+import { getLastTableroId } from '@/utils/cookies'
 
 interface Props {
   tool: ToolType
   selectedIds: Set<number>
-  activeCircId: number | null
+  activeItem: ActiveItem
   asignarTableroId: number | null
-  setActiveCircId: (id: number | null) => void
+  setActiveItem: (item: ActiveItem) => void
   setAsignarTableroId: (id: number | null) => void
   medirCircId: number | null
   medirTableroId: number | null
@@ -36,14 +37,14 @@ const cx = {
 }
 
 export function RuteoPanel({
-  tool, selectedIds, activeCircId, asignarTableroId,
-  setActiveCircId, setAsignarTableroId,
+  tool, selectedIds, activeItem, asignarTableroId,
+  setActiveItem, setAsignarTableroId,
   medirCircId, medirTableroId, localExcluded, setMedirCircId, setMedirTableroId,
   handleDelete, onSetZ,
 }: Props) {
   const {
     tableros, segmentos, canios, bandejas, conjuntos, activeConjuntoId,
-    previewSegmento, editSegmento, quitarCircuito,
+    previewSegmento, editSegmento, quitarCircuito, quitarLazo, quitarPuertoRed,
     addSegmentoToConjunto, removeSegmentoFromConjunto,
     getCircuito, actualizarLargo, crearCircuitoAuxiliar,
   } = useProyectos()
@@ -57,7 +58,7 @@ export function RuteoPanel({
   useEffect(() => {
     const prev = prevToolRef.current
     prevToolRef.current = tool
-    if (tool === 'asignar' && prev !== 'asignar' && activeCircId !== null)
+    if (tool === 'asignar' && prev !== 'asignar' && activeItem !== null)
       activeCircRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [tool])
 
@@ -70,8 +71,11 @@ export function RuteoPanel({
 
   useEffect(() => {
     if (conjuntoTableros.length === 0) { setAsignarTableroId(null); return }
-    if (!conjuntoTableros.some(t => t.id === asignarTableroId))
-      setAsignarTableroId(conjuntoTableros[0].id)
+    if (!conjuntoTableros.some(t => t.id === asignarTableroId)) {
+      const lastId = getLastTableroId()
+      const preferido = lastId != null && conjuntoTableros.some(t => t.id === lastId) ? lastId : conjuntoTableros[0].id
+      setAsignarTableroId(preferido)
+    }
   }, [conjuntoTableros])
 
   useEffect(() => {
@@ -113,17 +117,47 @@ export function RuteoPanel({
   const selectedSeg      = segmentos.find(s => s.id === selectedId) ?? null
   const canalSegmentos   = segmentos.filter(s => s.tipo === 'canio' || s.tipo === 'bandeja')
   const getF             = (id: number) => getCircuito(id)?.formacion
+  // Los ids de puertos_red se taggean como negativos (-id-1) para no colisionar
+  // con ids de lazos: ambas tablas tienen secuencias de auto-incremento propias.
+  const lazoCableMap     = useMemo(() => new Map(tableros.flatMap(t => t.lazos).map(l => [l.id, { cable: l.cable, cantidad_cables: l.cantidad_cables }])), [tableros])
+  const puertoCableMap   = useMemo(() => new Map(tableros.flatMap(t => t.puertos_red).map(p => [p.id, { cable: p.cable, cantidad_cables: p.cantidad_cables }])), [tableros])
+  const getCableSimple   = (id: number) => id >= 0 ? lazoCableMap.get(id) : puertoCableMap.get(-id - 1)
+  const cablesSimples    = selectedSeg ? [
+    ...selectedSeg.lazos.map(l => ({ id: l.id })),
+    ...selectedSeg.puertos_red.map(p => ({ id: -p.id - 1 })),
+  ] : []
   const ocupacion        = selectedSeg?.tipo === 'canio' && selectedSeg.canio?.diametro_interno
-    ? calcOcupacionCanio(selectedSeg.canio.diametro_interno, selectedSeg.circuitos, getF)
+    ? calcOcupacionCanio(selectedSeg.canio.diametro_interno, selectedSeg.circuitos, getF, cablesSimples, getCableSimple)
     : selectedSeg?.tipo === 'bandeja' && selectedSeg.bandeja?.ancho
-    ? calcOcupacionBandeja(selectedSeg.bandeja.ancho, selectedSeg.circuitos, getF)
+    ? calcOcupacionBandeja(selectedSeg.bandeja.ancho, selectedSeg.circuitos, getF, cablesSimples, getCableSimple)
     : null
   const selectedSegIdx   = selectedSeg ? canalSegmentos.findIndex(s => s.id === selectedSeg.id) + 1 : 0
   const updateProp       = (field: string, value: unknown) => { if (selectedId) editSegmento(selectedId, { [field]: value } as never) }
-  const handleQuitar     = (circId: number) => { if (selectedId) quitarCircuito(selectedId, circId) }
+  const handleQuitarCircuito = (id: number) => { if (selectedId) quitarCircuito(selectedId, id) }
+  const handleQuitarLazo     = (id: number) => { if (selectedId) quitarLazo(selectedId, id) }
+  const handleQuitarPuerto   = (id: number) => { if (selectedId) quitarPuertoRed(selectedId, id) }
   const asignarTablero   = conjuntoTableros.find(t => t.id === asignarTableroId)
+  const asignarCategoria = asignarTablero?.categoria ?? 'POTENCIA'
   const asignarCircuitos = asignarTablero?.circuitos ?? []
-  const activeCirc       = tableros.flatMap(t => t.circuitos).find(c => c.id === activeCircId) ?? null
+  const asignarLazos     = asignarTablero?.lazos ?? []
+  const asignarPuertos   = asignarTablero?.puertos_red ?? []
+  // Ids con al menos un segmento asignado, para marcar en el panel de Asignar
+  // los circuitos/lazos/puertos que todavía no fueron ruteados.
+  const circuitosRuteadosIds = useMemo(() => new Set(segmentos.flatMap(s => s.circuitos.map(c => c.id))), [segmentos])
+  const lazosRuteadosIds     = useMemo(() => new Set(segmentos.flatMap(s => s.lazos.map(l => l.id))), [segmentos])
+  const puertosRuteadosIds   = useMemo(() => new Set(segmentos.flatMap(s => s.puertos_red.map(p => p.id))), [segmentos])
+  const SinRutear = () => (
+    <span
+      className="ml-1.5 w-1.5 h-1.5 rounded-full bg-warning-a10 shrink-0 inline-block align-middle"
+      title="No asignado a ningún segmento"
+    />
+  )
+  const activeNombre     = (() => {
+    if (!activeItem) return null
+    if (activeItem.tipo === 'circuito') return tableros.flatMap(t => t.circuitos).find(c => c.id === activeItem.id)?.circuito ?? null
+    if (activeItem.tipo === 'lazo')     return tableros.flatMap(t => t.lazos).find(l => l.id === activeItem.id)?.tag_lazo ?? null
+    return tableros.flatMap(t => t.puertos_red).find(p => p.id === activeItem.id)?.puerto ?? null
+  })()
 
   if (tool === 'medir') return (
     <div className={cx.panel}>
@@ -199,9 +233,13 @@ export function RuteoPanel({
     <div className={cx.panel}>
       <div className="flex flex-col flex-1 overflow-hidden">
         <div className="px-3.5 py-3 text-xs text-surface-tonal-a40 border-b border-surface-tonal-a10 leading-relaxed">
-          {activeCircId
-            ? <>Circuito activo: <strong>{activeCirc?.circuito}</strong><br /><span>Click en un caño o bandeja para asignar o quitar</span></>
-            : 'Seleccioná un circuito para activarlo'}
+          {activeItem
+            ? <>Activo: <strong>{activeNombre}</strong><br /><span>Click en un caño o bandeja para asignar o quitar</span></>
+            : 'Seleccioná un circuito, lazo o puerto para activarlo'}
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-warning-a10 shrink-0 inline-block" />
+            <span>Sin asignar a ningún segmento</span>
+          </div>
         </div>
         {conjuntoTableros.length > 0 && (
           <div className="flex flex-wrap gap-1 px-2.5 py-2 border-b border-surface-tonal-a10">
@@ -218,20 +256,56 @@ export function RuteoPanel({
           </div>
         )}
         <div className="flex-1 overflow-y-auto px-2.5 py-2 flex flex-col gap-0.75">
-          {asignarCircuitos.filter(c => c.parent_id === null).length === 0
+          {asignarCategoria === 'CONTROL' ? (
+            asignarLazos.length === 0
+              ? <span className="text-xs text-surface-tonal-a40 py-2 px-1">Sin lazos</span>
+              : asignarLazos.map(l => {
+                  const isActiveL = activeItem?.tipo === 'lazo' && activeItem.id === l.id
+                  return (
+                    <button key={l.id}
+                      ref={isActiveL ? activeCircRef : null}
+                      onClick={() => setActiveItem(isActiveL ? null : { id: l.id, tipo: 'lazo' })}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-[background,color,border-color] ${
+                        isActiveL
+                          ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
+                          : 'border-transparent bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0'
+                      }`}
+                    >{l.tag_lazo}{!lazosRuteadosIds.has(l.id) && <SinRutear />}</button>
+                  )
+                })
+          ) : asignarCategoria === 'DATOS' ? (
+            asignarPuertos.length === 0
+              ? <span className="text-xs text-surface-tonal-a40 py-2 px-1">Sin puertos</span>
+              : asignarPuertos.map(p => {
+                  const isActiveP = activeItem?.tipo === 'puerto_red' && activeItem.id === p.id
+                  return (
+                    <button key={p.id}
+                      ref={isActiveP ? activeCircRef : null}
+                      onClick={() => setActiveItem(isActiveP ? null : { id: p.id, tipo: 'puerto_red' })}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-[background,color,border-color] ${
+                        isActiveP
+                          ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
+                          : 'border-transparent bg-transparent text-font-a20 hover:bg-surface-tonal-a10 hover:text-font-a0'
+                      }`}
+                    >{p.puerto}{!puertosRuteadosIds.has(p.id) && <SinRutear />}</button>
+                  )
+                })
+          ) : (
+            asignarCircuitos.filter(c => c.parent_id === null).length === 0
             ? <span className="text-xs text-surface-tonal-a40 py-2 px-1">Sin circuitos</span>
             : asignarCircuitos.filter(c => c.parent_id === null).map(c => {
                 const hijos    = asignarCircuitos.filter(h => h.parent_id === c.id)
                 const esIlum   = TIPOS_ILUMINACION.includes(c.tipo ?? '')
-                const isActive = activeCircId === c.id || hijos.some(h => h.id === activeCircId)
+                const isActiveC = activeItem?.tipo === 'circuito' && activeItem.id === c.id
+                const isActive = isActiveC || (activeItem?.tipo === 'circuito' && hijos.some(h => h.id === activeItem.id))
                 return (
                   <div key={c.id} className="flex flex-col">
                     <div className="flex items-center gap-0.5">
                       <button
-                        ref={activeCircId === c.id ? activeCircRef : null}
-                        onClick={() => setActiveCircId(activeCircId === c.id ? null : c.id)}
+                        ref={isActiveC ? activeCircRef : null}
+                        onClick={() => setActiveItem(isActiveC ? null : { id: c.id, tipo: 'circuito' })}
                         className={`flex-1 min-w-0 text-left px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-[background,color,border-color] ${
-                          activeCircId === c.id
+                          isActiveC
                             ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
                             : isActive
                             ? 'border-surface-tonal-a20 bg-surface-tonal-a10 text-font-a10'
@@ -240,6 +314,7 @@ export function RuteoPanel({
                       >
                         {c.circuito}
                         {esIlum && <span className="ml-1.5 text-[10px] text-surface-tonal-a30">{c.tipo}</span>}
+                        {!circuitosRuteadosIds.has(c.id) && <SinRutear />}
                       </button>
                       {esIlum && (
                         <button
@@ -251,19 +326,23 @@ export function RuteoPanel({
                     </div>
                     {esIlum && (
                       <div className="ml-4 flex flex-col gap-0.5 mt-0.5">
-                        {hijos.map(h => (
-                          <button key={h.id}
-                            ref={activeCircId === h.id ? activeCircRef : null}
-                            onClick={() => setActiveCircId(activeCircId === h.id ? null : h.id)}
-                            className={`w-full text-left px-2 py-1 rounded border text-[11px] cursor-pointer transition-[background,color,border-color] ${
-                              activeCircId === h.id
-                                ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
-                                : 'border-transparent bg-transparent text-font-a30 hover:bg-surface-tonal-a10 hover:text-font-a0'
-                            }`}
-                          >
-                            {h.role === 'retorno' ? '↩' : '⟷'} {h.circuito}
-                          </button>
-                        ))}
+                        {hijos.map(h => {
+                          const isActiveH = activeItem?.tipo === 'circuito' && activeItem.id === h.id
+                          return (
+                            <button key={h.id}
+                              ref={isActiveH ? activeCircRef : null}
+                              onClick={() => setActiveItem(isActiveH ? null : { id: h.id, tipo: 'circuito' })}
+                              className={`w-full text-left px-2 py-1 rounded border text-[11px] cursor-pointer transition-[background,color,border-color] ${
+                                isActiveH
+                                  ? 'bg-[rgba(33,73,138,0.25)] border-info-a10 text-font-a0 font-medium'
+                                  : 'border-transparent bg-transparent text-font-a30 hover:bg-surface-tonal-a10 hover:text-font-a0'
+                              }`}
+                            >
+                              {h.role === 'retorno' ? '↩' : '⟷'} {h.circuito}
+                              {!circuitosRuteadosIds.has(h.id) && <SinRutear />}
+                            </button>
+                          )
+                        })}
                         {(['retorno', 'combinacion'] as const).map(role => {
                           const busy = creando?.parentId === c.id && creando?.role === role
                           return (
@@ -273,7 +352,7 @@ export function RuteoPanel({
                                 setCreando({ parentId: c.id, role })
                                 try {
                                   const nuevo = await crearCircuitoAuxiliar(c.id, role)
-                                  setActiveCircId(nuevo.id)
+                                  setActiveItem({ id: nuevo.id, tipo: 'circuito' })
                                 } finally {
                                   setCreando(null)
                                 }
@@ -288,7 +367,8 @@ export function RuteoPanel({
                     )}
                   </div>
                 )
-              })}
+              })
+          )}
         </div>
       </div>
     </div>
@@ -433,7 +513,41 @@ export function RuteoPanel({
               <div key={c.id} className="flex items-center justify-between px-2 py-1 bg-surface-tonal-a10 rounded-sm text-xs text-font-a10">
                 <div><span>{c.circuito}</span><span className="text-[11px] text-surface-tonal-a40"> · {c.tablero.tag}</span></div>
                 <button
-                  onClick={() => handleQuitar(c.id)}
+                  onClick={() => handleQuitarCircuito(c.id)}
+                  className="bg-transparent border-none text-surface-tonal-a40 cursor-pointer text-sm leading-none px-0.5 hover:text-danger-a10"
+                >×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(selectedSeg.tipo === 'canio' || selectedSeg.tipo === 'bandeja') && selectedSeg.lazos.length > 0 && (
+        <div className="px-3.5 py-3 border-b border-surface-tonal-a10 flex flex-col gap-1.5">
+          <label className={cx.sectionLabel}>Lazos asignados</label>
+          <div className="flex flex-col gap-1">
+            {selectedSeg.lazos.map(l => (
+              <div key={l.id} className="flex items-center justify-between px-2 py-1 bg-surface-tonal-a10 rounded-sm text-xs text-font-a10">
+                <div><span>{l.tag_lazo}</span><span className="text-[11px] text-surface-tonal-a40"> · {l.tablero.tag}</span></div>
+                <button
+                  onClick={() => handleQuitarLazo(l.id)}
+                  className="bg-transparent border-none text-surface-tonal-a40 cursor-pointer text-sm leading-none px-0.5 hover:text-danger-a10"
+                >×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(selectedSeg.tipo === 'canio' || selectedSeg.tipo === 'bandeja') && selectedSeg.puertos_red.length > 0 && (
+        <div className="px-3.5 py-3 border-b border-surface-tonal-a10 flex flex-col gap-1.5">
+          <label className={cx.sectionLabel}>Puertos de red asignados</label>
+          <div className="flex flex-col gap-1">
+            {selectedSeg.puertos_red.map(p => (
+              <div key={p.id} className="flex items-center justify-between px-2 py-1 bg-surface-tonal-a10 rounded-sm text-xs text-font-a10">
+                <div><span>{p.puerto}</span><span className="text-[11px] text-surface-tonal-a40"> · {p.tablero.tag}</span></div>
+                <button
+                  onClick={() => handleQuitarPuerto(p.id)}
                   className="bg-transparent border-none text-surface-tonal-a40 cursor-pointer text-sm leading-none px-0.5 hover:text-danger-a10"
                 >×</button>
               </div>

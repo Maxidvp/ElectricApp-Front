@@ -1,9 +1,9 @@
-import type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura } from '@/services/ruteo'
+import type { Canio, Bandeja, Segmento, SegmentoCircuito, SegmentoLazo, SegmentoPuertoRed, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura } from '@/services/ruteo'
 import type { FormacionPatch } from '@/services/circuitos'
 import type { Proyecto as ProyectoMeta } from '@/services/proyectos'
 
 export type { ProyectoMeta, Pared, Arquitectura }
-export type { Canio, Bandeja, Segmento, SegmentoCircuito, Conjunto, CreateSegmentoInput, CreateParedInput, FormacionPatch }
+export type { Canio, Bandeja, Segmento, SegmentoCircuito, SegmentoLazo, SegmentoPuertoRed, Conjunto, CreateSegmentoInput, CreateParedInput, FormacionPatch }
 
 // ── Model types ───────────────────────────────────────────────────
 
@@ -77,6 +77,45 @@ export type FuenteAlimentacion = {
   impedancia_homopolar_ratio: number | null
 }
 
+export type LazoInstrumentacion = {
+  id: number
+  orden: number
+  tag_lazo: string
+  tablero_id: number
+  descripcion: string | null
+  tipo_senal: string | null   // 'AI' | 'AO' | 'DI' | 'DO'
+  protocolo: string | null
+  variable_proceso: string | null
+  rango_min: number | null
+  rango_max: number | null
+  unidad: string | null
+  direccion_plc: string | null
+  fabricante: string | null
+  modelo: string | null
+  ubicacion_campo: string | null
+  cable_id: number | null
+  cable: Cable | null
+  cantidad_cables: number | null
+}
+
+export type PuertoRed = {
+  id: number
+  orden: number
+  puerto: string
+  tablero_id: number
+  descripcion: string | null
+  tipo: string | null   // 'PATCH_PANEL' | 'SWITCH' | 'SERVIDOR' | 'AP' | 'FIREWALL' | 'UPS_RED'
+  vlan: string | null
+  dispositivo_conectado: string | null
+  cable_tipo: string | null
+  velocidad: string | null
+  fabricante: string | null
+  modelo: string | null
+  cable_id: number | null
+  cable: Cable | null
+  cantidad_cables: number | null
+}
+
 export type Tablero = {
   id: number
   tag: string
@@ -92,8 +131,9 @@ export type Tablero = {
   corriente_nom: number | null
   corriente_cc_max: number | null
   corriente_cc_min: number | null
-  potencia_inst: number | null
-  potencia_dem: number | null
+  potencia_inst: number | null   // kW — en CONTROL/DATOS representa la carga total del tablero
+  potencia_dem: number | null    // kW — solo aplica a categoria POTENCIA
+  factor_potencia: number | null   // FP — solo aplica a categoria CONTROL/DATOS
   fabricante: string | null
   modelo: string | null
   norma: string | null
@@ -101,6 +141,8 @@ export type Tablero = {
   modulos: number | null
   circuitos: Circuito[]
   fuentes: FuenteAlimentacion[]
+  lazos: LazoInstrumentacion[]
+  puertos_red: PuertoRed[]
 }
 
 export type SegPatch = Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>
@@ -147,11 +189,23 @@ export type ProyectosContextType = {
   actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
   agregarTablero: (data: any) => Promise<Tablero>
   duplicarTablero: (id: number) => Promise<Tablero>
-  actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos' | 'fuentes'>>) => Promise<void>
+  actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos' | 'fuentes' | 'lazos' | 'puertos_red'>>) => Promise<void>
   eliminarTablero: (id: number) => Promise<void>
   agregarFuente: (tableroId: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) => Promise<void>
   actualizarFuente: (id: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) => Promise<void>
   eliminarFuente: (id: number) => Promise<void>
+  agregarLazo: (tableroId: number, data: Omit<LazoInstrumentacion, 'id' | 'tablero_id'>) => Promise<void>
+  actualizarLazo: (id: number, data: Omit<LazoInstrumentacion, 'id' | 'tablero_id'>) => Promise<void>
+  eliminarLazo: (id: number) => Promise<void>
+  agregarLazoVacio: (tableroId: number) => Promise<void>
+  duplicarLazo: (lazoId: number) => Promise<void>
+  reordenarLazos: (tableroId: number, orderedIds: number[]) => void
+  agregarPuertoRed: (tableroId: number, data: Omit<PuertoRed, 'id' | 'tablero_id'>) => Promise<void>
+  actualizarPuertoRed: (id: number, data: Omit<PuertoRed, 'id' | 'tablero_id'>) => Promise<void>
+  eliminarPuertoRed: (id: number) => Promise<void>
+  agregarPuertoRedVacio: (tableroId: number) => Promise<void>
+  duplicarPuertoRed: (puertoId: number) => Promise<void>
+  reordenarPuertosRed: (tableroId: number, orderedIds: number[]) => void
 
   // Ruteo: segmentos & conjuntos
   segmentos: Segmento[]
@@ -170,6 +224,10 @@ export type ProyectosContextType = {
   hasPendingSegmento: (id: number) => boolean
   asignarCircuito: (segId: number, circId: number, circ: SegmentoCircuito) => void
   quitarCircuito: (segId: number, circId: number) => void
+  asignarLazo: (segId: number, lazoId: number, lazo: SegmentoLazo) => void
+  quitarLazo: (segId: number, lazoId: number) => void
+  asignarPuertoRed: (segId: number, puertoId: number, puerto: SegmentoPuertoRed) => void
+  quitarPuertoRed: (segId: number, puertoId: number) => void
   addConjunto: (nombre: string) => Promise<Conjunto>
   renameConjunto: (id: number, nombre: string) => void
   deleteConjunto: (id: number) => void

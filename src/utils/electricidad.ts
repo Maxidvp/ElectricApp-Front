@@ -364,14 +364,26 @@ export function calcDrops(
 type SegCircuito = { id: number }
 type GetFormacion = (circId: number) => FormacionInfo | null | undefined
 
+// Lazos de instrumentación y puertos de red no tienen "formación": llevan un
+// único cable simple (cable + cantidad_cables), no fase/neutro/tierra.
+export interface CableSimpleInfo {
+  cable: CableInfo | null
+  cantidad_cables: number | null
+}
+type GetCableSimple = (id: number) => CableSimpleInfo | null | undefined
+
 // Suma el área circular de todos los conductores (fase + neutro + tierra) de
 // todos los circuitos asignados al caño, y la compara con el área interna del caño.
 // NEC 2020 art. 40 fija el límite recomendado en 40% para 3+ conductores, pero
 // en la práctica el proyecto usa 25% como umbral verde para facilitar tendido.
+// cablesSimples cubre lazos/puertos_red: un mismo caño puede llevar cables de
+// potencia, instrumentación y datos a la vez.
 export function calcOcupacionCanio(
   dInterno: number,
   circuitos: SegCircuito[],
   getFormacion: GetFormacion,
+  cablesSimples: SegCircuito[] = [],
+  getCableSimple: GetCableSimple = () => null,
 ): { areaOcupada: number; areaTotal: number; pct: number } {
   const areaTotal = Math.PI * (dInterno / 2) ** 2
   let areaOcupada = 0
@@ -385,6 +397,11 @@ export function calcOcupacionCanio(
     if (f.cable_tierra?.diametro)
       areaOcupada += Math.PI * (f.cable_tierra.diametro / 2) ** 2
   }
+  for (const sc of cablesSimples) {
+    const info = getCableSimple(sc.id)
+    if (!info?.cable?.diametro) continue
+    areaOcupada += (info.cantidad_cables ?? 1) * Math.PI * (info.cable.diametro / 2) ** 2
+  }
   return { areaOcupada, areaTotal, pct: (areaOcupada / areaTotal) * 100 }
 }
 
@@ -396,6 +413,8 @@ export function calcOcupacionBandeja(
   ancho: number,
   circuitos: SegCircuito[],
   getFormacion: GetFormacion,
+  cablesSimples: SegCircuito[] = [],
+  getCableSimple: GetCableSimple = () => null,
 ): { anchoOcupado: number; anchoTotal: number; pct: number } {
   let anchoOcupado = 0
   for (const sc of circuitos) {
@@ -407,6 +426,11 @@ export function calcOcupacionBandeja(
       anchoOcupado += f.Nneutro * f.cable_neutro.diametro
     if (f.cable_tierra?.diametro)
       anchoOcupado += f.cable_tierra.diametro
+  }
+  for (const sc of cablesSimples) {
+    const info = getCableSimple(sc.id)
+    if (!info?.cable?.diametro) continue
+    anchoOcupado += (info.cantidad_cables ?? 1) * info.cable.diametro
   }
   return { anchoOcupado, anchoTotal: ancho, pct: (anchoOcupado / ancho) * 100 }
 }
@@ -436,9 +460,10 @@ export function tapadaSugerida(nivel: 'BT' | 'MT'): number {
   return nivel === 'MT' ? 1.0 : 0.5
 }
 
-// Espaciamientos típicos entre ejes de caños enterrados [m] — IEC 60364-5-52
-// Anexo B (tabla B.52.17): a mayor separación, menor interacción térmica entre
-// caños y menor derating por agrupamiento de la corriente admisible.
+// Espaciamientos típicos entre extremos más próximos (espacio libre, no entre
+// ejes/centros) de caños enterrados [m] — IEC 60364-5-52 Anexo B (tabla
+// B.52.17): a mayor separación, menor interacción térmica entre caños y menor
+// derating por agrupamiento de la corriente admisible.
 export const ESPACIAMIENTOS_TIPICOS_M = [0.125, 0.25, 0.5, 1.0]
 
 // Recubrimiento mínimo de hormigón alrededor de la grilla de caños [m], para

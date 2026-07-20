@@ -3,13 +3,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { useProyectos } from '@/context/ProyectosContext'
 import type { Segmento, Pared } from '@/services/ruteo'
-import { GRID, SNAP_EP_DIST, COLORS } from './_constants'
-import type { ToolType } from './_constants'
+import { GRID, SNAP_EP_DIST, COLORS, segContieneItem } from './_constants'
+import type { ToolType, ActiveItem } from './_constants'
 import { RuteoToolbar } from './RuteoToolbar'
 import { RuteoCanvas } from './RuteoCanvas'
 import { RuteoPanel } from './RuteoPanel'
 import { ConjuntosModal } from './ConjuntosModal'
 import ConfirmModal from '@/components/ConfirmModal'
+import { getLastTableroId } from '@/utils/cookies'
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
 
@@ -19,8 +20,8 @@ export default function RuteoPage() {
   const [selectedIds,      setSelectedIds]      = useState<Set<number>>(new Set())
   const [selectedParedId,  setSelectedParedId]  = useState<number | null>(null)
   const [drawZ,            setDrawZ]            = useState(0)
-  const [activeCircId,     setActiveCircId]     = useState<number | null>(null)
-  const savedCircIdRef = useRef<number | null>(null)
+  const [activeItem,       setActiveItem]       = useState<ActiveItem>(null)
+  const savedItemRef = useRef<ActiveItem>(null)
   const [asignarTableroId, setAsignarTableroId] = useState<number | null>(null)
   const [medirCircId,    setMedirCircIdRaw]  = useState<number | null>(null)
   const [medirTableroId, setMedirTableroId]  = useState<number | null>(null)
@@ -40,7 +41,7 @@ export default function RuteoPage() {
     activeConjuntoId, setActiveConjuntoId,
     tablaParedes, activaArquitecturaId,
     addSegmento, removeSegmento, removeSegmentos, editSegmentosZ, splitSegmento,
-    asignarCircuito, quitarCircuito,
+    asignarCircuito, quitarCircuito, asignarLazo, quitarLazo, asignarPuertoRed, quitarPuertoRed,
     addPared, removePared,
   } = useProyectos()
 
@@ -120,7 +121,7 @@ export default function RuteoPage() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setDrawStart(null); setSelectedIds(new Set()); setActiveCircId(null) }
+      if (e.key === 'Escape') { setDrawStart(null); setSelectedIds(new Set()); setActiveItem(null) }
       if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedIds.size > 0 || selectedParedId) &&
           document.activeElement?.tagName !== 'INPUT') handleDelete()
     }
@@ -222,17 +223,30 @@ export default function RuteoPage() {
       return
     }
     if (tool === 'asignar') {
-      if (!activeCircId) return
+      if (!activeItem) return
       e.cancelBubble = true
       const seg = segmentos.find(s => s.id === id)
       if (!seg || (seg.tipo !== 'canio' && seg.tipo !== 'bandeja')) return
-      if (seg.circuitos.some(c => c.id === activeCircId)) {
-        quitarCircuito(id, activeCircId)
-      } else {
-        const t = tableros.find(t => t.circuitos.find(c => c.id === activeCircId))
-        const c = t?.circuitos.find(c => c.id === activeCircId)
+      const { id: itemId, tipo } = activeItem
+      if (segContieneItem(seg, activeItem)) {
+        if (tipo === 'circuito')  quitarCircuito(id, itemId)
+        else if (tipo === 'lazo') quitarLazo(id, itemId)
+        else                      quitarPuertoRed(id, itemId)
+      } else if (tipo === 'circuito') {
+        const t = tableros.find(t => t.circuitos.find(c => c.id === itemId))
+        const c = t?.circuitos.find(c => c.id === itemId)
         if (!c || !t) return
-        asignarCircuito(id, activeCircId, { id: c.id, circuito: c.circuito, tablero: { tag: t.tag } })
+        asignarCircuito(id, itemId, { id: c.id, circuito: c.circuito, tablero: { tag: t.tag } })
+      } else if (tipo === 'lazo') {
+        const t = tableros.find(t => t.lazos.find(l => l.id === itemId))
+        const l = t?.lazos.find(l => l.id === itemId)
+        if (!l || !t) return
+        asignarLazo(id, itemId, { id: l.id, tag_lazo: l.tag_lazo, tablero: { tag: t.tag } })
+      } else {
+        const t = tableros.find(t => t.puertos_red.find(p => p.id === itemId))
+        const p = t?.puertos_red.find(p => p.id === itemId)
+        if (!p || !t) return
+        asignarPuertoRed(id, itemId, { id: p.id, puerto: p.puerto, tablero: { tag: t.tag } })
       }
     }
     if (tool === 'vertical' && continuarCanalizacion) {
@@ -256,8 +270,9 @@ export default function RuteoPage() {
         conjunto_ids: [activeConjuntoId],
       })
     }
-  }, [tool, activeCircId, medirCircId, segmentos, tableros, conjuntos.length, continuarCanalizacion, verticalZMax,
-      activeConjuntoId, closestPointOnSegment, quitarCircuito, asignarCircuito, addSegmento])
+  }, [tool, activeItem, medirCircId, segmentos, tableros, conjuntos.length, continuarCanalizacion, verticalZMax,
+      activeConjuntoId, closestPointOnSegment, quitarCircuito, asignarCircuito, quitarLazo, asignarLazo,
+      quitarPuertoRed, asignarPuertoRed, addSegmento])
 
   const setMedirCircId = (id: number | null) => {
     setMedirCircIdRaw(id)
@@ -265,20 +280,44 @@ export default function RuteoPage() {
   }
 
   const changeTool = (t: ToolType) => {
-    if (t === 'dividir') savedCircIdRef.current = activeCircId
-    const restoredCircId = tool === 'dividir' && t === 'asignar' ? savedCircIdRef.current : null
-    setTool(t); setDrawStart(null); setSelectedIds(new Set()); setSelectedParedId(null); setActiveCircId(restoredCircId)
+    if (t === 'dividir') savedItemRef.current = activeItem
+    const restoredItem = tool === 'dividir' && t === 'asignar' ? savedItemRef.current : null
+    if (t === 'asignar') {
+      // Al activar la herramienta Asignar, preseleccionar el tablero activo (el
+      // último elegido en cualquier otra pantalla) si pertenece al conjunto actual;
+      // si no, el primero de la lista de tableros del conjunto.
+      const conjunto = conjuntos.find(c => c.id === activeConjuntoId)
+      const conjuntoTableros = conjunto ? tableros.filter(tb => conjunto.tableros.some(ct => ct.id === tb.id)) : tableros
+      if (conjuntoTableros.length > 0) {
+        const lastId = getLastTableroId()
+        const preferido = lastId != null && conjuntoTableros.some(tb => tb.id === lastId) ? lastId : conjuntoTableros[0].id
+        setAsignarTableroId(preferido)
+      }
+    }
+    setTool(t); setDrawStart(null); setSelectedIds(new Set()); setSelectedParedId(null); setActiveItem(restoredItem)
     if (t !== 'medir') { setMedirCircIdRaw(null); setLocalExcluded(new Set()) }
   }
 
-  const activeCirc = tableros.flatMap(t => t.circuitos).find(c => c.id === activeCircId) ?? null
+  const activeCirc = (() => {
+    if (!activeItem) return null
+    if (activeItem.tipo === 'circuito') {
+      const c = tableros.flatMap(t => t.circuitos).find(c => c.id === activeItem.id)
+      return c ? { nombre: c.circuito } : null
+    }
+    if (activeItem.tipo === 'lazo') {
+      const l = tableros.flatMap(t => t.lazos).find(l => l.id === activeItem.id)
+      return l ? { nombre: l.tag_lazo } : null
+    }
+    const p = tableros.flatMap(t => t.puertos_red).find(p => p.id === activeItem.id)
+    return p ? { nombre: p.puerto } : null
+  })()
 
   return (
     <div className="flex flex-col h-[calc(100dvh-48px)] bg-surface-a0 overflow-hidden">
       <RuteoToolbar
         tool={tool} drawZ={drawZ} conjuntos={conjuntos}
         activeConjuntoId={activeConjuntoId} drawStart={drawStart}
-        activeCircId={activeCircId} activeCirc={activeCirc} selectedId={selectedId}
+        activeItem={activeItem} activeCirc={activeCirc} selectedId={selectedId}
         verticalZMax={verticalZMax} verticalZMin={verticalZMin}
         continuarCanalizacion={continuarCanalizacion} verticalTipo={verticalTipo}
         onChangeTool={changeTool} onChangeDrawZ={setDrawZ}
@@ -292,7 +331,7 @@ export default function RuteoPage() {
       <div className="flex flex-1 overflow-hidden">
         <RuteoCanvas
           tool={tool} drawStart={drawStart} drawZ={drawZ}
-          selectedIds={selectedIds} selectedParedId={selectedParedId} activeCircId={activeCircId}
+          selectedIds={selectedIds} selectedParedId={selectedParedId} activeItem={activeItem}
           medirCircId={medirCircId} localExcluded={localExcluded}
           isSegVisible={isSegVisible} isParedVisible={isParedVisible}
           getSegColor={getSegColor} snapPoint={snapPoint}
@@ -302,8 +341,8 @@ export default function RuteoPage() {
         />
         <RuteoPanel
           tool={tool} selectedIds={selectedIds}
-          activeCircId={activeCircId} asignarTableroId={asignarTableroId}
-          setActiveCircId={setActiveCircId} setAsignarTableroId={setAsignarTableroId}
+          activeItem={activeItem} asignarTableroId={asignarTableroId}
+          setActiveItem={setActiveItem} setAsignarTableroId={setAsignarTableroId}
           medirCircId={medirCircId} medirTableroId={medirTableroId} localExcluded={localExcluded}
           setMedirCircId={setMedirCircId} setMedirTableroId={setMedirTableroId}
           handleDelete={handleDelete}

@@ -5,6 +5,7 @@ import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables, type CableItem } from '@/context/CablesContext'
 import { generarFormacion, calcDrops as calcDropsUtil, calcCorriente, calcReactancia, calcResistencia, type CaidaInput, type FormatoFormacion } from '@/utils/electricidad'
+import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -150,15 +151,17 @@ export default function CaidaTension() {
   const { tableros, getTablero, loading, error, proyectoActivo } = useProyectos()
   const formato: FormatoFormacion = (proyectoActivo?.formato_formacion as FormatoFormacion) ?? 'ingles'
 
-  const [tableroId, setTableroId] = useState<number | null>(() => {
-    if (typeof document === 'undefined') return null
-    const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
-    return m ? Number(m[1]) : null
-  })
+  const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
   const [inputs,     setInputs]     = useState<Record<number, CaidaInput>>({})
   const [cableCache, setCableCache] = useState<Record<number, CableItem>>({})
 
-  const idEfectivo = tableroId ?? tableros[0]?.id ?? null
+  // Cálculo de caída de tensión: circuitos de potencia — no aplica a tableros
+  // CONTROL/DATOS. Los tableros sin categoria (legado) se consideran POTENCIA.
+  const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
+
+  const idEfectivo = tableroId != null && tablerosPotencia.some(t => t.id === tableroId)
+    ? tableroId
+    : tablerosPotencia[0]?.id ?? null
   const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
 
   const setField = useCallback((id: number, field: keyof CaidaInput, val: string) => {
@@ -333,10 +336,10 @@ export default function CaidaTension() {
   return (
     <div className="subcontainer">
       <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
-        {tableros.map(t => (
+        {tablerosPotencia.map(t => (
           <button
             key={t.id}
-            onClick={() => { document.cookie = `last_tablero_id=${t.id};path=/;max-age=31536000`; setTableroId(t.id) }}
+            onClick={() => { setLastTableroId(t.id); setTableroId(t.id) }}
             className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
               idEfectivo === t.id
                 ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'

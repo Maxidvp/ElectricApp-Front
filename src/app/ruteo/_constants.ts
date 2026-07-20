@@ -1,5 +1,21 @@
+import type { Segmento } from '@/services/ruteo'
+
 export const GRID = 10
 export const SNAP_EP_DIST = GRID * 1.5
+
+// El item "activo" en la herramienta Asignar puede ser un Circuito (tableros
+// POTENCIA), un LazoInstrumentacion (CONTROL) o un PuertoRed (DATOS) — los tres
+// tienen su propia secuencia de IDs (podrían colisionar entre sí), por eso el
+// tipo va siempre junto con el id.
+export type ActiveTipo = 'circuito' | 'lazo' | 'puerto_red'
+export type ActiveItem = { id: number; tipo: ActiveTipo } | null
+
+export function segContieneItem(seg: Segmento, item: ActiveItem): boolean {
+  if (!item) return false
+  if (item.tipo === 'circuito')   return seg.circuitos.some(c => c.id === item.id)
+  if (item.tipo === 'lazo')       return seg.lazos.some(l => l.id === item.id)
+  return seg.puertos_red.some(p => p.id === item.id)
+}
 
 export const COLORS: Record<string, string> = {
   pared:   '#888780',

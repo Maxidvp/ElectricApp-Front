@@ -4,10 +4,13 @@ import * as ruteoApi    from '@/services/ruteo'
 import * as tablerosApi from '@/services/tableros'
 import * as proyectosApi from '@/services/proyectos'
 import * as fuentesApi  from '@/services/fuentesAlimentacion'
+import * as lazosApi    from '@/services/lazosInstrumentacion'
+import * as puertosRedApi from '@/services/puertosRed'
 import type { Canio, Bandeja, Segmento, Conjunto, Arquitectura, Pared } from '@/services/ruteo'
 import { prefetchCablesFamilias } from '@/context/CablesContext'
+import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
-import type { Tablero, Circuito, FuenteAlimentacion, ProyectosContextType, ProyectoMeta } from './types'
+import type { Tablero, Circuito, FuenteAlimentacion, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta } from './types'
 import { deriveSegmentos } from './helpers'
 import { useCircuitosActions } from './useCircuitosActions'
 import { useRuteoActions } from './useRuteoActions'
@@ -15,6 +18,7 @@ import { useRuteoActions } from './useRuteoActions'
 export type { ProyectoMeta }
 export type { Pared, Arquitectura }
 export type { FuenteAlimentacion }
+export type { LazoInstrumentacion, PuertoRed }
 
 // ── Context ───────────────────────────────────────────────────────
 const ProyectosContext = createContext<ProyectosContextType | null>(null)
@@ -109,10 +113,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         prefetchCablesFamilias(familiaIds)
 
         if (tablerosList.length > 0) {
-          const cookieMatch = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
-          const cookieId = cookieMatch ? Number(cookieMatch[1]) : null
+          const cookieId = getLastTableroId()
           if (!cookieId || !tablerosList.find((t: any) => t.id === cookieId))
-            document.cookie = `last_tablero_id=${tablerosList[0].id};path=/;max-age=31536000`
+            setLastTableroId(tablerosList[0].id)
         }
 
         const conjs: Conjunto[] = (data.conjuntos ?? []).map((c: any) => ({
@@ -190,13 +193,19 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   async function agregarTablero(data: any): Promise<Tablero> {
     const real = await tablerosApi.createTablero({ ...data, proyecto_id: proyectoActivo?.id ?? null }) as Tablero
-    setTableros(prev => [...prev, { ...real, circuitos: [], fuentes: [] }])
+    setTableros(prev => [...prev, { ...real, circuitos: [], fuentes: [], lazos: [], puertos_red: [] }])
     return real
   }
 
   async function duplicarTablero(id: number): Promise<Tablero> {
     const real = await tablerosApi.duplicarTablero(id) as Tablero
-    setTableros(prev => [...prev, { ...real, circuitos: real.circuitos ?? [], fuentes: real.fuentes ?? [] }])
+    setTableros(prev => [...prev, {
+      ...real,
+      circuitos: real.circuitos ?? [],
+      fuentes: real.fuentes ?? [],
+      lazos: real.lazos ?? [],
+      puertos_red: real.puertos_red ?? [],
+    }])
     return real
   }
 
@@ -229,6 +238,86 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     await fuentesApi.deleteFuenteAlimentacion(id).catch(console.error)
   }
 
+  // ── Lazos de instrumentación CRUD ──────────────────────────────
+  async function agregarLazo(tableroId: number, data: Omit<LazoInstrumentacion, 'id' | 'tablero_id'>) {
+    const real: LazoInstrumentacion = await lazosApi.createLazoInstrumentacion({ ...data, tablero_id: tableroId })
+    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, lazos: [...t.lazos, real] } : t))
+  }
+
+  async function actualizarLazo(id: number, data: Omit<LazoInstrumentacion, 'id' | 'tablero_id'>) {
+    setTableros(prev => prev.map(t => ({
+      ...t,
+      lazos: t.lazos.map(l => l.id === id ? { ...l, ...data } : l),
+    })))
+    await lazosApi.updateLazoInstrumentacion(id, data).catch(console.error)
+  }
+
+  async function eliminarLazo(id: number) {
+    setTableros(prev => prev.map(t => ({ ...t, lazos: t.lazos.filter(l => l.id !== id) })))
+    await lazosApi.deleteLazoInstrumentacion(id).catch(console.error)
+  }
+
+  async function agregarLazoVacio(tableroId: number) {
+    const real: LazoInstrumentacion = await lazosApi.crearLazoVacio(tableroId)
+    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, lazos: [...t.lazos, real] } : t))
+  }
+
+  async function duplicarLazo(lazoId: number) {
+    const tablero = tableros.find(t => t.lazos.some(l => l.id === lazoId))
+    if (!tablero) return
+    const real: LazoInstrumentacion = await lazosApi.duplicarLazoInstrumentacion(lazoId)
+    setTableros(prev => prev.map(t => t.id === tablero.id ? { ...t, lazos: [...t.lazos, real] } : t))
+  }
+
+  function reordenarLazos(tableroId: number, orderedIds: number[]) {
+    setTableros(prev => prev.map(t => {
+      if (t.id !== tableroId) return t
+      const byId = new Map(t.lazos.map(l => [l.id, l]))
+      return { ...t, lazos: orderedIds.map((id, i) => ({ ...byId.get(id)!, orden: i })) }
+    }))
+    lazosApi.reordenarLazos(orderedIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
+  }
+
+  // ── Puertos de red CRUD ─────────────────────────────────────────
+  async function agregarPuertoRed(tableroId: number, data: Omit<PuertoRed, 'id' | 'tablero_id'>) {
+    const real: PuertoRed = await puertosRedApi.createPuertoRed({ ...data, tablero_id: tableroId })
+    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, puertos_red: [...t.puertos_red, real] } : t))
+  }
+
+  async function actualizarPuertoRed(id: number, data: Omit<PuertoRed, 'id' | 'tablero_id'>) {
+    setTableros(prev => prev.map(t => ({
+      ...t,
+      puertos_red: t.puertos_red.map(p => p.id === id ? { ...p, ...data } : p),
+    })))
+    await puertosRedApi.updatePuertoRed(id, data).catch(console.error)
+  }
+
+  async function eliminarPuertoRed(id: number) {
+    setTableros(prev => prev.map(t => ({ ...t, puertos_red: t.puertos_red.filter(p => p.id !== id) })))
+    await puertosRedApi.deletePuertoRed(id).catch(console.error)
+  }
+
+  async function agregarPuertoRedVacio(tableroId: number) {
+    const real: PuertoRed = await puertosRedApi.crearPuertoRedVacio(tableroId)
+    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, puertos_red: [...t.puertos_red, real] } : t))
+  }
+
+  async function duplicarPuertoRed(puertoId: number) {
+    const tablero = tableros.find(t => t.puertos_red.some(p => p.id === puertoId))
+    if (!tablero) return
+    const real: PuertoRed = await puertosRedApi.duplicarPuertoRed(puertoId)
+    setTableros(prev => prev.map(t => t.id === tablero.id ? { ...t, puertos_red: [...t.puertos_red, real] } : t))
+  }
+
+  function reordenarPuertosRed(tableroId: number, orderedIds: number[]) {
+    setTableros(prev => prev.map(t => {
+      if (t.id !== tableroId) return t
+      const byId = new Map(t.puertos_red.map(p => [p.id, p]))
+      return { ...t, puertos_red: orderedIds.map((id, i) => ({ ...byId.get(id)!, orden: i })) }
+    }))
+    puertosRedApi.reordenarPuertosRed(orderedIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
+  }
+
   // ── Domain action hooks ───────────────────────────────────────
   const circuitos = useCircuitosActions(tableros, setTableros, pendingCircuitos, recargar)
 
@@ -250,6 +339,10 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       getTablero, getCircuito,
       agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
       agregarFuente, actualizarFuente, eliminarFuente,
+      agregarLazo, actualizarLazo, eliminarLazo,
+      agregarLazoVacio, duplicarLazo, reordenarLazos,
+      agregarPuertoRed, actualizarPuertoRed, eliminarPuertoRed,
+      agregarPuertoRedVacio, duplicarPuertoRed, reordenarPuertosRed,
       ...circuitos,
       segmentos, canios, bandejas, conjuntos,
       activeConjuntoId, setActiveConjuntoId,

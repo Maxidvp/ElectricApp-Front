@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import { calcCorriente } from '@/utils/electricidad'
 import FuentesSection from './FuentesSection'
+import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
@@ -10,7 +11,7 @@ type Form = {
   tag: string; nombre: string; ubicacion: string; tipo: string; categoria: string; sistema_montaje: string
   tension_mono: string; tension_bi: string; tension_tri: string; frecuencia: string
   corriente_nom: string; corriente_cc_max: string; corriente_cc_min: string
-  potencia_inst: string; potencia_dem: string
+  potencia_inst: string; potencia_dem: string; factor_potencia: string
   fabricante: string; modelo: string; norma: string; grado_proteccion: string
 }
 
@@ -35,7 +36,7 @@ const EMPTY: Form = {
   tag: '', nombre: '', ubicacion: '', tipo: '', categoria: '', sistema_montaje: '',
   tension_mono: '', tension_bi: '', tension_tri: '', frecuencia: '',
   corriente_nom: '', corriente_cc_max: '', corriente_cc_min: '',
-  potencia_inst: '', potencia_dem: '',
+  potencia_inst: '', potencia_dem: '', factor_potencia: '',
   fabricante: '', modelo: '', norma: '', grado_proteccion: '',
 }
 
@@ -57,6 +58,7 @@ function toForm(t: any): Form {
     corriente_cc_min: n(t.corriente_cc_min),
     potencia_inst:    n(t.potencia_inst),
     potencia_dem:     n(t.potencia_dem),
+    factor_potencia:  n(t.factor_potencia),
     fabricante:       t.fabricante       ?? '',
     modelo:           t.modelo           ?? '',
     norma:            t.norma            ?? '',
@@ -82,7 +84,8 @@ function fromForm(form: Form) {
     corriente_cc_max: num(form.corriente_cc_max),
     corriente_cc_min: num(form.corriente_cc_min),
     potencia_inst:    num(form.potencia_inst),
-    potencia_dem:     num(form.potencia_dem),
+    potencia_dem:     form.categoria === 'POTENCIA' ? num(form.potencia_dem) : null,
+    factor_potencia:  form.categoria === 'CONTROL' || form.categoria === 'DATOS' ? num(form.factor_potencia) : null,
     fabricante:       str(form.fabricante),
     modelo:           str(form.modelo),
     norma:            str(form.norma),
@@ -157,11 +160,7 @@ export default function TablaTableros() {
     agregarFuente, actualizarFuente, eliminarFuente,
   } = useProyectos()
 
-  const [tableroId, setTableroId] = useState<number | null>(() => {
-    if (typeof document === 'undefined') return null
-    const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
-    return m ? Number(m[1]) : null
-  })
+  const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
   const [form,        setForm]       = useState<Form>(EMPTY)
   const [dirty,       setDirty]      = useState(false)
   const [guardando,   setGuardando]  = useState(false)
@@ -178,7 +177,7 @@ export default function TablaTableros() {
   }, [tablero?.id, creandoNuevo])
 
   const cambiarTablero = (id: number) => {
-    document.cookie = `last_tablero_id=${id};path=/;max-age=31536000`
+    setLastTableroId(id)
     setTableroId(id)
     setCreandoNuevo(false)
   }
@@ -394,16 +393,30 @@ export default function TablaTableros() {
             </p>
           </div>
 
-          {/* Potencias */}
+          {/* Potencias — en CONTROL/DATOS este tablero es una carga (no tiene circuitos
+              propios), así que solo pide lo necesario para que el circuito ALIMENTADOR
+              que lo vincule con un tablero de potencia pueda tomar su demanda. */}
           <div className={cx.section}>
             <div className={cx.hdr}>
               <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#6aab6a' }} />
               <span>Potencias</span>
             </div>
-            <div className={`${cx.grid} grid-cols-2`}>
-              <CampoAuto label="Potencia instalada (kW)" name="potencia_inst" value={form.potencia_inst} onChange={v => handleChange('potencia_inst', v)} autoValue={autoValues?.potencia_inst ?? null} decimals={2} />
-              <CampoAuto label="Potencia demanda (kW)"   name="potencia_dem"  value={form.potencia_dem}  onChange={v => handleChange('potencia_dem', v)}  autoValue={autoValues?.potencia_dem  ?? null} decimals={2} />
-            </div>
+            {form.categoria === 'CONTROL' || form.categoria === 'DATOS' ? (
+              <>
+                <div className={`${cx.grid} grid-cols-2`}>
+                  <Campo label="Potencia (kW)" name="potencia_inst" type="number" value={form.potencia_inst} onChange={v => handleChange('potencia_inst', v)} placeholder="ej. 0.5" />
+                  <Campo label="Factor de potencia (FP)" name="factor_potencia" type="number" value={form.factor_potencia} onChange={v => handleChange('factor_potencia', v)} placeholder="ej. 0.9" />
+                </div>
+                <p className="px-3 pb-2.5 -mt-1.5 text-[11px] text-surface-tonal-a40 bg-surface-a10">
+                  Carga que toma el circuito ALIMENTADOR que vincule este tablero con su tablero de potencia de origen.
+                </p>
+              </>
+            ) : (
+              <div className={`${cx.grid} grid-cols-2`}>
+                <CampoAuto label="Potencia instalada (kW)" name="potencia_inst" value={form.potencia_inst} onChange={v => handleChange('potencia_inst', v)} autoValue={autoValues?.potencia_inst ?? null} decimals={2} />
+                <CampoAuto label="Potencia demanda (kW)"   name="potencia_dem"  value={form.potencia_dem}  onChange={v => handleChange('potencia_dem', v)}  autoValue={autoValues?.potencia_dem  ?? null} decimals={2} />
+              </div>
+            )}
           </div>
 
           {/* Fuente de alimentación */}

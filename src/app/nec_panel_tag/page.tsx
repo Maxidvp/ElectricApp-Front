@@ -4,6 +4,7 @@ import { useProyectos } from '@/context/ProyectosContext'
 import { renombrarCircuitosBulk, actualizarFasesBulk } from '@/services/circuitos'
 import { updateTablero } from '@/services/tableros'
 import type { Circuito } from '@/context/types'
+import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -122,11 +123,11 @@ export default function NecPanelTagPage() {
   const faseLabels: [string, string, string] = FASE_LABELS[proyectoActivo?.nomenclatura_fases ?? 'RST'] ?? FASE_LABELS.RST
 
   // Persist selected tablero via cookie (same pattern as other pages)
-  const [selectedId, setSelectedId] = useState<number | null>(() => {
-    if (typeof document === 'undefined') return null
-    const m = document.cookie.match(/(?:^|;\s*)last_tablero_id=(\d+)/)
-    return m ? Number(m[1]) : null
-  })
+  const [selectedId, setSelectedId] = useState<number | null>(getLastTableroId)
+
+  // Panel de breakers — circuitos de potencia — no aplica a tableros CONTROL/DATOS.
+  // Los tableros sin categoria (legado) se consideran POTENCIA.
+  const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
 
   const [totalSlots, setTotalSlots] = useState(42)
   const [layout,     setLayout]     = useState<PlacedCircuit[]>([])
@@ -136,8 +137,10 @@ export default function NecPanelTagPage() {
   const [savedOk,    setSavedOk]    = useState(false)
 
   // Resolve selected tablero from context
-  const idEfectivo = selectedId ?? tableros[0]?.id ?? null
-  const tablero    = tableros.find(t => t.id === idEfectivo) ?? null
+  const idEfectivo = selectedId != null && tablerosPotencia.some(t => t.id === selectedId)
+    ? selectedId
+    : tablerosPotencia[0]?.id ?? null
+  const tablero    = tablerosPotencia.find(t => t.id === idEfectivo) ?? null
 
   // Rebuild layout and sync totalSlots when tablero changes
   useEffect(() => {
@@ -234,12 +237,12 @@ export default function NecPanelTagPage() {
           onChange={e => {
             const id = Number(e.target.value)
             setSelectedId(id)
-            document.cookie = `last_tablero_id=${id};path=/;max-age=31536000`
+            setLastTableroId(id)
           }}
           className="px-2 py-1 bg-surface-tonal-a10 border border-surface-tonal-a20 rounded-md text-font-a0 text-[13px] cursor-pointer outline-none focus:border-primary-a20"
         >
-          {tableros.length === 0 && <option value="">Sin tableros en el proyecto</option>}
-          {tableros.map(t => (
+          {tablerosPotencia.length === 0 && <option value="">Sin tableros de potencia en el proyecto</option>}
+          {tablerosPotencia.map(t => (
             <option key={t.id} value={t.id}>{t.tag}{t.nombre ? ` — ${t.nombre}` : ''}</option>
           ))}
         </select>

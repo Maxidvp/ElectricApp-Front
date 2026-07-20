@@ -197,7 +197,7 @@ type NamedItem = { id: number; nombre: string }
 
 function DestSelector({
   label, all, selectedId, onSelect,
-  creating, setCreating, newName, setNewName, onCommit,
+  creating, setCreating, newName, setNewName, onCommit, busy,
 }: {
   label: string
   all: NamedItem[]
@@ -208,16 +208,22 @@ function DestSelector({
   newName: string
   setNewName: (v: string) => void
   onCommit: () => void
+  busy: boolean
 }) {
   const word = label.split(' ')[0].toLowerCase()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 200 }}>
       <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--clr-surface-tonal-a40)' }}>{label}</label>
-      {all.length === 0 || creating ? (
+      {/* `busy` se agrega a la condición porque la creación optimista del contexto
+          (addConjunto/addArquitectura) hace que `all.length` pase a >0 antes de que
+          la request real termine — sin esto, la vista saltaba al <select> y el
+          indicador "Creando…" nunca llegaba a mostrarse. */}
+      {all.length === 0 || creating || busy ? (
         <div style={{ display: 'flex', gap: 6 }}>
           <input
             autoFocus={all.length === 0}
-            style={{ ...fieldStyle, flex: 1 }}
+            disabled={busy}
+            style={{ ...fieldStyle, flex: 1, opacity: busy ? 0.6 : 1 }}
             placeholder={`Nombre de la ${word}…`}
             value={newName}
             onChange={e => setNewName(e.target.value)}
@@ -226,8 +232,17 @@ function DestSelector({
               if (e.key === 'Escape' && all.length > 0) setCreating(false)
             }}
           />
-          <button onClick={onCommit} style={{ ...fieldStyle, cursor: 'pointer', background: 'var(--clr-primary-a0)', border: 'none' }}>Crear</button>
-          {all.length > 0 && <button onClick={() => setCreating(false)} style={{ ...fieldStyle, cursor: 'pointer' }}>✕</button>}
+          <button
+            onClick={onCommit}
+            disabled={busy}
+            style={{
+              ...fieldStyle, border: 'none', background: 'var(--clr-primary-a0)',
+              cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {busy ? 'Creando…' : 'Crear'}
+          </button>
+          {all.length > 0 && <button onClick={() => setCreating(false)} disabled={busy} style={{ ...fieldStyle, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>✕</button>}
         </div>
       ) : (
         <select style={fieldStyle} value={selectedId ?? ''} onChange={e => {
@@ -259,8 +274,10 @@ export default function ImportadorPage() {
   const [localLayouts,  setLocalLayouts]  = useState<NamedItem[]>([])
   const [creandoConj,   setCreandoConj]   = useState(false)
   const [nuevoConj,     setNuevoConj]     = useState('')
+  const [creandoConjBusy, setCreandoConjBusy] = useState(false)
   const [creandoLayout, setCreandoLayout] = useState(false)
   const [nuevoLayout,   setNuevoLayout]   = useState('')
+  const [creandoLayoutBusy, setCreandoLayoutBusy] = useState(false)
   const [status,        setStatus]        = useState<'idle' | 'importing' | 'done'>('idle')
   const [imported,      setImported]      = useState(0)
 
@@ -322,22 +339,24 @@ export default function ImportadorPage() {
     (tipo === 'pared' ? layoutId !== null : conjuntoId !== null)
 
   const crearConjunto = async () => {
-    const nombre = nuevoConj.trim(); if (!nombre) return
+    const nombre = nuevoConj.trim(); if (!nombre || creandoConjBusy) return
+    setCreandoConjBusy(true)
     try {
       const c = await addConjunto(nombre)
       setConjuntoId(c.id); setCreandoConj(false); setNuevoConj('')
-    } catch (e) { console.error(e) }
+    } catch (e) { console.error(e) } finally { setCreandoConjBusy(false) }
   }
 
   const crearLayout = async () => {
-    if (!proyectoActivo) return
+    if (!proyectoActivo || creandoLayoutBusy) return
     const nombre = nuevoLayout.trim(); if (!nombre) return
+    setCreandoLayoutBusy(true)
     try {
       const tp = await addArquitectura(nombre)
       if (!tp) return
       setLocalLayouts(prev => [...prev, { id: tp.id, nombre: tp.nombre }])
       setLayoutId(tp.id); setCreandoLayout(false); setNuevoLayout('')
-    } catch (e) { console.error(e) }
+    } catch (e) { console.error(e) } finally { setCreandoLayoutBusy(false) }
   }
 
   const handleImportar = async () => {
@@ -548,6 +567,7 @@ export default function ImportadorPage() {
               all={allConjs} selectedId={conjuntoId} onSelect={setConjuntoId}
               creating={creandoConj} setCreating={setCreandoConj}
               newName={nuevoConj} setNewName={setNuevoConj} onCommit={crearConjunto}
+              busy={creandoConjBusy}
             />
           ) : (
             <DestSelector
@@ -555,6 +575,7 @@ export default function ImportadorPage() {
               all={allLayouts} selectedId={layoutId} onSelect={setLayoutId}
               creating={creandoLayout} setCreating={setCreandoLayout}
               newName={nuevoLayout} setNewName={setNuevoLayout} onCommit={crearLayout}
+              busy={creandoLayoutBusy}
             />
           )}
         </div>

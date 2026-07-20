@@ -5,8 +5,8 @@ import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { useProyectos } from '@/context/ProyectosContext'
 import type { Segmento, Pared } from '@/services/ruteo'
-import { COLORS, STROKE, snap, niceSpacing, formatM } from './_constants'
-import type { ToolType } from './_constants'
+import { COLORS, STROKE, snap, niceSpacing, formatM, segContieneItem } from './_constants'
+import type { ToolType, ActiveItem } from './_constants'
 
 // ── Split helper ──────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ interface Props {
   drawZ: number
   selectedIds: Set<number>
   selectedParedId: number | null
-  activeCircId: number | null
+  activeItem: ActiveItem
   medirCircId: number | null
   localExcluded: Set<number>
   isSegVisible: (seg: Segmento) => boolean
@@ -76,7 +76,7 @@ interface Props {
 }
 
 export function RuteoCanvas({
-  tool, drawStart, drawZ, selectedIds, selectedParedId, activeCircId,
+  tool, drawStart, drawZ, selectedIds, selectedParedId, activeItem,
   medirCircId, localExcluded,
   isSegVisible, isParedVisible, getSegColor, snapPoint,
   onStageClick, onSegmentClick, onBoxSelect, onSelectPared, onSplitSegment,
@@ -271,7 +271,7 @@ export function RuteoCanvas({
   const isPanMode     = tool === 'seleccionar' || tool === 'asignar' || tool === 'medir'
   const previewColor  = COLORS[tool] ?? '#aaa'
   const previewStroke = STROKE[tool] ?? 2
-  const dimming       = tool === 'asignar' && activeCircId !== null
+  const dimming       = tool === 'asignar' && activeItem !== null
   const snappedMouse  = drawStart ? snapPoint(mousePos.x, mousePos.y) : mousePos
   const isSnapActive  = drawStart && (snappedMouse.x !== mousePos.x || snappedMouse.y !== mousePos.y)
   const selectedId    = selectedIds.size === 1 ? [...selectedIds][0] : null
@@ -311,7 +311,7 @@ export function RuteoCanvas({
             const isSelected    = selectedIds.has(seg.id)
             const color         = isSelected ? '#ffffff' : getSegColor(seg)
             const sw            = (STROKE[seg.tipo] ?? 2) + (isSelected ? 2 : 0)
-            const hasActiveCirc  = dimming && seg.circuitos.some(c => c.id === activeCircId)
+            const hasActiveCirc  = dimming && segContieneItem(seg, activeItem)
             const canAssign      = seg.tipo === 'canio' || seg.tipo === 'bandeja'
             const measuring      = tool === 'medir' && medirCircId !== null
             const hasMedirCirc   = measuring && seg.circuitos.some(c => c.id === medirCircId)
@@ -379,7 +379,7 @@ export function RuteoCanvas({
             if (seg.tipo === 'punto' || (seg.x1 === seg.x2 && seg.y1 === seg.y2)) return []
             const baseSw        = STROKE[seg.tipo] ?? 2
             const color         = getSegColor(seg)
-            const hasActiveCirc = dimming && seg.circuitos.some(c => c.id === activeCircId)
+            const hasActiveCirc = dimming && segContieneItem(seg, activeItem)
             const canAssign     = seg.tipo === 'canio' || seg.tipo === 'bandeja'
             const measuring     = tool === 'medir' && medirCircId !== null
             const hasMedirCirc  = measuring && seg.circuitos.some(c => c.id === medirCircId)
