@@ -1,9 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
+import type { Tablero } from '@/context/types'
 import type { Canio, Bandeja, Segmento } from '@/services/ruteo'
-import CircuitosPanel from '@/components/CircuitosPanel'
-import { calcOcupacionCanio, calcOcupacionBandeja, colorOcupacion as ocupacionColor } from '@/utils/electricidad'
+import { calcOcupacionCanio, calcOcupacionBandeja, colorOcupacion as ocupacionColor, type CableSimpleInfo } from '@/utils/electricidad'
 
 // ── Tipos ──────────────────────────────────────────────────────
 
@@ -40,12 +40,23 @@ type AjusteItem = {
 // de ocupación, por eso los caños sin este dato quedan afuera del catálogo de ajuste.
 type CanioConDiametro = Canio & { diametro_interno: number }
 
+// Lazos y puertos de red no tienen "formación" — llevan un único cable simple.
+// Se identifican con el mismo esquema de id tagueado usado en RuteoPanel: los
+// puertos_red se marcan negativos (-id-1) para no colisionar con ids de lazos.
+function segCablesSimples(seg: Segmento) {
+  return [
+    ...seg.lazos.map(l => ({ id: l.id })),
+    ...seg.puertos_red.map(p => ({ id: -p.id - 1 })),
+  ]
+}
+
 function computeAjustes(
   rows:           Segmento[],
   canios:         Canio[],
   bandejas:       Bandeja[],
   canalSegmentos: Segmento[],
   getFormacion:   (circId: number) => any,
+  getCableSimple: (id: number) => CableSimpleInfo | null | undefined,
 ): AjusteItem[] {
   const sortedCanios: CanioConDiametro[] = canios
     .filter((c): c is CanioConDiametro => c.diametro_interno != null)
@@ -54,12 +65,13 @@ function computeAjustes(
   const result: AjusteItem[] = []
 
   for (const seg of rows) {
-    if (seg.circuitos.length === 0) continue
+    if (seg.circuitos.length === 0 && seg.lazos.length === 0 && seg.puertos_red.length === 0) continue
     const segIdx = canalSegmentos.findIndex(s => s.id === seg.id) + 1
+    const cablesSimples = segCablesSimples(seg)
 
     if (seg.tipo === 'canio' && seg.canio && seg.canio.diametro_interno != null) {
       const canioActual = seg.canio.nombre ?? 'Caño'
-      const { pct } = calcOcupacionCanio(seg.canio.diametro_interno, seg.circuitos, getFormacion)
+      const { pct } = calcOcupacionCanio(seg.canio.diametro_interno, seg.circuitos, getFormacion, cablesSimples, getCableSimple)
       if (pct >= 10 && pct <= 25) continue  // ya está en zona verde
       const idx = sortedCanios.findIndex(c => c.id === seg.canio_id)
       if (idx === -1) continue  // el caño actual no está en el catálogo
@@ -67,7 +79,7 @@ function computeAjustes(
       if (pct > 25) {
         // Muy chico: avanzar hasta el primer tamaño donde pct ≤ 25
         for (let j = idx + 1; j < sortedCanios.length; j++) {
-          const { pct: p } = calcOcupacionCanio(sortedCanios[j].diametro_interno, seg.circuitos, getFormacion)
+          const { pct: p } = calcOcupacionCanio(sortedCanios[j].diametro_interno, seg.circuitos, getFormacion, cablesSimples, getCableSimple)
           if (p <= 25) {
             result.push({ seg, segIdx, oldLabel: canioActual, newLabel: sortedCanios[j].nombre ?? 'Caño', newId: sortedCanios[j].id, direction: 'up' })
             break
@@ -79,7 +91,7 @@ function computeAjustes(
         // cuando un tamaño supera el 25% se corta porque los siguientes serán aún menores.
         let target: CanioConDiametro | null = null
         for (let j = idx - 1; j >= 0; j--) {
-          const { pct: p } = calcOcupacionCanio(sortedCanios[j].diametro_interno, seg.circuitos, getFormacion)
+          const { pct: p } = calcOcupacionCanio(sortedCanios[j].diametro_interno, seg.circuitos, getFormacion, cablesSimples, getCableSimple)
           if (p > 25) break        // se pasaría al lado muy chico, detener
           if (p >= 10) target = sortedCanios[j]  // verde, seguir intentando achicarlo más
         }
@@ -88,7 +100,7 @@ function computeAjustes(
     }
 
     if (seg.tipo === 'bandeja' && seg.bandeja) {
-      const { pct } = calcOcupacionBandeja(seg.bandeja.ancho, seg.circuitos, getFormacion)
+      const { pct } = calcOcupacionBandeja(seg.bandeja.ancho, seg.circuitos, getFormacion, cablesSimples, getCableSimple)
       if (pct >= 20 && pct <= 80) continue  // ya está en zona verde
       const idx = sortedBandejas.findIndex(b => b.id === seg.bandeja_id)
       if (idx === -1) continue
@@ -97,7 +109,7 @@ function computeAjustes(
       if (pct > 80) {
         // Muy chica: avanzar hasta el primer ancho donde pct ≤ 80
         for (let j = idx + 1; j < sortedBandejas.length; j++) {
-          const { pct: p } = calcOcupacionBandeja(sortedBandejas[j].ancho, seg.circuitos, getFormacion)
+          const { pct: p } = calcOcupacionBandeja(sortedBandejas[j].ancho, seg.circuitos, getFormacion, cablesSimples, getCableSimple)
           if (p <= 80) {
             result.push({ seg, segIdx, oldLabel, newLabel: `${sortedBandejas[j].nombre ?? 'Bandeja'} — ${sortedBandejas[j].ancho} mm`, newId: sortedBandejas[j].id, direction: 'up' })
             break
@@ -107,7 +119,7 @@ function computeAjustes(
         // Muy grande (pct < 20): mismo patrón que caños, busca el más angosto posible en verde
         let target: Bandeja | null = null
         for (let j = idx - 1; j >= 0; j--) {
-          const { pct: p } = calcOcupacionBandeja(sortedBandejas[j].ancho, seg.circuitos, getFormacion)
+          const { pct: p } = calcOcupacionBandeja(sortedBandejas[j].ancho, seg.circuitos, getFormacion, cablesSimples, getCableSimple)
           if (p > 80) break
           if (p >= 20) target = sortedBandejas[j]
         }
@@ -116,6 +128,91 @@ function computeAjustes(
     }
   }
   return result
+}
+
+// ── Panel de asignación (circuitos / lazos / puertos según categoría) ────────
+
+function AsignablesPanel({
+  tableros, asignadosCircuitos, asignadosLazos, asignadosPuertos, segmentoSeleccionado,
+  onAsignarCircuito, onAsignarLazo, onAsignarPuerto,
+}: {
+  tableros: Tablero[]
+  asignadosCircuitos: { id: number }[]
+  asignadosLazos: { id: number }[]
+  asignadosPuertos: { id: number }[]
+  segmentoSeleccionado: boolean
+  onAsignarCircuito: (id: number) => void
+  onAsignarLazo: (id: number) => void
+  onAsignarPuerto: (id: number) => void
+}) {
+  const [tableroId, setTableroId] = useState<number | null>(null)
+
+  // Si el tablero elegido ya no está en la lista (cambió el conjunto) o todavía
+  // no se eligió ninguno, cae al primero — sin necesitar un efecto para sincronizarlo.
+  const tablero = tableros.find(t => t.id === tableroId) ?? tableros[0] ?? null
+  const categoria = tablero?.categoria ?? 'POTENCIA'
+  const items = categoria === 'CONTROL' ? tablero?.lazos ?? []
+    : categoria === 'DATOS' ? tablero?.puertos_red ?? []
+    : tablero?.circuitos ?? []
+  const asignados = categoria === 'CONTROL' ? asignadosLazos
+    : categoria === 'DATOS' ? asignadosPuertos
+    : asignadosCircuitos
+  const onAsignar = categoria === 'CONTROL' ? onAsignarLazo
+    : categoria === 'DATOS' ? onAsignarPuerto
+    : onAsignarCircuito
+  const label = (item: any) => categoria === 'CONTROL' ? item.tag_lazo : categoria === 'DATOS' ? item.puerto : item.circuito
+  const vacioLabel = categoria === 'CONTROL' ? 'Este tablero no tiene lazos'
+    : categoria === 'DATOS' ? 'Este tablero no tiene puertos'
+    : 'Este tablero no tiene circuitos'
+
+  return (
+    <div>
+      <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
+        {tableros.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTableroId(t.id)}
+            className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
+              (tableroId ?? tableros[0]?.id) === t.id
+                ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
+                : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'
+            }`}
+          >
+            {t.tag}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-1.25 px-3 pb-2.5 min-h-11 items-center">
+        {items.length === 0
+          ? <span className="text-xs text-surface-tonal-a40">{vacioLabel}</span>
+          : items.map((item: any) => {
+              const asignado = asignados.some(a => a.id === item.id)
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onAsignar(item.id)}
+                  disabled={!segmentoSeleccionado || asignado}
+                  title={
+                    !segmentoSeleccionado ? 'Seleccioná un tramo primero'
+                    : asignado ? 'Ya asignado'
+                    : 'Asignar al tramo seleccionado'
+                  }
+                  className={`px-3 py-1 rounded-[14px] border text-xs cursor-pointer transition-[background,border-color,opacity] duration-120 ${
+                    asignado
+                      ? 'bg-success-a0 border-success-a10 text-success-a20 cursor-default'
+                      : !segmentoSeleccionado
+                      ? 'bg-transparent border-surface-tonal-a30 text-font-a10 opacity-35'
+                      : 'bg-transparent border-surface-tonal-a30 text-font-a10 hover:bg-info-a0 hover:border-info-a10'
+                  }`}
+                >
+                  {label(item)}
+                </button>
+              )
+            })
+        }
+      </div>
+    </div>
+  )
 }
 
 // ── Barra de ocupación ─────────────────────────────────────────
@@ -141,6 +238,7 @@ export default function OcupacionesPage() {
     conjuntos, activeConjuntoId, setActiveConjuntoId,
     editSegmento,
     asignarCircuito, quitarCircuito,
+    asignarLazo, quitarLazo, asignarPuertoRed, quitarPuertoRed,
   } = useProyectos()
 
   const [selectedId,       setSelectedId]       = useState<number | null>(null)
@@ -160,9 +258,14 @@ export default function OcupacionesPage() {
   )
 
   const getF = (id: number) => getCircuito(id)?.formacion
+  // Mismo esquema de id tagueado que RuteoPanel: puertos_red se guardan con id
+  // negativo (-id-1) para no colisionar con ids de lazos (secuencias independientes).
+  const lazoCableMap   = useMemo(() => new Map(tableros.flatMap(t => t.lazos).map(l => [l.id, { cable: l.cable, cantidad_cables: l.cantidad_cables }])), [tableros])
+  const puertoCableMap = useMemo(() => new Map(tableros.flatMap(t => t.puertos_red).map(p => [p.id, { cable: p.cable, cantidad_cables: p.cantidad_cables }])), [tableros])
+  const getCableSimple = (id: number) => id >= 0 ? lazoCableMap.get(id) : puertoCableMap.get(-id - 1)
 
   const handleAjusteClick = () => {
-    setAjustesPendientes(computeAjustes(rows, canios, bandejas, canalSegmentos, getF))
+    setAjustesPendientes(computeAjustes(rows, canios, bandejas, canalSegmentos, getF, getCableSimple))
   }
 
   const handleConfirmAjuste = (ajustes: AjusteItem[]) => {
@@ -183,9 +286,25 @@ export default function OcupacionesPage() {
     asignarCircuito(selectedId, circId, { id: c.id, circuito: c.circuito, tablero: { tag: t.tag } })
   }
 
-  const handleQuitar = (segId: number, circId: number) => {
-    quitarCircuito(segId, circId)
+  const handleAsignarLazo = (lazoId: number) => {
+    if (!selectedId) return
+    const t = tableros.find(t => t.lazos.find(l => l.id === lazoId))
+    const l = t?.lazos.find(l => l.id === lazoId)
+    if (!l || !t) return
+    asignarLazo(selectedId, lazoId, { id: l.id, tag_lazo: l.tag_lazo, tablero: { tag: t.tag } })
   }
+
+  const handleAsignarPuerto = (puertoId: number) => {
+    if (!selectedId) return
+    const t = tableros.find(t => t.puertos_red.find(p => p.id === puertoId))
+    const p = t?.puertos_red.find(p => p.id === puertoId)
+    if (!p || !t) return
+    asignarPuertoRed(selectedId, puertoId, { id: p.id, puerto: p.puerto, tablero: { tag: t.tag } })
+  }
+
+  const handleQuitar       = (segId: number, circId: number)   => quitarCircuito(segId, circId)
+  const handleQuitarLazo   = (segId: number, lazoId: number)   => quitarLazo(segId, lazoId)
+  const handleQuitarPuerto = (segId: number, puertoId: number) => quitarPuertoRed(segId, puertoId)
 
   const handleChangeTipo = (segId: number, nuevoTipo: string) => {
     editSegmento(segId, {
@@ -215,11 +334,15 @@ export default function OcupacionesPage() {
             {conjuntos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
         </div>
-        <CircuitosPanel
+        <AsignablesPanel
           tableros={conjuntoTableros}
-          asignados={selectedSeg?.circuitos ?? []}
+          asignadosCircuitos={selectedSeg?.circuitos ?? []}
+          asignadosLazos={selectedSeg?.lazos ?? []}
+          asignadosPuertos={selectedSeg?.puertos_red ?? []}
           segmentoSeleccionado={!!selectedId}
-          onAsignar={handleAsignar}
+          onAsignarCircuito={handleAsignar}
+          onAsignarLazo={handleAsignarLazo}
+          onAsignarPuerto={handleAsignarPuerto}
         />
       </div>
 
@@ -259,7 +382,7 @@ export default function OcupacionesPage() {
                 <th style={{ width: 48 }}>#</th>
                 <th>Tipo</th>
                 <th>Caño / Bandeja</th>
-                <th>Circuitos</th>
+                <th>Asignados</th>
                 <th>Ocupado / Total</th>
                 <th>Ocupación</th>
               </tr>
@@ -268,10 +391,11 @@ export default function OcupacionesPage() {
               {rows.map(seg => {
                 const segIdx = canalSegmentos.findIndex(s => s.id === seg.id) + 1
                 const isSelected = seg.id === selectedId
+                const cablesSimples = segCablesSimples(seg)
                 const calcC = seg.tipo === 'canio'   && seg.canio?.diametro_interno
-                  ? calcOcupacionCanio(seg.canio.diametro_interno, seg.circuitos, getF) : null
+                  ? calcOcupacionCanio(seg.canio.diametro_interno, seg.circuitos, getF, cablesSimples, getCableSimple) : null
                 const calcB = seg.tipo === 'bandeja' && seg.bandeja?.ancho
-                  ? calcOcupacionBandeja(seg.bandeja.ancho, seg.circuitos, getF) : null
+                  ? calcOcupacionBandeja(seg.bandeja.ancho, seg.circuitos, getF, cablesSimples, getCableSimple) : null
 
                 return (
                   <tr
@@ -316,20 +440,46 @@ export default function OcupacionesPage() {
                     </td>
                     <td>
                       <div className="flex flex-wrap gap-1">
-                        {seg.circuitos.length === 0
+                        {seg.circuitos.length === 0 && seg.lazos.length === 0 && seg.puertos_red.length === 0
                           ? <span className="text-surface-tonal-a40 text-xs">—</span>
-                          : seg.circuitos.map(sc => (
-                              <span key={sc.id} className="inline-flex items-center gap-0.75 px-1.75 py-0.5 rounded-sm bg-surface-tonal-a10 text-[11px] text-font-a10 border border-surface-tonal-a20">
-                                {sc.circuito}
-                                {isSelected && (
-                                  <button
-                                    className="bg-transparent border-none text-surface-tonal-a40 cursor-pointer text-[13px] leading-none px-px hover:text-danger-a10"
-                                    onClick={e => { e.stopPropagation(); handleQuitar(seg.id, sc.id) }}
-                                    title="Quitar"
-                                  >×</button>
-                                )}
-                              </span>
-                            ))
+                          : <>
+                              {seg.circuitos.map(sc => (
+                                <span key={`c${sc.id}`} className="inline-flex items-center gap-0.75 px-1.75 py-0.5 rounded-sm bg-surface-tonal-a10 text-[11px] text-font-a10 border border-surface-tonal-a20">
+                                  {sc.circuito}
+                                  {isSelected && (
+                                    <button
+                                      className="bg-transparent border-none text-surface-tonal-a40 cursor-pointer text-[13px] leading-none px-px hover:text-danger-a10"
+                                      onClick={e => { e.stopPropagation(); handleQuitar(seg.id, sc.id) }}
+                                      title="Quitar"
+                                    >×</button>
+                                  )}
+                                </span>
+                              ))}
+                              {seg.lazos.map(l => (
+                                <span key={`l${l.id}`} className="inline-flex items-center gap-0.75 px-1.75 py-0.5 rounded-sm bg-surface-tonal-a10 text-[11px] text-font-a10 border border-surface-tonal-a20">
+                                  {l.tag_lazo}
+                                  {isSelected && (
+                                    <button
+                                      className="bg-transparent border-none text-surface-tonal-a40 cursor-pointer text-[13px] leading-none px-px hover:text-danger-a10"
+                                      onClick={e => { e.stopPropagation(); handleQuitarLazo(seg.id, l.id) }}
+                                      title="Quitar"
+                                    >×</button>
+                                  )}
+                                </span>
+                              ))}
+                              {seg.puertos_red.map(p => (
+                                <span key={`p${p.id}`} className="inline-flex items-center gap-0.75 px-1.75 py-0.5 rounded-sm bg-surface-tonal-a10 text-[11px] text-font-a10 border border-surface-tonal-a20">
+                                  {p.puerto}
+                                  {isSelected && (
+                                    <button
+                                      className="bg-transparent border-none text-surface-tonal-a40 cursor-pointer text-[13px] leading-none px-px hover:text-danger-a10"
+                                      onClick={e => { e.stopPropagation(); handleQuitarPuerto(seg.id, p.id) }}
+                                      title="Quitar"
+                                    >×</button>
+                                  )}
+                                </span>
+                              ))}
+                            </>
                         }
                       </div>
                     </td>
