@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import * as circuitosApi from '@/services/circuitos'
 import type { FormacionPatch } from '@/services/circuitos'
 import type { Tablero, Circuito, Cable } from './types'
-import { nextTempId, mapCirc, addCirc, replaceCirc, mergeWithTemp } from './helpers'
+import { nextTempId, mapCirc, addCirc, replaceCirc, mergeWithTemp, DESCRIPCION_CREANDO } from './helpers'
 
 type SetTableros = Dispatch<SetStateAction<Tablero[]>>
 type PendingMap  = MutableRefObject<Map<number, Promise<Circuito>>>
@@ -44,7 +44,7 @@ export function useCircuitosActions(
       const i = insertIndex ?? s.length
       const tag = `${t.tag}-C${t.circuitos.length + 1}`
       s.splice(i, 0, {
-        id: tempId, orden: i, circuito: tag, descripcion: null, tipo: null,
+        id: tempId, orden: i, circuito: tag, descripcion: DESCRIPCION_CREANDO, tipo: null,
         tablero_id: tableroId, formacion_id: null, formacion: null,
         FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: false, potencia: null,
         role: null, parent_id: null, tablero_destino_id: null, tablero_destino: null,

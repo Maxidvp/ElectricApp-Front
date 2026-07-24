@@ -113,6 +113,7 @@
   --dt-padding: 12px;
   --dt-padding-s: 6px;
   --dt-padding-xs: 2px;
+  --dt-padding-cell-v: 4px; /* padding vertical de filas, separado del horizontal para filas compactas */
   --dt-border-radius: 3px;
   --dt-background-color-container: var(--clr-surface-tonal-a10);
   --dt-border-color: var(--clr-surface-tonal-a30);
@@ -272,7 +273,7 @@ body {
 .datatable-container .datatable,
 .datatable-container .datatable th,
 .datatable-container .datatable td {
-  padding: var(--dt-padding) var(--dt-padding);
+  padding: var(--dt-padding-cell-v) var(--dt-padding);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -280,11 +281,12 @@ body {
 
 .datatable-container .datatable th {
   font-weight: bolder;
-  text-align: left;
+  text-align: center;
   border-bottom: solid 1px var(--dt-border-color);
 }
 
 .datatable-container .datatable td {
+  text-align: center;
   border-bottom: solid 1px var(--dt-border-color);
 }
 

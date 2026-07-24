@@ -12,7 +12,7 @@ type Acciones = {
 
 const columnHelper = createColumnHelper<PuertoRed>()
 
-const selectCx = 'w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer'
+const selectCx = 'w-full h-6 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer text-center'
 
 function textoEditable(campo: keyof PuertoRed, actualizarCampo: Acciones['actualizarCampo']) {
   return (info: any) => (

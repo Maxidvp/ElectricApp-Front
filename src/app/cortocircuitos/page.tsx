@@ -1,11 +1,13 @@
 'use client'
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
-import { useCables, type CableItem } from '@/context/CablesContext'
-import { calcSminCable, seccionEnMm2, calcReactancia } from '@/utils/electricidad'
-import { calcularProyecto, type EntradaProyecto } from '@/utils/cortocircuito'
+import FormacionModal from '@/components/FormacionModal'
+import { formacionData } from '@/app/cargas/utils'
+import type { FormacionData } from '@/app/cargas/types'
+import { calcSminCable, seccionEnMm2, calcReactancia, generarFormacion } from '@/utils/electricidad'
+import { calcularProyecto, impedanciaRed, impedanciaConductor, type EntradaProyecto, type Conductor } from '@/utils/cortocircuito'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 // ── Tipos ─────────────────────────────────────────────────────────
@@ -13,11 +15,11 @@ import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 type CortocircRow = {
   id:           number
   circuito:     string
-  familiaId:    number | null
-  cableId:      number | null
-  nCondAuto:    number | null
-  nCondInput:   string
+  formacion:      string
+  formacionData:  FormacionData | null
   S_real_mm2:   number | null
+  R_cable_mOhm: number | null
+  X_cable_mOhm: number | null
   Z1_mOhm:      number | null
   kappa:        number | null
   Ik_kA:        number | null
@@ -26,7 +28,6 @@ type CortocircRow = {
   S_min_02:     number | null
   cable_ok_002: boolean | null
   cable_ok_02:  boolean | null
-  input:        { cable_id: string }
 }
 
 type ColMeta = { colType: 'label' | 'editable' | 'auto' | 'result' }
@@ -37,114 +38,39 @@ const columnHelper = createColumnHelper<CortocircRow>()
 
 function AutoCell({ value, decimals = 2 }: { value: number | null; decimals?: number }) {
   if (value === null) return (
-    <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'right' }}>—</span>
+    <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'center' }}>—</span>
   )
   return (
-    <span style={{ fontSize: 12, display: 'block', textAlign: 'right', color: 'var(--clr-font-a20)' }}>
+    <span style={{ fontSize: 12, display: 'block', textAlign: 'center', color: 'var(--clr-font-a20)' }}>
       {value.toFixed(decimals)}
     </span>
   )
 }
 
-function CheckCell({ ok }: { ok: boolean | null }) {
-  if (ok === null) return (
+function SminCell({ value, ok }: { value: number | null; ok: boolean | null }) {
+  if (value === null) return (
     <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'center' }}>—</span>
   )
   return (
-    <span style={{ fontSize: 13, fontWeight: 700, display: 'block', textAlign: 'center', color: ok ? '#6aab6a' : 'var(--clr-danger-a10)' }}>
-      {ok ? '✓' : '✗'}
+    <span style={{ fontSize: 12, display: 'block', textAlign: 'center', color: 'var(--clr-font-a20)' }}>
+      {value.toFixed(2)}{' '}
+      <span style={{ fontWeight: 700, color: ok ? '#6aab6a' : 'var(--clr-danger-a10)' }}>{ok ? '✓' : '✗'}</span>
     </span>
-  )
-}
-
-// ── Celda numérica editable ───────────────────────────────────────
-
-function NumCell({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint?: string }) {
-  const [editing, setEditing] = useState(false)
-  const [draft,   setDraft]   = useState(value)
-
-  const commit = () => { setEditing(false); onChange(draft) }
-
-  if (editing) return (
-    <input
-      type="text" inputMode="decimal" autoFocus value={draft}
-      onChange={e => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={e => {
-        if (e.key === 'Enter')  commit()
-        if (e.key === 'Escape') { setDraft(value); setEditing(false) }
-      }}
-      style={{
-        width: '100%', textAlign: 'right', padding: '0 4px', height: 26,
-        background: 'var(--clr-surface-tonal-a0)', color: 'var(--clr-font-a0)',
-        border: '1px solid var(--clr-info-a10)', borderRadius: 3, fontSize: 12, outline: 'none',
-      }}
-    />
-  )
-
-  const display = value || hint
-  return (
-    <span
-      onClick={() => { setDraft(value || hint || ''); setEditing(true) }}
-      style={{
-        display: 'block', width: '100%', textAlign: 'right',
-        cursor: 'text', minHeight: 20, fontSize: 12,
-        color: display ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
-      }}
-    >
-      {display || '—'}
-    </span>
-  )
-}
-
-// ── Selector de cable ─────────────────────────────────────────────
-
-function CableSelect({ familiaId, value, defaultId, onChange }: {
-  familiaId: number
-  value:     string
-  defaultId: string
-  onChange:  (cable: CableItem | null) => void
-}) {
-  const { getCablesDeFamilia } = useCables()
-  const [cables, setCables] = useState<CableItem[]>([])
-
-  useEffect(() => {
-    getCablesDeFamilia(familiaId).then(setCables)
-  }, [familiaId, getCablesDeFamilia])
-
-  const displayValue = value || defaultId
-  return (
-    <select
-      value={displayValue}
-      onClick={e => e.stopPropagation()}
-      onChange={e => {
-        const v = e.target.value
-        const cable = cables.find(c => String(c.id) === v) ?? null
-        onChange(v === defaultId ? null : cable)
-      }}
-      style={{
-        width: '100%', height: 26, padding: '0 4px', fontSize: 12,
-        background: 'var(--clr-surface-a10)', color: 'var(--clr-font-a0)',
-        border: '1px solid transparent', borderRadius: 3, outline: 'none', cursor: 'pointer',
-      }}
-    >
-      {cables.map(c => (
-        <option key={c.id} value={String(c.id)}>{c.nombre}</option>
-      ))}
-    </select>
   )
 }
 
 // ── Página ────────────────────────────────────────────────────────
 
 export default function Cortocircuitos() {
-  const { tableros, getTablero, loading, error } = useProyectos()
+  const { tableros, getTablero, loading, error, actualizarFormacion, proyectoActivo } = useProyectos()
 
   const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
-  const [cableCache,    setCableCache]    = useState<Record<number, CableItem>>({})
-  const [cableInputs,   setCableInputs]   = useState<Record<number, string>>({})
-  const [nCondInputs,   setNCondInputs]   = useState<Record<number, string>>({})
+  const [modalAbierto,          setModalAbierto]          = useState(false)
+  const [circuitoEditando,      setCircuitoEditando]      = useState<number | null>(null)
+  const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
+
+  const formato = (proyectoActivo?.formato_formacion as any) ?? 'ingles'
 
   // Cálculo de cortocircuito: circuitos de potencia — no aplica a tableros
   // CONTROL/DATOS. Los tableros sin categoria (legado) se consideran POTENCIA.
@@ -160,16 +86,6 @@ export default function Cortocircuitos() {
     setTableroId(id)
   }
 
-  const selectCable = useCallback((circId: number, cable: CableItem | null) => {
-    const cid = cable ? String(cable.id) : ''
-    if (cable) setCableCache(prev => ({ ...prev, [cable.id]: cable }))
-    setCableInputs(prev => ({ ...prev, [circId]: cid }))
-  }, [])
-
-  const setNCondInput = useCallback((circId: number, val: string) => {
-    setNCondInputs(prev => ({ ...prev, [circId]: val }))
-  }, [])
-
   const rows = useMemo((): CortocircRow[] => {
     if (!tablero) return []
     const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
@@ -181,17 +97,12 @@ export default function Cortocircuitos() {
     const nivelBarra = tablero.tension_tri ?? tablero.tension_bi ?? tablero.tension_mono ?? null
 
     return sorted.map(c => {
-      // El usuario puede seleccionar un cable diferente al de la formación para
-      // simular distintos escenarios sin modificar el circuito original.
-      const overrideId     = cableInputs[c.id] ? Number(cableInputs[c.id]) : null
-      const effectiveCable = (overrideId ? cableCache[overrideId] : null) ?? c.formacion?.cable ?? null
+      const effectiveCable = c.formacion?.cable ?? null
       const familia        = (effectiveCable as any)?.familia ?? null
 
       // n_conductores_por_fase = conductores en paralelo por fase (Formacion.cond_por_fase),
       // no el Nfases propio del cable (que en un cable multipolar cuenta núcleos internos).
-      const nCondAuto     = c.formacion?.cond_por_fase ?? null
-      const nCondOverride = nCondInputs[c.id] ? Number(nCondInputs[c.id]) : null
-      const nCondEff      = (nCondOverride && nCondOverride > 0 ? nCondOverride : null) ?? nCondAuto ?? 1
+      const nCondEff = c.formacion?.cond_por_fase ?? 1
 
       const S_real = effectiveCable ? seccionEnMm2(effectiveCable.seccion_f, effectiveCable.calibre_tipo) : null
       const mat = familia?.material    ?? null
@@ -214,36 +125,50 @@ export default function Cortocircuitos() {
       let Z1_mOhm: number | null = null, kappa: number | null = null
       let Ik_kA: number | null = null, ip_kA: number | null = null
       let Ith_002_A: number | null = null, Ith_02_A: number | null = null
+      let R_cable_mOhm: number | null = null, X_cable_mOhm: number | null = null
 
-      if (Icc_panel_A && nivelBarra && S_real && c.Largo) {
+      if (S_real && c.Largo) {
+        const conductor: Conductor = {
+          id: String(c.id), longitud: c.Largo, seccion: S_real,
+          n_conductores_por_fase: nCondEff, material,
+          reactancia_unitaria: reactanciaUnitaria,
+          nodo_a: 'BARRA', nodo_b: 'FIN',
+        }
+        // R/X propios del cable — mismo cálculo que usa el motor internamente para
+        // Z1 (§5.3), expuestos por separado para que se vea de dónde sale Z1.
         try {
-          const entrada: EntradaProyecto = {
-            proyecto: { nombre: 'cortocircuitos', frecuencia_hz: 50 },
-            red_alimentacion: { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: Icc_panel_A },
-            transformadores: [],
-            generadores: [],
-            motores: [],
-            conductores: [{
-              id: String(c.id), longitud: c.Largo, seccion: S_real,
-              n_conductores_por_fase: nCondEff, material,
-              reactancia_unitaria: reactanciaUnitaria,
-              nodo_a: 'BARRA', nodo_b: 'FIN',
-            }],
-            puntos_falla: [
-              { id: 'F002', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MAXIMO', duracion_falla: 0.02 },
-              { id: 'F02', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MAXIMO', duracion_falla: 0.2 },
-            ],
-          }
-          const [r002, r02] = calcularProyecto(entrada)
-          Z1_mOhm = Math.hypot(r002.Z1.re, r002.Z1.im) * 1000
-          kappa = r002.kappa
-          Ik_kA = r002.corrientes.Ik_inicial_A / 1000
-          ip_kA = r002.corrientes.ip_A / 1000
-          Ith_002_A = r002.corrientes.Ith_A
-          Ith_02_A = r02.corrientes.Ith_A
+          const zCable = impedanciaConductor(conductor, 'MAXIMO')
+          R_cable_mOhm = zCable.Z1.re * 1000
+          X_cable_mOhm = zCable.Z1.im * 1000
         } catch {
-          // Datos insuficientes o inconsistentes para este circuito puntual (ej. cable
-          // sin sección resuelta todavía) — se deja en blanco, no rompe el resto de la tabla.
+          // ídem: datos insuficientes para este circuito puntual, no rompe la tabla.
+        }
+
+        if (Icc_panel_A && nivelBarra) {
+          try {
+            const entrada: EntradaProyecto = {
+              proyecto: { nombre: 'cortocircuitos', frecuencia_hz: 50 },
+              red_alimentacion: { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: Icc_panel_A },
+              transformadores: [],
+              generadores: [],
+              motores: [],
+              conductores: [conductor],
+              puntos_falla: [
+                { id: 'F002', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MAXIMO', duracion_falla: 0.02 },
+                { id: 'F02', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MAXIMO', duracion_falla: 0.2 },
+              ],
+            }
+            const [r002, r02] = calcularProyecto(entrada)
+            Z1_mOhm = Math.hypot(r002.Z1.re, r002.Z1.im) * 1000
+            kappa = r002.kappa
+            Ik_kA = r002.corrientes.Ik_inicial_A / 1000
+            ip_kA = r002.corrientes.ip_A / 1000
+            Ith_002_A = r002.corrientes.Ith_A
+            Ith_02_A = r02.corrientes.Ith_A
+          } catch {
+            // Datos insuficientes o inconsistentes para este circuito puntual (ej. cable
+            // sin sección resuelta todavía) — se deja en blanco, no rompe el resto de la tabla.
+          }
         }
       }
 
@@ -255,18 +180,34 @@ export default function Cortocircuitos() {
 
       return {
         id: c.id, circuito: c.circuito,
-        familiaId: c.formacion?.cable?.familia_id ?? null,
-        cableId:   c.formacion?.cable?.id         ?? null,
-        nCondAuto,
-        nCondInput: nCondInputs[c.id] ?? '',
+        formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
+        formacionData: formacionData(c as any),
         S_real_mm2: S_real != null && !isNaN(S_real) ? S_real : null,
+        R_cable_mOhm, X_cable_mOhm,
         Z1_mOhm, kappa, Ik_kA, ip_kA,
         S_min_002, S_min_02,
         cable_ok_002, cable_ok_02,
-        input: { cable_id: cableInputs[c.id] ?? '' },
       }
     })
-  }, [tablero, cableInputs, cableCache, nCondInputs])
+  }, [tablero, formato])
+
+  // Datos del sistema aguas arriba del tablero — la Icc de entrada y su R/X
+  // equivalente (Z_barra en la fórmula Z1 = Z_barra + Z_cable), para que se vea
+  // de dónde sale la parte de Z1 que no depende del cable de cada circuito.
+  const redInfo = useMemo(() => {
+    if (!tablero || tablero.corriente_cc_max == null) return null
+    const nivelBarra = tablero.tension_tri ?? tablero.tension_bi ?? tablero.tension_mono ?? null
+    if (!nivelBarra) return null
+    try {
+      const r = impedanciaRed(
+        { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: tablero.corriente_cc_max * 1000 },
+        'MAXIMO', nivelBarra,
+      )
+      return { R_mOhm: r.Z1.re * 1000, X_mOhm: r.Z1.im * 1000 }
+    } catch {
+      return null
+    }
+  }, [tablero])
 
   const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
     try { return JSON.parse(localStorage.getItem('ea_col_cortocircuitos') ?? '{}') } catch { return {} }
@@ -278,36 +219,39 @@ export default function Cortocircuitos() {
       meta: { colType: 'label' } as ColMeta,
       cell: info => <span style={{ fontSize: 12, fontWeight: 500 }}>{info.getValue()}</span>,
     }),
-    columnHelper.display({
-      id: 'nCond', header: 'N° cond.', size: 80,
+    columnHelper.accessor('formacion', {
+      header: 'Formación', size: 180,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, nCondAuto, nCondInput } = info.row.original
-        return <NumCell value={nCondInput} onChange={v => setNCondInput(id, v)} hint={nCondAuto !== null ? String(nCondAuto) : undefined} />
-      },
-    }),
-    columnHelper.display({
-      id: 'cable', header: 'Cable', size: 160,
-      meta: { colType: 'editable' } as ColMeta,
-      cell: info => {
-        const { id, familiaId, cableId, input } = info.row.original
-        if (!familiaId || !cableId) return (
-          <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12 }}>— Cable —</span>
-        )
-        return (
-          <CableSelect
-            familiaId={familiaId}
-            value={input.cable_id}
-            defaultId={String(cableId)}
-            onChange={cable => selectCable(id, cable)}
-          />
-        )
+        const fd = info.row.original.formacionData
+        const openModal = (e: React.MouseEvent) => {
+          e.stopPropagation()
+          setCircuitoEditando(info.row.original.id)
+          setFormacionSeleccionada(fd ?? {
+            familia_id: '', cable_fase_id: '', cond_por_fase: '1',
+            Nfases: '3', familia_neutro_id: '', cable_neutro_id: '', Nneutro: '1',
+            familia_tierra_id: '', cable_tierra_id: '', disposicion: '',
+          })
+          setModalAbierto(true)
+        }
+        if (!fd) return <span onClick={openModal} style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, cursor: 'pointer' }}>Sin formación</span>
+        return <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }} onClick={openModal}>{info.getValue()}</span>
       },
     }),
     columnHelper.accessor('S_real_mm2', {
       header: 'S real (mm²)', size: 100,
       meta: { colType: 'auto' } as ColMeta,
       cell: info => <AutoCell value={info.getValue()} decimals={1} />,
+    }),
+    columnHelper.accessor('R_cable_mOhm', {
+      header: 'R cable (mΩ)', size: 100,
+      meta: { colType: 'auto' } as ColMeta,
+      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
+    }),
+    columnHelper.accessor('X_cable_mOhm', {
+      header: 'X cable (mΩ)', size: 100,
+      meta: { colType: 'auto' } as ColMeta,
+      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
     }),
     columnHelper.accessor('Z1_mOhm', {
       header: 'Z1 (mΩ)', size: 90,
@@ -330,26 +274,16 @@ export default function Cortocircuitos() {
       cell: info => <AutoCell value={info.getValue()} decimals={2} />,
     }),
     columnHelper.accessor('S_min_002', {
-      header: 'S mín 0.02 s (mm²)', size: 140,
+      header: 'S mín 0.02 s (mm²)', size: 130,
       meta: { colType: 'result' } as ColMeta,
-      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
-    }),
-    columnHelper.accessor('cable_ok_002', {
-      header: '✓ 0.02 s', size: 80,
-      meta: { colType: 'result' } as ColMeta,
-      cell: info => <CheckCell ok={info.getValue()} />,
+      cell: info => <SminCell value={info.getValue()} ok={info.row.original.cable_ok_002} />,
     }),
     columnHelper.accessor('S_min_02', {
-      header: 'S mín 0.2 s (mm²)', size: 140,
+      header: 'S mín 0.2 s (mm²)', size: 130,
       meta: { colType: 'result' } as ColMeta,
-      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
+      cell: info => <SminCell value={info.getValue()} ok={info.row.original.cable_ok_02} />,
     }),
-    columnHelper.accessor('cable_ok_02', {
-      header: '✓ 0.2 s', size: 80,
-      meta: { colType: 'result' } as ColMeta,
-      cell: info => <CheckCell ok={info.getValue()} />,
-    }),
-  ], [selectCable, setNCondInput])
+  ], [setCircuitoEditando, setFormacionSeleccionada, setModalAbierto])
 
   const table = useReactTable({
     data: rows,
@@ -399,6 +333,7 @@ export default function Cortocircuitos() {
                 <span className="text-[12px] text-surface-tonal-a40">
                   Icc max = {tablero.corriente_cc_max} kA
                   {tablero.corriente_cc_min != null && <> · Icc min = {tablero.corriente_cc_min} kA</>}
+                  {redInfo && <> · R red = {redInfo.R_mOhm.toFixed(2)} mΩ · X red = {redInfo.X_mOhm.toFixed(2)} mΩ</>}
                 </span>
               )}
             </div>
@@ -443,7 +378,7 @@ export default function Cortocircuitos() {
                     return (
                       <td key={cell.id} style={{
                         width: cell.column.getSize(),
-                        textAlign: colType === 'label' || colType === 'editable' ? 'left' : 'right',
+                        textAlign: 'center',
                         verticalAlign: 'middle',
                         background: colType === 'editable' ? 'color-mix(in srgb, #4A8FD4 4%, transparent)'
                                   : colType === 'result'   ? 'color-mix(in srgb, #6aab6a 6%, transparent)'
@@ -521,6 +456,18 @@ export default function Cortocircuitos() {
               </div>
 
               <div>
+                <span className="text-font-a20 font-medium">m y n</span> — los dos factores de corrección de{' '}
+                <InlineMath math="I_{th}" />. <InlineMath math="m" /> es el efecto de la componente continua (DC,
+                la parte unidireccional que decae con el tiempo): depende de κ, la frecuencia de red y la
+                duración de la falla, <InlineMath math="m = \dfrac{e^{4 f\, T_k \ln(\kappa - 1)} - 1}{2 f\, T_k \ln(\kappa - 1)}" />
+                {' '}(<InlineMath math="f" /> = frecuencia de red, <InlineMath math="T_k" /> = duración de la
+                falla). <InlineMath math="n" /> es el efecto de la componente alterna (AC, la parte
+                periódica) — solo decae cerca de un generador; lejos de generador vale 1. Esta implementación no
+                tiene tabuladas las curvas de la norma para el caso cercano a generador, así que siempre usa{' '}
+                <InlineMath math="n=1" /> (aproximación conservadora, no subestima Ith).
+              </div>
+
+              <div>
                 Se calcula dos veces (columnas 0,02 s y 0,2 s) porque la protección del circuito tiene dos zonas de
                 disparo con tiempos distintos: <b>0,02 s</b> es la zona magnética (disparo instantáneo ante fallas
                 severas) y <b>0,2 s</b> la zona térmica (disparo temporizado, fallas menos severas que igual hay que
@@ -535,6 +482,27 @@ export default function Cortocircuitos() {
             </p>
           </div>
         </div>
+      )}
+
+      {modalAbierto && formacionSeleccionada && (
+        <FormacionModal
+          formacionInicial={formacionSeleccionada}
+          tipoTension={undefined}
+          onGuardar={(data, cables) => {
+            if (!circuitoEditando) return
+            actualizarFormacion(circuitoEditando, {
+              cable_id:        Number(data.cable_fase_id),
+              cond_por_fase:   Number(data.cond_por_fase),
+              Nfases:          Number(data.Nfases),
+              Nneutro:         Number(data.Nneutro),
+              cable_neutro_id: data.cable_neutro_id ? Number(data.cable_neutro_id) : null,
+              cable_tierra_id: data.cable_tierra_id ? Number(data.cable_tierra_id) : null,
+              disposicion:     data.disposicion || null,
+            }, cables)
+            setModalAbierto(false)
+          }}
+          onCerrar={() => setModalAbierto(false)}
+        />
       )}
     </div>
   )

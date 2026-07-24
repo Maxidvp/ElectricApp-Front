@@ -79,7 +79,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       cell: info => {
         const { id, tipo, tablero_destino } = info.row.original
         return (
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-px">
             <select
               value={tipo ?? ''}
               onChange={e => {
@@ -91,7 +91,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
                   actualizarTipo(id, nuevo)
               }}
               onClick={e => e.stopPropagation()}
-              className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+              className="w-full h-6 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer text-center"
               style={{ background: 'var(--clr-surface-a10)' }}
             >
               <option value="">—</option>
@@ -100,7 +100,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
             {tipo === 'ALIMENTADOR' && tablero_destino && (
               <span
                 onClick={e => { e.stopPropagation(); irATablero(tablero_destino.id) }}
-                className="text-[10px] text-info-a10 underline decoration-dotted cursor-pointer truncate"
+                className="text-[10px] text-info-a10 underline decoration-dotted cursor-pointer truncate block text-center"
                 title={`Ir a ${tablero_destino.nombre || tablero_destino.tag}`}
               >
                 → {tablero_destino.nombre || tablero_destino.tag}
@@ -119,7 +119,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
         const { id, tipo_tension, es_acometida } = info.row.original
         if (es_acometida) {
           const v = tensionesDisponibles.find(t => t.tipo === tipo_tension)?.value
-          return <span className="text-xs text-font-a20 block text-right pr-1">{v ?? '—'}</span>
+          return <span className="text-xs text-font-a20">{v ?? '—'}</span>
         }
         if (tensionesDisponibles.length === 0) return <span className="text-surface-tonal-a40 text-xs">—</span>
         if (tensionesDisponibles.length === 1) return <span className="text-xs">{tensionesDisponibles[0].value}</span>
@@ -128,7 +128,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
             value={tipo_tension ?? ''}
             onChange={e => actualizarTipoTension(id, e.target.value || null)}
             onClick={e => e.stopPropagation()}
-            className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+            className="w-full h-6 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer text-center"
             style={{ background: 'var(--clr-surface-a10)' }}
           >
             <option value="">—</option>
@@ -144,9 +144,11 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
         const { id, tipo_tension, fase, es_acometida } = info.row.original
-        if (es_acometida)  return <span className="text-xs text-font-a20 block text-center">—</span>
-        if (!tipo_tension)   return <span className="text-surface-tonal-a40 text-xs">—</span>
+        // La acometida trifásica usa las tres fases igual que un circuito terminal
+        // trifásico — mostrar RST también acá, antes de caer al "—" genérico.
         if (tipo_tension === 'tri') return <span className="text-xs text-font-a20">{f1}{sep}{f2}{sep}{f3}</span>
+        if (es_acometida)  return <span className="text-xs text-font-a20">—</span>
+        if (!tipo_tension)   return <span className="text-surface-tonal-a40 text-xs">—</span>
         const opciones = tipo_tension === 'mono'
           ? [{ v: 'R', lbl: f1 }, { v: 'S', lbl: f2 }, { v: 'T', lbl: f3 }]
           : [{ v: 'RS', lbl: `${f1}${sep}${f2}` }, { v: 'ST', lbl: `${f2}${sep}${f3}` }, { v: 'TR', lbl: `${f3}${sep}${f1}` }]
@@ -155,7 +157,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
             value={fase ?? ''}
             onChange={e => actualizarFase(id, e.target.value || null)}
             onClick={e => e.stopPropagation()}
-            className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+            className="w-full h-6 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer text-center"
             style={{ background: 'var(--clr-surface-a10)' }}
           >
             <option value="">—</option>
@@ -173,7 +175,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
         const vinculado = tipo === 'ALIMENTADOR' && tablero_destino_id != null
         if (es_acometida || vinculado) {
           const v = info.getValue()
-          return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
+          return <span className="text-xs text-font-a20">{v != null ? v.toFixed(2) : '—'}</span>
         }
         return (
           <CeldaEditable
@@ -198,7 +200,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
         const vinculado = tipo === 'ALIMENTADOR' && tablero_destino_id != null
         if (es_acometida || vinculado) {
           const v = info.getValue()
-          return <span className="text-xs text-font-a20 block text-right pr-1">{v != null ? v.toFixed(2) : '—'}</span>
+          return <span className="text-xs text-font-a20">{v != null ? v.toFixed(2) : '—'}</span>
         }
         return (
           <CeldaEditable
@@ -228,6 +230,17 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
         return <span className="text-xs">{v.toFixed(2)}</span>
       },
     }),
+    columnHelper.accessor('Largo', {
+      header: 'Largo (m)',
+      size: 90,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: info => (
+        <CeldaEditable
+          valor={info.getValue() !== null ? String(info.getValue()) : ''}
+          onGuardar={v => actualizarLargo(info.row.original.id, v.trim() ? Number(v) : null)}
+        />
+      ),
+    }),
     columnHelper.accessor('formacion', {
       header: 'Formación',
       size: 180,
@@ -247,17 +260,6 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
         if (!fd) return <span onClick={openModal} className="text-surface-tonal-a40 text-xs cursor-pointer">Sin formación</span>
         return <span className="cursor-pointer underline decoration-dotted" onClick={openModal}>{info.getValue()}</span>
       },
-    }),
-    columnHelper.accessor('Largo', {
-      header: 'Largo (m)',
-      size: 90,
-      meta: { colType: 'editable' } as ColMeta,
-      cell: info => (
-        <CeldaEditable
-          valor={info.getValue() !== null ? String(info.getValue()) : ''}
-          onGuardar={v => actualizarLargo(info.row.original.id, v.trim() ? Number(v) : null)}
-        />
-      ),
     }),
   ], [tensionesDisponibles, nomenclatura, renombrarCircuito, actualizarDescripcion, actualizarTipo,
       actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFP, actualizarLargo,

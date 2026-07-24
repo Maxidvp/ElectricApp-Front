@@ -55,7 +55,7 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
         if (e.key === 'Escape') { setDraft(value); setEditing(false) }
       }}
       style={{
-        width: '100%', textAlign: 'right', padding: '0 4px', height: 26,
+        width: '100%', textAlign: 'center', padding: '0 4px', height: 26,
         background: 'var(--clr-surface-tonal-a0)', color: 'var(--clr-font-a0)',
         border: '1px solid var(--clr-info-a10)', borderRadius: 3, fontSize: 12, outline: 'none',
       }}
@@ -67,7 +67,7 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
     <span
       onClick={() => { setDraft(value || hint || ''); setEditing(true) }}
       style={{
-        display: 'block', width: '100%', textAlign: 'right',
+        display: 'block', width: '100%', textAlign: 'center',
         cursor: 'text', minHeight: 20, fontSize: 12,
         color: display ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
       }}
@@ -81,10 +81,10 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
 
 function AutoCell({ value, decimals = 2 }: { value: number | null; decimals?: number }) {
   if (value === null) return (
-    <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'right' }}>—</span>
+    <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'center' }}>—</span>
   )
   return (
-    <span style={{ fontSize: 12, display: 'block', textAlign: 'right', color: 'var(--clr-font-a20)' }}>
+    <span style={{ fontSize: 12, display: 'block', textAlign: 'center', color: 'var(--clr-font-a20)' }}>
       {value.toFixed(decimals)}
     </span>
   )
@@ -129,7 +129,7 @@ function CableSelect({ familiaId, value, defaultId, onChange }: {
         onChange(v === defaultId ? null : cable)
       }}
       style={{
-        width: '100%', height: 26, padding: '0 4px', fontSize: 12,
+        width: '100%', height: 26, padding: '0 4px', fontSize: 12, textAlign: 'center',
         background: 'var(--clr-surface-a10)', color: 'var(--clr-font-a0)',
         border: '1px solid transparent', borderRadius: 3, outline: 'none', cursor: 'pointer',
       }}
@@ -396,7 +396,7 @@ export default function CaidaTension() {
                     return (
                       <td key={cell.id} style={{
                         width: cell.column.getSize(),
-                        textAlign: colType === 'label' || colType === 'editable' ? 'left' : 'right',
+                        textAlign: 'center',
                         verticalAlign: 'middle',
                         background: colType === 'editable' ? 'color-mix(in srgb, #4A8FD4 4%, transparent)'
                                   : colType === 'result'   ? 'color-mix(in srgb, #6aab6a 6%, transparent)'

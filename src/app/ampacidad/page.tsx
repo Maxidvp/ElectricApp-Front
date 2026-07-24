@@ -60,10 +60,10 @@ const columnHelper = createColumnHelper<AmpacidadRow>()
 
 function AutoCell({ value, decimals = 2, unit }: { value: number | null; decimals?: number; unit?: string }) {
   if (value === null) return (
-    <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'right' }}>—</span>
+    <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'center' }}>—</span>
   )
   return (
-    <span style={{ fontSize: 12, display: 'block', textAlign: 'right', color: 'var(--clr-font-a20)' }}>
+    <span style={{ fontSize: 12, display: 'block', textAlign: 'center', color: 'var(--clr-font-a20)' }}>
       {value.toFixed(decimals)}{unit ? <span style={{ fontSize: 10, marginLeft: 2, opacity: 0.6 }}>{unit}</span> : null}
     </span>
   )
@@ -99,7 +99,7 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
         if (e.key === 'Escape') { setDraft(value); setEditing(false) }
       }}
       style={{
-        width: '100%', textAlign: 'right', padding: '0 4px', height: 26,
+        width: '100%', textAlign: 'center', padding: '0 4px', height: 26,
         background: 'var(--clr-surface-tonal-a0)', color: 'var(--clr-font-a0)',
         border: '1px solid var(--clr-info-a10)', borderRadius: 3, fontSize: 12, outline: 'none',
       }}
@@ -111,7 +111,7 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
     <span
       onClick={() => { setDraft(value || hint || ''); setEditing(true) }}
       style={{
-        display: 'block', width: '100%', textAlign: 'right',
+        display: 'block', width: '100%', textAlign: 'center',
         cursor: 'text', minHeight: 20, fontSize: 12,
         color: value ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
       }}
@@ -128,7 +128,7 @@ function MetodoCell({ value, onChange }: { value: string; onChange: (v: string) 
       onClick={e => e.stopPropagation()}
       onChange={e => onChange(e.target.value)}
       style={{
-        width: '100%', height: 26, padding: '0 4px', fontSize: 11,
+        width: '100%', height: 26, padding: '0 4px', fontSize: 11, textAlign: 'center',
         background: 'color-mix(in srgb, #4A8FD4 4%, transparent)',
         color: value ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
         border: '1px solid transparent', borderRadius: 3, outline: 'none', cursor: 'pointer',
@@ -443,7 +443,7 @@ export default function Ampacidad() {
                     return (
                       <td key={cell.id} style={{
                         width: cell.column.getSize(),
-                        textAlign: colType === 'label' || colType === 'editable' ? 'left' : 'right',
+                        textAlign: 'center',
                         verticalAlign: 'middle',
                         background: colType === 'editable' ? 'color-mix(in srgb, #4A8FD4 4%, transparent)'
                                   : colType === 'result'   ? 'color-mix(in srgb, #6aab6a 6%, transparent)'

@@ -220,7 +220,7 @@ function AsignablesPanel({
 function OcupacionBar({ pct, tipo }: { pct: number; tipo: 'canio' | 'bandeja' }) {
   const color = ocupacionColor(pct, tipo)
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center justify-center gap-2">
       <div className="w-20 h-1.5 rounded-full bg-surface-tonal-a20 overflow-hidden shrink-0">
         <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
       </div>
@@ -317,7 +317,7 @@ export default function OcupacionesPage() {
   const handleChangeCanio   = (segId: number, canioId: number | null)   => editSegmento(segId, { canio_id: canioId })
   const handleChangeBandeja = (segId: number, bandejaId: number | null) => editSegmento(segId, { bandeja_id: bandejaId })
 
-  const inlineSelect = 'px-1.5 py-[3px] bg-surface-tonal-a10 border border-info-a10 rounded-[5px] text-font-a0 text-xs cursor-pointer w-full outline-none focus:border-primary-a20'
+  const inlineSelect = 'px-1.5 py-[3px] bg-surface-tonal-a10 border border-info-a10 rounded-[5px] text-font-a0 text-xs cursor-pointer w-full outline-none focus:border-primary-a20 text-center'
 
   return (
     <div className="flex flex-col h-dvh bg-surface-a0 overflow-hidden">
@@ -439,7 +439,7 @@ export default function OcupacionesPage() {
                       )}
                     </td>
                     <td>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap justify-center gap-1">
                         {seg.circuitos.length === 0 && seg.lazos.length === 0 && seg.puertos_red.length === 0
                           ? <span className="text-surface-tonal-a40 text-xs">—</span>
                           : <>

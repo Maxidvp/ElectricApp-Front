@@ -499,7 +499,7 @@ export default function CablesPage() {
                           </td>
                           <td style={{ background: EDITABLE_BG, textAlign: 'center' }}>
                             <select
-                              className="w-full h-7 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer"
+                              className="w-full h-6 px-1 text-xs rounded-sm text-font-a0 border border-surface-tonal-a20 outline-none cursor-pointer text-center"
                               style={{ background: 'var(--clr-surface-a10)' }}
                               value={c.calibre_tipo}
                               onChange={e => actualizarCampo(c.id, { calibre_tipo: e.target.value })}

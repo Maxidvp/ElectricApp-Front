@@ -1,4 +1,5 @@
 export { calcularProyecto } from './motor'
+export { impedanciaRed, impedanciaConductor } from './elementos'
 export type {
   EntradaProyecto, NetworkFeeder, Transformer, SyncGenerator, Conductor, AsyncMotor,
   FaultPoint, TipoFalla, ResultadoFalla,

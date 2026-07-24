@@ -20,19 +20,26 @@ export function replaceCirc(tableros: Tablero[], tempId: number, real: Circuito)
   return tableros.map(t => ({ ...t, circuitos: t.circuitos.map(c => c.id === tempId ? real : c) }))
 }
 
+// Texto optimista mostrado en "Descripción" mientras una fila nueva todavía no fue
+// confirmada por el back. Se trata como equivalente a null en mergeWithTemp: es un
+// placeholder, no una edición real del usuario, así que no debe pisar la respuesta real.
+export const DESCRIPCION_CREANDO = 'Creando…'
+
 // Fusiona el circuito real del back con el estado actual del temp,
 // preservando cualquier edición que el usuario haya hecho antes de que el back respondiera.
 // El problema que resuelve: el usuario puede editar campos (FP, potencia, etc.) antes
 // de que el POST inicial haya respondido con el ID real. Cuando ese ID llega, no queremos
 // pisarle las ediciones — la respuesta del back contiene los valores por defecto, no los
-// que el usuario ya cambió. Regla: el valor del temp gana siempre que no sea null.
+// que el usuario ya cambió. Regla: el valor del temp gana siempre que no sea null (o el
+// placeholder "Creando…", que tampoco cuenta como edición real).
 export function mergeWithTemp(real: Circuito, temp: Circuito | undefined): Circuito {
   if (!temp) return real
+  const tempDescripcion = temp.descripcion === DESCRIPCION_CREANDO ? null : temp.descripcion
   return {
     ...real,
     circuito:      temp.circuito,
     es_acometida: temp.es_acometida,
-    descripcion:  temp.descripcion  !== null ? temp.descripcion  : real.descripcion,
+    descripcion:  tempDescripcion   !== null ? tempDescripcion  : real.descripcion,
     tipo:         temp.tipo         !== null ? temp.tipo         : real.tipo,
     FP:           temp.FP           !== null ? temp.FP           : real.FP,
     Largo:        temp.Largo        !== null ? temp.Largo        : real.Largo,

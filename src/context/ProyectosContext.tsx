@@ -11,7 +11,7 @@ import { prefetchCablesFamilias } from '@/context/CablesContext'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 import type { Tablero, Circuito, FuenteAlimentacion, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta } from './types'
-import { deriveSegmentos } from './helpers'
+import { deriveSegmentos, nextTempId, DESCRIPCION_CREANDO } from './helpers'
 import { useCircuitosActions } from './useCircuitosActions'
 import { useRuteoActions } from './useRuteoActions'
 
@@ -258,8 +258,23 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function agregarLazoVacio(tableroId: number) {
-    const real: LazoInstrumentacion = await lazosApi.crearLazoVacio(tableroId)
-    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, lazos: [...t.lazos, real] } : t))
+    const tablero = tableros.find(t => t.id === tableroId)
+    if (!tablero) return
+    const tempId = nextTempId()
+    const temp: LazoInstrumentacion = {
+      id: tempId, orden: tablero.lazos.length, tag_lazo: `LAZO-${tablero.lazos.length + 1}`,
+      tablero_id: tableroId, descripcion: DESCRIPCION_CREANDO, tipo_senal: null, protocolo: null,
+      variable_proceso: null, rango_min: null, rango_max: null, unidad: null, direccion_plc: null,
+      fabricante: null, modelo: null, ubicacion_campo: null, cable_id: null, cable: null, cantidad_cables: null,
+    }
+    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, lazos: [...t.lazos, temp] } : t))
+    try {
+      const real: LazoInstrumentacion = await lazosApi.crearLazoVacio(tableroId)
+      setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, lazos: t.lazos.map(l => l.id === tempId ? real : l) } : t))
+    } catch (err) {
+      console.error(err)
+      setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, lazos: t.lazos.filter(l => l.id !== tempId) } : t))
+    }
   }
 
   async function duplicarLazo(lazoId: number) {
@@ -298,8 +313,23 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function agregarPuertoRedVacio(tableroId: number) {
-    const real: PuertoRed = await puertosRedApi.crearPuertoRedVacio(tableroId)
-    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, puertos_red: [...t.puertos_red, real] } : t))
+    const tablero = tableros.find(t => t.id === tableroId)
+    if (!tablero) return
+    const tempId = nextTempId()
+    const temp: PuertoRed = {
+      id: tempId, orden: tablero.puertos_red.length, puerto: `PUERTO-${tablero.puertos_red.length + 1}`,
+      tablero_id: tableroId, descripcion: DESCRIPCION_CREANDO, tipo: null, vlan: null,
+      dispositivo_conectado: null, cable_tipo: null, velocidad: null,
+      fabricante: null, modelo: null, cable_id: null, cable: null, cantidad_cables: null,
+    }
+    setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, puertos_red: [...t.puertos_red, temp] } : t))
+    try {
+      const real: PuertoRed = await puertosRedApi.crearPuertoRedVacio(tableroId)
+      setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, puertos_red: t.puertos_red.map(p => p.id === tempId ? real : p) } : t))
+    } catch (err) {
+      console.error(err)
+      setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, puertos_red: t.puertos_red.filter(p => p.id !== tempId) } : t))
+    }
   }
 
   async function duplicarPuertoRed(puertoId: number) {

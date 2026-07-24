@@ -12,7 +12,7 @@ import type { Canio } from '@/services/ruteo'
 function OcupacionBar({ pct }: { pct: number }) {
   const color = colorOcupacion(pct, 'canio')
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center justify-center gap-2">
       <div className="w-16 h-1.5 rounded-full bg-surface-tonal-a20 overflow-hidden shrink-0">
         <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
       </div>
@@ -321,7 +321,7 @@ function CrearCanieroModal({ onCrear, onClose }: {
 
 // ── Tabla de una fila ───────────────────────────────────────────────
 
-const inlineSelect = 'px-1.5 py-[3px] bg-surface-tonal-a10 border border-info-a10 rounded-[5px] text-font-a0 text-xs cursor-pointer w-full outline-none focus:border-primary-a20'
+const inlineSelect = 'px-1.5 py-[3px] bg-surface-tonal-a10 border border-info-a10 rounded-[5px] text-font-a0 text-xs cursor-pointer w-full outline-none focus:border-primary-a20 text-center'
 
 function FilaCanios({
   fila, canios, catalogo, selectedCanioId, onSelect,
@@ -410,7 +410,7 @@ function FilaCanios({
                     )}
                   </td>
                   <td>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap justify-center gap-1">
                       {c.circuitos.length === 0
                         ? <span className="text-surface-tonal-a40 text-xs">—</span>
                         : c.circuitos.map(circ => (

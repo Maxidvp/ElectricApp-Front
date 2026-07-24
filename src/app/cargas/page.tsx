@@ -310,10 +310,6 @@ export default function TablaCargas() {
           <InlineMath math="I = \dfrac{P}{\sqrt{3} \cdot V_{FF} \cdot FP}" />
         </span>
         <span>• P en kW, I en A, tensiones en V. FP = factor de potencia.</span>
-        <span>• <b>Verificación capacidad de corriente</b> (AEA 90364):{' '}
-          <InlineMath math="1{,}25 \cdot I_N \leq I_{CABLE} \cdot F_H \cdot F_C \cdot F_T" />
-          {' '}— <InlineMath math="F_H" /> altura · <InlineMath math="F_C" /> canalización · <InlineMath math="F_T" /> temperatura.
-        </span>
       </div>
 
       {/* Modales */}
