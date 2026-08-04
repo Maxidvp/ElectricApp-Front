@@ -443,7 +443,7 @@ export function colorOcupacion(pct: number, tipo: 'canio' | 'bandeja'): string {
       : pct > 80 || pct < 20   ? 'var(--clr-warning-a10)'
       : 'var(--clr-success-a10)'
   return pct > 35 || pct < 5  ? 'var(--clr-danger-a10)'
-    : pct > 25 || pct < 10    ? 'var(--clr-warning-a10)'
+    : pct > 30 || pct < 10    ? 'var(--clr-warning-a10)'
     : 'var(--clr-success-a10)'
 }
 
@@ -471,3 +471,87 @@ export const ESPACIAMIENTOS_TIPICOS_M = [0.125, 0.25, 0.5, 1.0]
 // valor típico de práctica de diseño de duct banks (IEEE/NEMA, ~75 mm / 3").
 // Editable: normas locales o el propio proyecto pueden pedir más.
 export const RECUBRIMIENTO_HORMIGON_M = 0.075
+
+// ── Ampacidad — factores de corrección FC/FT ───────────────────────────────
+
+/**
+ * Factor de corrección por temperatura ambiente (IEC 60364-5-52 Tabla B.52.14).
+ * A diferencia de FC (agrupamiento), este factor SÍ tiene una fórmula analítica
+ * cerrada — la tabla de la norma es justamente esta fórmula tabulada para
+ * valores redondos de temperatura, así que se calcula en vez de copiarse:
+ *
+ *   FT = √((θmax − θamb) / (θmax − θref))
+ *
+ * θmax  = temperatura máxima de servicio del cable (FamiliaCable.temperatura:
+ *         70 °C PVC, 90 °C XLPE/EPR, etc.)
+ * θref  = temperatura de referencia de la tabla: 30 °C para instalaciones al
+ *         aire, 20 °C para enterradas (según Anexo B).
+ * θamb  = temperatura ambiente real del sitio.
+ *
+ * Devuelve null si falta algún dato o si la temperatura ambiente alcanza o
+ * supera θmax (el cable no es apto a esa temperatura, no hay factor que valga).
+ */
+export function calcFT(
+  tempAmbiente: number | null,
+  tempMaxCable: number | null,
+  metodo: string | null,
+): number | null {
+  if (tempAmbiente === null || tempMaxCable === null) return null
+  const tempRef = metodo === 'enterrado' ? 20 : 30
+  const denom = tempMaxCable - tempRef
+  const numer = tempMaxCable - tempAmbiente
+  if (denom <= 0 || numer <= 0) return null
+  return Math.sqrt(numer / denom)
+}
+
+// Factor de corrección por agrupamiento (IEC 60364-5-52 Tabla B.52.17 —
+// circuitos al aire/canalizados — y Tabla B.52.20 — circuitos enterrados).
+// A diferencia de FT, acá no hay fórmula: son valores empíricos de interacción
+// térmica entre conductores agrupados, tabulados por la norma. Los valores de
+// "enterrado" asumen cables tocándose (el caso más desfavorable/conservador,
+// ya que hoy no se cruza con el espaciamiento real del Caniero) — si el
+// proyecto tiene datos más precisos, usar el override manual de FC.
+//
+// Cada tabla es [nMáximo, factor][]: se toma la primera entrada cuyo nMáximo
+// sea ≥ n; para n mayores al máximo tabulado se usa el último factor (la
+// norma no define más reducción más allá de ese punto, o el dato no está
+// tabulado y este es el valor más conservador disponible).
+const FC_BUNCHED: [number, number][] =    [[1, 1.00], [2, 0.80], [3, 0.70], [4, 0.65], [5, 0.60], [6, 0.57], [7, 0.54], [8, 0.52], [9, 0.50], [12, 0.45], [16, 0.41], [20, 0.38]]
+const FC_BANDEJA_PERF: [number, number][] = [[1, 1.00], [2, 0.85], [3, 0.79], [4, 0.75], [5, 0.73], [6, 0.72], [7, 0.72], [8, 0.71], [9, 0.70]]
+const FC_BANDEJA_ESC: [number, number][] =  [[1, 1.00], [2, 0.94], [3, 0.89], [4, 0.88], [5, 0.87], [6, 0.87], [7, 0.86], [8, 0.86], [9, 0.85]]
+const FC_ENTERRADO: [number, number][] =    [[1, 1.00], [2, 0.75], [3, 0.65], [4, 0.60], [5, 0.55], [6, 0.50]]
+
+function lookupFC(tabla: [number, number][], n: number): number {
+  for (const [nMax, factor] of tabla) if (n <= nMax) return factor
+  return tabla[tabla.length - 1][1]
+}
+
+export function calcFC(metodo: string | null, nAgrupados: number | null): number | null {
+  if (!metodo || nAgrupados === null || nAgrupados < 1) return null
+  switch (metodo) {
+    case 'conduit_emb':
+    case 'conduit_sup':  return lookupFC(FC_BUNCHED, nAgrupados)
+    case 'bandeja_perf': return lookupFC(FC_BANDEJA_PERF, nAgrupados)
+    case 'bandeja_esc':
+    case 'aire_libre':   return lookupFC(FC_BANDEJA_ESC, nAgrupados)
+    case 'enterrado':    return lookupFC(FC_ENTERRADO, nAgrupados)
+    default: return null
+  }
+}
+
+type SegCircAgrup = { tipo: string; circuitos: { id: number }[] }
+
+/**
+ * N° de circuitos agrupados para un circuito dado: el máximo de circuitos que
+ * comparten con él algún segmento físico (caño/bandeja) de su recorrido — se
+ * toma el máximo y no el promedio porque el tramo más cargado del recorrido
+ * es el que manda térmicamente. `null` si el circuito todavía no está ruteado
+ * (sin segmentos asignados), para no sugerir un FC optimista sin base real.
+ */
+export function contarAgrupamiento(circuitoId: number, segmentos: SegCircAgrup[]): number | null {
+  const propios = segmentos.filter(s =>
+    (s.tipo === 'canio' || s.tipo === 'bandeja') && s.circuitos.some(c => c.id === circuitoId)
+  )
+  if (propios.length === 0) return null
+  return Math.max(...propios.map(s => s.circuitos.length))
+}

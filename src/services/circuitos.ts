@@ -1,34 +1,8 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
 
-export async function getCircuitos() {
-  const res = await fetch(`${API_URL}/circuitos`)
-  if (!res.ok) throw new Error('Error al traer los circuitos')
-  return res.json()
-}
-
 export async function getCircuito(id: number) {
   const res = await fetch(`${API_URL}/circuitos/${id}`)
   if (!res.ok) throw new Error('Error al traer el circuito')
-  return res.json()
-}
-
-export async function createCircuito(data: any) {
-  const res = await fetch(`${API_URL}/circuitos`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  })
-  if (!res.ok) throw new Error('Error al crear el circuito')
-  return res.json()
-}
-
-export async function updateCircuito(id: number, data: any) {
-  const res = await fetch(`${API_URL}/circuitos/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  })
-  if (!res.ok) throw new Error('Error al actualizar el circuito')
   return res.json()
 }
 
@@ -107,6 +81,36 @@ export async function updatePotenciaCircuito(id: number, potencia: number | null
     body: JSON.stringify({ potencia }),
   })
   if (!res.ok) throw new Error('Error al actualizar la potencia')
+  return res.json()
+}
+
+export async function updateMetodoInstalacionCircuito(id: number, metodo_instalacion: string | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/metodo-instalacion`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metodo_instalacion }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar el método de instalación')
+  return res.json()
+}
+
+export async function updateFcManualCircuito(id: number, fc_manual: number | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/fc-manual`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fc_manual }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar el FC')
+  return res.json()
+}
+
+export async function updateFtManualCircuito(id: number, ft_manual: number | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/ft-manual`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ft_manual }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar el FT')
   return res.json()
 }
 
@@ -210,6 +214,16 @@ export async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 
     body: JSON.stringify({ role }),
   })
   if (!res.ok) throw new Error('Error al crear circuito auxiliar')
+  return res.json()
+}
+
+export async function updateProteccionCircuito(id: number, proteccion_id: number | null) {
+  const res = await fetch(`${API_URL}/circuitos/${id}/proteccion`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ proteccion_id }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar la protección')
   return res.json()
 }
 

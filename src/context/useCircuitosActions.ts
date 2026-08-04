@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import * as circuitosApi from '@/services/circuitos'
 import type { FormacionPatch } from '@/services/circuitos'
-import type { Tablero, Circuito, Cable } from './types'
+import type { Tablero, Circuito, Cable, Proteccion } from './types'
 import { nextTempId, mapCirc, addCirc, replaceCirc, mergeWithTemp, DESCRIPCION_CREANDO } from './helpers'
 
 type SetTableros = Dispatch<SetStateAction<Tablero[]>>
@@ -46,7 +46,9 @@ export function useCircuitosActions(
       s.splice(i, 0, {
         id: tempId, orden: i, circuito: tag, descripcion: DESCRIPCION_CREANDO, tipo: null,
         tablero_id: tableroId, formacion_id: null, formacion: null,
+        proteccion_id: null, proteccion: null,
         FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: false, potencia: null,
+        metodo_instalacion: null, fc_manual: null, ft_manual: null,
         role: null, parent_id: null, tablero_destino_id: null, tablero_destino: null,
       })
       const reordered = s.map((c, j) => ({ ...c, orden: j }))
@@ -197,6 +199,21 @@ export function useCircuitosActions(
     firePending(id, pendingCircuitos, rid => circuitosApi.updateEsAcometidaCircuito(rid, val).catch(console.error))
   }
 
+  function actualizarMetodoInstalacion(id: number, metodo: string | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, metodo_instalacion: metodo })))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateMetodoInstalacionCircuito(rid, metodo).catch(console.error))
+  }
+
+  function actualizarFcManual(id: number, fc: number | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, fc_manual: fc })))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateFcManualCircuito(rid, fc).catch(console.error))
+  }
+
+  function actualizarFtManual(id: number, ft: number | null) {
+    setTableros(prev => mapCirc(prev, id, c => ({ ...c, ft_manual: ft })))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateFtManualCircuito(rid, ft).catch(console.error))
+  }
+
   // Vincula (o desvincula, con tableroDestinoId null) un circuito ALIMENTADOR a otro tablero.
   // La validación de ciclos/duplicados vive en el back, por eso ante un error se recarga
   // el proyecto en vez de confiar en el estado optimista (podría haber quedado inconsistente).
@@ -221,7 +238,9 @@ export function useCircuitosActions(
     const temp: Circuito = {
       id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tipo: 'ACOMETIDA',
       tablero_id: tableroId, formacion_id: null, formacion: null,
+      proteccion_id: null, proteccion: null,
       FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: true, potencia: null,
+      metodo_instalacion: null, fc_manual: null, ft_manual: null,
       role: null, parent_id: null, tablero_destino_id: null, tablero_destino: null,
     }
     let capturedOrderAlim: { id: number; orden: number }[] = []
@@ -279,7 +298,16 @@ export function useCircuitosActions(
     })))
     const fire = (realId: number) =>
       circuitosApi.updateFormacion(realId, data)
-        .then(real => setTableros(prev => mapCirc(prev, realId, () => real as Circuito)))
+        .then(real => setTableros(prev => mapCirc(prev, realId, c => ({ ...c, ...real as Circuito }))))
+        .catch(console.error)
+    firePending(circuitoId, pendingCircuitos, fire)
+  }
+
+  function actualizarProteccion(circuitoId: number, proteccion: Proteccion | null) {
+    setTableros(prev => mapCirc(prev, circuitoId, c => ({ ...c, proteccion_id: proteccion?.id ?? null, proteccion })))
+    const fire = (realId: number) =>
+      circuitosApi.updateProteccionCircuito(realId, proteccion?.id ?? null)
+        .then(real => setTableros(prev => mapCirc(prev, realId, c => ({ ...c, ...real as Circuito }))))
         .catch(console.error)
     firePending(circuitoId, pendingCircuitos, fire)
   }
@@ -289,7 +317,8 @@ export function useCircuitosActions(
     reordenarCircuitos,
     actualizarDescripcion, actualizarFP, actualizarLargo, actualizarPotencia,
     actualizarTipoTension, actualizarFase, actualizarTipo, actualizarEsAcometida,
+    actualizarMetodoInstalacion, actualizarFcManual, actualizarFtManual,
     vincularTableroAlimentador,
-    agregarAcometida, actualizarFormacion, crearCircuitoAuxiliar, reordenarSubcircuitos,
+    agregarAcometida, actualizarFormacion, actualizarProteccion, crearCircuitoAuxiliar, reordenarSubcircuitos,
   }
 }

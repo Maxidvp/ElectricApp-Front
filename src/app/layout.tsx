@@ -5,6 +5,7 @@ import "katex/dist/katex.min.css";
 
 import { ProyectosProvider } from "@/context/ProyectosContext";
 import { CablesProvider } from "@/context/CablesContext";
+import { ProteccionesProvider } from "@/context/ProteccionesContext";
 import Navbar from "@/components/Navbar";
 import LoadingGate from "@/components/LoadingGate";
 
@@ -42,7 +43,9 @@ export default function RootLayout({
           <LoadingGate>
             <Navbar />
             <CablesProvider>
-              {children}
+              <ProteccionesProvider>
+                {children}
+              </ProteccionesProvider>
             </CablesProvider>
           </LoadingGate>
         </ProyectosProvider>

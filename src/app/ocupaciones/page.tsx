@@ -627,7 +627,7 @@ function AddModal({ canios, bandejas, onClose }: {
   onClose: () => void
 }) {
   const { addSegmento } = useProyectos()
-  const [tipo, setTipo]           = useState<'canio' | 'bandeja' | 'pared'>('canio')
+  const [tipo, setTipo]           = useState<'canio' | 'bandeja'>('canio')
   const [canioId, setCanioId]     = useState<number | ''>(canios[0]?.id ?? '')
   const [bandejaId, setBandejaId] = useState<number | ''>(bandejas[0]?.id ?? '')
 
@@ -655,7 +655,6 @@ function AddModal({ canios, bandejas, onClose }: {
           <select className={fieldSelect} value={tipo} onChange={e => setTipo(e.target.value as any)}>
             <option value="canio">Caño</option>
             <option value="bandeja">Bandeja</option>
-            <option value="pared">Pared</option>
           </select>
         </div>
 

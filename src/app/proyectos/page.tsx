@@ -43,7 +43,7 @@ export default function ProyectoPage() {
   const router = useRouter()
   const {
     proyectoActivo, actualizarProyecto, eliminarProyecto,
-    agregarFamiliaProyecto, quitarFamiliaProyecto, setProyectoActivo,
+    agregarFamiliaProyecto, quitarFamiliaProyecto,
   } = useProyectos()
   const { familias: todasLasFamilias } = useCables()
 

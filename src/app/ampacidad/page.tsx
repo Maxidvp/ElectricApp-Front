@@ -1,20 +1,12 @@
 'use client'
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo } from 'react'
 import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
-import { calcCorriente } from '@/utils/electricidad'
+import { calcCorriente, calcFC, calcFT, contarAgrupamiento } from '@/utils/electricidad'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
 // ── Tipos ─────────────────────────────────────────────────────────
-
-type AmpacidadInput = {
-  metodo: string
-  fc:     string
-  ft:     string
-}
-
-const DEFAULT_INPUT: AmpacidadInput = { metodo: '', fc: '', ft: '' }
 
 type AmpacidadRow = {
   id:          number
@@ -24,10 +16,15 @@ type AmpacidadRow = {
   fp:          number | null
   corriente:   number | null
   iadm:        number | null
-  input:       AmpacidadInput
+  metodo:      string
   fh:          number
-  fc:          number | null
-  ft:          number | null
+  fcManual:    number | null
+  ftManual:    number | null
+  fcAuto:      number | null
+  ftAuto:      number | null
+  nAgrupados:  number | null
+  fcEfectivo:  number
+  ftEfectivo:  number
   iadm_corr:   number | null
   cumple:      boolean | null
 }
@@ -83,11 +80,18 @@ function CheckCell({ ok, corriente, iadm_corr }: { ok: boolean | null; corriente
   )
 }
 
-function NumCell({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint?: string }) {
+// value = override manual (o null = usar el sugerido). hint = valor auto-calculado,
+// mostrado como placeholder hasta que el usuario lo sobrescribe a mano.
+function NumCell({ value, onChange, hint, title }: { value: number | null; onChange: (v: number | null) => void; hint?: string; title?: string }) {
   const [editing, setEditing] = useState(false)
-  const [draft,   setDraft]   = useState(value)
+  const draftInicial = value !== null ? String(value) : ''
+  const [draft, setDraft] = useState(draftInicial)
 
-  const commit = () => { setEditing(false); onChange(draft) }
+  const commit = () => {
+    setEditing(false)
+    const n = parseFloat(draft)
+    onChange(draft.trim() === '' || isNaN(n) ? null : n)
+  }
 
   if (editing) return (
     <input
@@ -96,7 +100,7 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
       onBlur={commit}
       onKeyDown={e => {
         if (e.key === 'Enter')  commit()
-        if (e.key === 'Escape') { setDraft(value); setEditing(false) }
+        if (e.key === 'Escape') { setDraft(draftInicial); setEditing(false) }
       }}
       style={{
         width: '100%', textAlign: 'center', padding: '0 4px', height: 26,
@@ -106,14 +110,15 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
     />
   )
 
-  const display = value || hint
+  const display = value !== null ? String(value) : hint
   return (
     <span
-      onClick={() => { setDraft(value || hint || ''); setEditing(true) }}
+      title={title}
+      onClick={() => { setDraft(value !== null ? String(value) : (hint ?? '')); setEditing(true) }}
       style={{
         display: 'block', width: '100%', textAlign: 'center',
         cursor: 'text', minHeight: 20, fontSize: 12,
-        color: value ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
+        color: value !== null ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
       }}
     >
       {display || '—'}
@@ -144,15 +149,20 @@ function MetodoCell({ value, onChange }: { value: string; onChange: (v: string) 
 // ── Página ────────────────────────────────────────────────────────
 
 export default function Ampacidad() {
-  const { tableros, getTablero, loading, error } = useProyectos()
+  const {
+    tableros, getTablero, loading, error, segmentos,
+    actualizarMetodoInstalacion, actualizarFcManual, actualizarFtManual,
+  } = useProyectos()
 
   const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
   const [altitud, setAltitud] = useState<string>(() => {
     try { return localStorage.getItem('ea_ampacidad_altitud') ?? '0' } catch { return '0' }
   })
+  const [tempAmbiente, setTempAmbiente] = useState<string>(() => {
+    try { return localStorage.getItem('ea_ampacidad_temp_ambiente') ?? '35' } catch { return '35' }
+  })
 
-  const [inputs, setInputs] = useState<Record<number, AmpacidadInput>>({})
   const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
     try { return JSON.parse(localStorage.getItem('ea_col_ampacidad') ?? '{}') } catch { return {} }
   })
@@ -168,15 +178,12 @@ export default function Ampacidad() {
 
   const altitudNum = parseFloat(altitud) || 0
   const fh = calcFH(altitudNum)
+  const tempAmbienteNum = parseFloat(tempAmbiente)
 
   const cambiarTablero = (id: number) => {
     setLastTableroId(id)
     setTableroId(id)
   }
-
-  const setField = useCallback((circId: number, field: keyof AmpacidadInput, val: string) => {
-    setInputs(prev => ({ ...prev, [circId]: { ...DEFAULT_INPUT, ...prev[circId], [field]: val } }))
-  }, [])
 
   const rows = useMemo((): AmpacidadRow[] => {
     if (!tablero) return []
@@ -191,10 +198,6 @@ export default function Ampacidad() {
       .sort((a, b) => (a as any).orden - (b as any).orden)
 
     return sorted.map((c, idx) => {
-      const input = { ...DEFAULT_INPUT, ...inputs[c.id] }
-      const fcNum = parseFloat(input.fc) || null
-      const ftNum = parseFloat(input.ft) || null
-
       let potencia: number | null
       let fp: number | null
       let corriente: number | null
@@ -227,34 +230,33 @@ export default function Ampacidad() {
       const cond_por_fase = formacion?.cond_por_fase ?? 1
       const iadm = iadm_cable !== null ? iadm_cable * cond_por_fase : null
 
-      // Aplicación parcial de factores: si el usuario no ingresó FC o FT se omiten
-      // del producto (no se asume 1.0), para que el resultado sea null en lugar de
-      // mostrar un valor erróneamente optimista. Solo FH siempre se aplica porque
-      // es automático (deriva de la altitud ingresada en el campo global).
-      const iadm_corr = iadm !== null && fcNum !== null && ftNum !== null
-        ? iadm * fh * fcNum * ftNum
-        : iadm !== null && fcNum === null && ftNum === null
-        ? iadm * fh
-        : iadm !== null && fcNum !== null
-        ? iadm * fh * fcNum
-        : iadm !== null && ftNum !== null
-        ? iadm * fh * ftNum
-        : null
+      const metodo = (c as any).metodo_instalacion ?? ''
+      const fcManual: number | null = (c as any).fc_manual ?? null
+      const ftManual: number | null = (c as any).ft_manual ?? null
 
+      const nAgrupados = contarAgrupamiento(c.id, segmentos)
+      const fcAuto = calcFC(metodo || null, nAgrupados)
+      const tempMaxCable: number | null = formacion?.cable?.familia?.temperatura ?? null
+      const ftAuto = calcFT(isNaN(tempAmbienteNum) ? null : tempAmbienteNum, tempMaxCable, metodo || null)
+
+      const fcEfectivo = fcManual ?? fcAuto ?? 1
+      const ftEfectivo = ftManual ?? ftAuto ?? 1
+
+      const iadm_corr = iadm !== null ? iadm * fh * fcEfectivo * ftEfectivo : null
       const cumple = iadm_corr !== null && corriente !== null ? iadm_corr >= corriente : null
 
       return {
         id: c.id,
         circuito:    (c as any).circuito,
         descripcion: (c as any).descripcion ?? null,
-        potencia, fp, corriente, iadm, input, fh,
-        fc: fcNum,
-        ft: ftNum,
+        potencia, fp, corriente, iadm, metodo, fh,
+        fcManual, ftManual, fcAuto, ftAuto, nAgrupados,
+        fcEfectivo, ftEfectivo,
         iadm_corr,
         cumple,
       }
     })
-  }, [tablero, inputs, fh])
+  }, [tablero, segmentos, fh, tempAmbienteNum])
 
   const columns = useMemo(() => [
     columnHelper.accessor('circuito', {
@@ -286,8 +288,8 @@ export default function Ampacidad() {
       id: 'metodo', header: 'Método instalación', size: 170,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, input } = info.row.original
-        return <MetodoCell value={input.metodo} onChange={v => setField(id, 'metodo', v)} />
+        const { id, metodo } = info.row.original
+        return <MetodoCell value={metodo} onChange={v => actualizarMetodoInstalacion(id, v || null)} />
       },
     }),
     columnHelper.accessor('fh', {
@@ -299,16 +301,30 @@ export default function Ampacidad() {
       id: 'fc', header: 'FC', size: 70,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, input } = info.row.original
-        return <NumCell value={input.fc} onChange={v => setField(id, 'fc', v)} hint="1" />
+        const { id, fcManual, fcAuto, nAgrupados } = info.row.original
+        const title = nAgrupados !== null
+          ? `${nAgrupados} circuito(s) agrupado(s) en la canalización más cargada`
+          : 'Circuito sin ruteo asignado — no se puede sugerir FC'
+        return (
+          <NumCell
+            value={fcManual} hint={fcAuto !== null ? fcAuto.toFixed(2) : '1'}
+            title={title}
+            onChange={v => actualizarFcManual(id, v)}
+          />
+        )
       },
     }),
     columnHelper.display({
       id: 'ft', header: 'FT', size: 70,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, input } = info.row.original
-        return <NumCell value={input.ft} onChange={v => setField(id, 'ft', v)} hint="1" />
+        const { id, ftManual, ftAuto } = info.row.original
+        return (
+          <NumCell
+            value={ftManual} hint={ftAuto !== null ? ftAuto.toFixed(2) : '1'}
+            onChange={v => actualizarFtManual(id, v)}
+          />
+        )
       },
     }),
     columnHelper.accessor('iadm', {
@@ -329,7 +345,7 @@ export default function Ampacidad() {
         return <CheckCell ok={cumple} corriente={corriente} iadm_corr={iadm_corr} />
       },
     }),
-  ], [setField])
+  ], [actualizarMetodoInstalacion, actualizarFcManual, actualizarFtManual])
 
   const table = useReactTable({
     data: rows,
@@ -352,7 +368,7 @@ export default function Ampacidad() {
   return (
     <div className="subcontainer">
 
-      {/* Selector de tablero + parámetro altitud */}
+      {/* Selector de tablero + parámetros de sitio */}
       <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-2 flex-wrap">
         <div className="flex gap-1.5 flex-wrap">
           {tablerosPotencia.map(t => (
@@ -370,25 +386,44 @@ export default function Ampacidad() {
           ))}
         </div>
 
-        {/* Altitud → FH */}
-        <div className="flex items-center gap-2 text-[12px] text-font-a20 shrink-0">
-          <label className="text-surface-tonal-a40">Altitud</label>
-          <input
-            type="number" min="0" max="6000" step="100"
-            value={altitud}
-            onChange={e => {
-              setAltitud(e.target.value)
-              try { localStorage.setItem('ea_ampacidad_altitud', e.target.value) } catch {}
-            }}
-            style={{
-              width: 72, height: 26, padding: '0 6px', fontSize: 12,
-              background: 'var(--clr-surface-tonal-a0)', color: 'var(--clr-font-a0)',
-              border: '1px solid var(--clr-surface-tonal-a30)', borderRadius: 5, outline: 'none',
-            }}
-          />
-          <span className="text-surface-tonal-a40">m.s.n.m.</span>
-          <span className="text-surface-tonal-a30 mx-1">→</span>
-          <span className="font-mono">FH = {fh.toFixed(3)}</span>
+        {/* Altitud → FH, Temperatura ambiente → FT */}
+        <div className="flex items-center gap-3 text-[12px] text-font-a20 shrink-0 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-surface-tonal-a40">Altitud</label>
+            <input
+              type="number" min="0" max="6000" step="100"
+              value={altitud}
+              onChange={e => {
+                setAltitud(e.target.value)
+                try { localStorage.setItem('ea_ampacidad_altitud', e.target.value) } catch {}
+              }}
+              style={{
+                width: 72, height: 26, padding: '0 6px', fontSize: 12,
+                background: 'var(--clr-surface-tonal-a0)', color: 'var(--clr-font-a0)',
+                border: '1px solid var(--clr-surface-tonal-a30)', borderRadius: 5, outline: 'none',
+              }}
+            />
+            <span className="text-surface-tonal-a40">m.s.n.m.</span>
+            <span className="text-surface-tonal-a30 mx-1">→</span>
+            <span className="font-mono">FH = {fh.toFixed(3)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-surface-tonal-a40">Temp. ambiente</label>
+            <input
+              type="number" min="-20" max="80" step="1"
+              value={tempAmbiente}
+              onChange={e => {
+                setTempAmbiente(e.target.value)
+                try { localStorage.setItem('ea_ampacidad_temp_ambiente', e.target.value) } catch {}
+              }}
+              style={{
+                width: 60, height: 26, padding: '0 6px', fontSize: 12,
+                background: 'var(--clr-surface-tonal-a0)', color: 'var(--clr-font-a0)',
+                border: '1px solid var(--clr-surface-tonal-a30)', borderRadius: 5, outline: 'none',
+              }}
+            />
+            <span className="text-surface-tonal-a40">°C</span>
+          </div>
         </div>
       </div>
 
@@ -472,8 +507,18 @@ export default function Ampacidad() {
               <InlineMath math="F_H = 1{,}02 - 0{,}00002 \cdot h" />
               {' '}con <InlineMath math="h" /> en m.s.n.m.
             </span>
-            <span>• <b>FC</b> — Factor por canalización (IEC 60364-5-52 / AEA 90364-7-771): depende del tipo de canalización y configuración. Ingresar según tabla aplicable.</span>
-            <span>• <b>FT</b> — Factor por temperatura ambiente (IEC 60364-5-52): depende de la temperatura ambiente y el tipo de aislamiento del cable. Ingresar según tabla aplicable.</span>
+            <span>
+              • <b>FC</b> — Factor por agrupamiento (IEC 60364-5-52 Tabla B.52.17/B.52.20): se sugiere solo
+              cruzando el método de instalación con el N° de circuitos que comparten de verdad el mismo
+              caño/bandeja (módulo de ruteo). Sin ruteo asignado no hay sugerencia — completar a mano.
+              Editable: un valor propio pisa la sugerencia.
+            </span>
+            <span>
+              • <b>FT</b> — Factor por temperatura ambiente (IEC 60364-5-52):{' '}
+              <InlineMath math="F_T = \sqrt{(\theta_{max} - \theta_{amb}) / (\theta_{max} - \theta_{ref})}" />
+              {' '}con <InlineMath math="\theta_{max}" /> = temperatura de servicio del cable,{' '}
+              <InlineMath math="\theta_{ref}" /> = 30 °C (20 °C si es enterrado). Editable: un valor propio pisa la sugerencia.
+            </span>
             <span>
               • <b>Iadm corr.</b> = Iadm cable × FH × FC × FT {'  '}
               Condición de cumplimiento: <InlineMath math="I_{adm,corr} \geq I_{diseño}" />

@@ -472,10 +472,10 @@ function FilaCanios({
 // ── Página ──────────────────────────────────────────────────────────
 
 export default function CanerosPage() {
-  const { proyectoActivo, tableros, getCircuito, canios } = useProyectos()
+  // canieros/setCanieros viven en ProyectosContext (cargados junto con el resto del
+  // proyecto) — ya no hace falta un fetch propio al entrar a la ruta.
+  const { proyectoActivo, tableros, getCircuito, canios, canieros, setCanieros } = useProyectos()
 
-  const [canieros, setCanieros] = useState<Caniero[]>([])
-  const [loading, setLoading] = useState(true)
   const [selectedCanieroId, setSelectedCanieroId] = useState<number | null>(null)
   const [selectedCanioId, setSelectedCanioId] = useState<number | null>(null)
   const [showAddCaniero, setShowAddCaniero] = useState(false)
@@ -485,12 +485,11 @@ export default function CanerosPage() {
   const [eliminandoFila, setEliminandoFila] = useState<number | null>(null)
   const [filasExtra, setFilasExtra] = useState<number[]>([])
 
+  // Selecciona un caniero por defecto cada vez que cambia el proyecto activo (los
+  // datos ya están disponibles en el contexto — no hace falta pedirlos de nuevo).
   useEffect(() => {
-    if (!proyectoActivo) { setCanieros([]); setLoading(false); return }
-    setLoading(true)
-    canierosApi.getCanieros(proyectoActivo.id)
-      .then(cs => { setCanieros(cs); setSelectedCanieroId(prev => (prev && cs.some(c => c.id === prev)) ? prev : (cs[0]?.id ?? null)) })
-      .finally(() => setLoading(false))
+    setSelectedCanieroId(prev => (prev && canieros.some(c => c.id === prev)) ? prev : (canieros[0]?.id ?? null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyectoActivo?.id])
 
   // Al entrar a un caniero sin filas todavía (recién creado, o vacío) se
@@ -669,9 +668,7 @@ export default function CanerosPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-        {loading && <div className="text-center text-[13px] text-surface-tonal-a40 py-10">Cargando…</div>}
-
-        {!loading && !caniero && (
+        {!caniero && (
           <div className="text-center text-[13px] text-surface-tonal-a40 py-10">
             {canieros.length === 0 ? 'Sin canieros en este proyecto. Creá uno con el botón de arriba.' : 'Seleccioná un caniero.'}
           </div>

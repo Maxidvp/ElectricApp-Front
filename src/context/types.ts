@@ -1,8 +1,10 @@
+import type { Dispatch, SetStateAction } from 'react'
 import type { Canio, Bandeja, Segmento, SegmentoCircuito, SegmentoLazo, SegmentoPuertoRed, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura } from '@/services/ruteo'
 import type { FormacionPatch } from '@/services/circuitos'
 import type { Proyecto as ProyectoMeta } from '@/services/proyectos'
+import type { Caniero } from '@/services/canieros'
 
-export type { ProyectoMeta, Pared, Arquitectura }
+export type { ProyectoMeta, Pared, Arquitectura, Caniero }
 export type { Canio, Bandeja, Segmento, SegmentoCircuito, SegmentoLazo, SegmentoPuertoRed, Conjunto, CreateSegmentoInput, CreateParedInput, FormacionPatch }
 
 // ── Model types ───────────────────────────────────────────────────
@@ -33,6 +35,29 @@ export type Formacion = {
   cable_tierra: Cable | null
 }
 
+export type FamiliaProteccion = {
+  id: number
+  tipo: string   // 'termomagnetico' | 'diferencial' | 'guardamotor' | 'caja_moldeada'
+  marca: string | null
+  modelo: string | null
+  catalogo: string | null
+  norma: string | null
+}
+
+export type Proteccion = {
+  id: number
+  familia_id: number
+  polos: number | null
+  In: number | null
+  Icu: number | null
+  curva: string | null
+  sensibilidad_mA: number | null
+  clase_diferencial: string | null
+  rango_regulacion_min: number | null
+  rango_regulacion_max: number | null
+  familia: FamiliaProteccion
+}
+
 export type Circuito = {
   id: number
   orden: number
@@ -42,12 +67,17 @@ export type Circuito = {
   tablero_id: number
   formacion_id: number | null
   formacion: Formacion | null
+  proteccion_id: number | null
+  proteccion: Proteccion | null
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
   fase: string | null
   es_acometida: boolean
   potencia: number | null
+  metodo_instalacion: string | null
+  fc_manual: number | null
+  ft_manual: number | null
   role: string | null       // null = principal, 'retorno', 'combinacion'
   parent_id: number | null
   // Solo aplica si tipo === 'ALIMENTADOR': tablero al que este circuito alimenta
@@ -180,6 +210,9 @@ export type ProyectosContextType = {
   actualizarFase: (id: number, fase: string | null) => void
   actualizarTipo: (id: number, tipo: string | null) => void
   actualizarEsAcometida: (id: number, val: boolean) => void
+  actualizarMetodoInstalacion: (id: number, metodo: string | null) => void
+  actualizarFcManual: (id: number, fc: number | null) => void
+  actualizarFtManual: (id: number, ft: number | null) => void
   vincularTableroAlimentador: (id: number, tableroDestinoId: number | null) => void
   agregarAcometida: (tableroId: number, nombre: string, insertIndex: number) => void
   crearCircuitoAuxiliar: (parentId: number, role: 'retorno' | 'combinacion') => Promise<Circuito>
@@ -187,6 +220,7 @@ export type ProyectosContextType = {
   appendSegmentos: (segs: Segmento[]) => void
   appendParedes: (paredes: Pared[]) => void
   actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
+  actualizarProteccion: (circuitoId: number, proteccion: Proteccion | null) => void
   agregarTablero: (data: any) => Promise<Tablero>
   duplicarTablero: (id: number) => Promise<Tablero>
   actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos' | 'fuentes' | 'lazos' | 'puertos_red'>>) => Promise<void>
@@ -249,4 +283,9 @@ export type ProyectosContextType = {
   deleteArquitectura: (id: number) => void
   addArquitecturaToConjunto: (tablaParedId: number, conjuntoId: number) => void
   removeArquitecturaFromConjunto: (tablaParedId: number, conjuntoId: number) => void
+
+  // Canieros enterrados — se cargan junto con el resto del proyecto para que
+  // /caneros no necesite su propio fetch al entrar.
+  canieros: Caniero[]
+  setCanieros: Dispatch<SetStateAction<Caniero[]>>
 }

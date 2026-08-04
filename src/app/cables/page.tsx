@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getFamiliasCables, createFamiliaCable, updateFamiliaCable, type FamiliaCablePatch } from '@/services/familiasCables'
 import { getCablesPorFamilia, createCable, createCablesBulk, updateCable, deleteCable, type CablePatch } from '@/services/cables'
+import { invalidarCacheCables } from '@/context/CablesContext'
 import CeldaEditable from '@/components/CeldaEditable'
 
 // ── Tipos ─────────────────────────────────────────────────────────
@@ -414,7 +415,9 @@ export default function CablesPage() {
   // con un PUT parcial (mismo patrón "editable" que las tablas de cargas/caídas).
   const actualizarCampo = (id: number, patch: Partial<CablePatch>) => {
     setCables(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
-    updateCable(id, patch).catch(console.error)
+    updateCable(id, patch)
+      .then(() => { if (familiaId != null) invalidarCacheCables(familiaId) })
+      .catch(console.error)
   }
 
   if (loading) return <p className="p-6">Cargando...</p>
@@ -518,7 +521,11 @@ export default function CablesPage() {
                           <td style={{ background: EDITABLE_BG, textAlign: 'center' }}><CeldaEditable valor={String(c.Iadm)} onGuardar={v => actualizarCampo(c.id, { Iadm: Number(v) || 0 })} /></td>
                           <td style={{ textAlign: 'center' }}>
                             <button
-                              onClick={async () => { await deleteCable(c.id); setCables(prev => prev.filter(x => x.id !== c.id)) }}
+                              onClick={async () => {
+                                await deleteCable(c.id)
+                                setCables(prev => prev.filter(x => x.id !== c.id))
+                                if (familiaId != null) invalidarCacheCables(familiaId)
+                              }}
                               className="text-[11px] px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 cursor-pointer"
                             >
                               Eliminar
@@ -554,9 +561,9 @@ export default function CablesPage() {
             </div>
 
             {modo === 'individual' ? (
-              <NuevoCableForm familiaId={familiaActiva.id} onCreado={c => setCables(prev => [...prev, c])} />
+              <NuevoCableForm familiaId={familiaActiva.id} onCreado={c => { setCables(prev => [...prev, c]); invalidarCacheCables(familiaActiva.id) }} />
             ) : (
-              <ImportarCablesForm familiaId={familiaActiva.id} onImportados={cs => setCables(prev => [...prev, ...cs])} />
+              <ImportarCablesForm familiaId={familiaActiva.id} onImportados={cs => { setCables(prev => [...prev, ...cs]); invalidarCacheCables(familiaActiva.id) }} />
             )}
           </>
         )}

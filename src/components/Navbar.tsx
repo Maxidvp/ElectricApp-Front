@@ -24,6 +24,7 @@ const NAV_LINKS: { href: string; label: string; categoria: NavCategoria }[] = [
   { href: '/importador',     label: 'Importador',     categoria: null },
   { href: '/nec_panel_tag',  label: 'NEC Panel',      categoria: 'POTENCIA' },
   { href: '/cables',         label: 'Cables',         categoria: null },
+  { href: '/protecciones',  label: 'Protecciones',   categoria: null },
 ]
 
 export default function Navbar() {

@@ -36,6 +36,12 @@ export function prefetchCablesFamilias(ids: number[]) {
   ids.forEach(id => _fetchFamilia(id))
 }
 
+// Se llama después de crear/editar/borrar un cable desde /cables, para que
+// FormacionModal/CableSimpleModal (en otras rutas) no sigan sirviendo datos viejos.
+export function invalidarCacheCables(familiaId: number) {
+  delete _cache[familiaId]
+}
+
 // ── Contexto ──────────────────────────────────────────────────────
 const CablesContext = createContext<CablesContextType | null>(null)
 

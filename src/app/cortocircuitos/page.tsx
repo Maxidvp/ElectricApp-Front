@@ -4,11 +4,15 @@ import { InlineMath } from 'react-katex'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { useProyectos } from '@/context/ProyectosContext'
 import FormacionModal from '@/components/FormacionModal'
+import ProteccionModal from '@/components/ProteccionModal'
 import { formacionData } from '@/app/cargas/utils'
 import type { FormacionData } from '@/app/cargas/types'
 import { calcSminCable, seccionEnMm2, calcReactancia, generarFormacion } from '@/utils/electricidad'
 import { calcularProyecto, impedanciaRed, impedanciaConductor, type EntradaProyecto, type Conductor } from '@/utils/cortocircuito'
+import { calcularIccTablero } from '@/utils/calcularIccTablero'
+import { varianteLabel, CURVA_MULTIPLICADOR } from '@/utils/protecciones'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import type { Proteccion } from '@/context/types'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
@@ -22,12 +26,20 @@ type CortocircRow = {
   X_cable_mOhm: number | null
   Z1_mOhm:      number | null
   kappa:        number | null
-  Ik_kA:        number | null
+  Ik_kA_max:    number | null
+  Ik_kA_min:    number | null
   ip_kA:        number | null
   S_min_002:    number | null
   S_min_02:     number | null
   cable_ok_002: boolean | null
   cable_ok_02:  boolean | null
+  proteccionId:    number | null
+  proteccionData:  Proteccion | null
+  proteccionLabel: string
+  Icu_kA:  number | null
+  Im_A:    number | null
+  Icu_ok:  boolean | null
+  Im_ok:   boolean | null
 }
 
 type ColMeta = { colType: 'label' | 'editable' | 'auto' | 'result' }
@@ -47,6 +59,24 @@ function AutoCell({ value, decimals = 2 }: { value: number | null; decimals?: nu
   )
 }
 
+// Estado combinado de la verificación de la protección — 'sin_datos' cubre tanto el
+// caso de faltar Icc/curva para poder evaluar como el caso en que solo una de las dos
+// verificaciones (Icu/Im) tiene datos: no alcanza para dar por buena la protección,
+// pero tampoco hay un ✗ concreto que mostrar.
+type EstadoProteccion = 'ok' | 'fail' | 'sin_datos'
+
+function estadoProteccion(Icu_ok: boolean | null, Im_ok: boolean | null): EstadoProteccion {
+  if (Icu_ok === false || Im_ok === false) return 'fail'
+  if (Icu_ok === true && Im_ok === true) return 'ok'
+  return 'sin_datos'
+}
+
+const ESTADO_ICONO: Record<EstadoProteccion, { simbolo: string; color: string }> = {
+  ok:        { simbolo: '✓', color: '#6aab6a' },
+  fail:      { simbolo: '✗', color: 'var(--clr-danger-a10)' },
+  sin_datos: { simbolo: '?', color: '#d4a24a' },
+}
+
 function SminCell({ value, ok }: { value: number | null; ok: boolean | null }) {
   if (value === null) return (
     <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'center' }}>—</span>
@@ -62,13 +92,17 @@ function SminCell({ value, ok }: { value: number | null; ok: boolean | null }) {
 // ── Página ────────────────────────────────────────────────────────
 
 export default function Cortocircuitos() {
-  const { tableros, getTablero, loading, error, actualizarFormacion, proyectoActivo } = useProyectos()
+  const { tableros, getTablero, loading, error, actualizarFormacion, actualizarProteccion, proyectoActivo } = useProyectos()
 
   const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
   const [modalAbierto,          setModalAbierto]          = useState(false)
   const [circuitoEditando,      setCircuitoEditando]      = useState<number | null>(null)
   const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
+
+  const [modalProteccionAbierto,     setModalProteccionAbierto]     = useState(false)
+  const [circuitoProteccionEditando, setCircuitoProteccionEditando] = useState<number | null>(null)
+  const [proteccionSeleccionada,     setProteccionSeleccionada]     = useState<Proteccion | null>(null)
 
   const formato = (proyectoActivo?.formato_formacion as any) ?? 'ingles'
 
@@ -86,13 +120,24 @@ export default function Cortocircuitos() {
     setTableroId(id)
   }
 
+  // Icc de barra derivada de la red aguas arriba (fuente propia del tablero, o el
+  // tablero que lo alimenta vía un circuito ALIMENTADOR, recursivamente) — ver
+  // utils/calcularIccTablero.ts. Ya no se lee Tablero.corriente_cc_max/min (campo
+  // legado): si no hay fuente ni alimentador cargado, da null y se muestra "—".
+  const iccTablero = useMemo(
+    () => tablero ? calcularIccTablero(tablero, tableros) : { Icc_max_kA: null, Icc_min_kA: null },
+    [tablero, tableros],
+  )
+
   const rows = useMemo((): CortocircRow[] => {
     if (!tablero) return []
     const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
-    // Se usa la Icc máxima del tablero (peor caso para dimensionar el cable) como
-    // fuente equivalente aguas arriba de cada circuito. La mínima no se usa acá,
-    // sirve para coordinar protecciones, no para verificar sección.
-    const Icc_panel_A = tablero.corriente_cc_max != null ? tablero.corriente_cc_max * 1000 : null
+    // Icc máxima: peor caso para dimensionar el cable (S mín) y para el poder de
+    // corte de la protección (Icu). Icc mínima: peor caso para la coordinación de
+    // protecciones — el fusible/breaker tiene que disparar incluso ante la falla
+    // más débil posible al final del cable, por eso se usa para verificar Im.
+    const Icc_panel_A_max = iccTablero.Icc_max_kA != null ? iccTablero.Icc_max_kA * 1000 : null
+    const Icc_panel_A_min = iccTablero.Icc_min_kA != null ? iccTablero.Icc_min_kA * 1000 : null
     // Nivel de tensión de la barra: tri > bi > mono, igual criterio que el resto de la app.
     const nivelBarra = tablero.tension_tri ?? tablero.tension_bi ?? tablero.tension_mono ?? null
 
@@ -123,7 +168,8 @@ export default function Cortocircuitos() {
       // al final del cable. Se piden dos puntos de falla (0.02 s y 0.2 s) para
       // obtener Ith en las dos zonas de protección con un solo cálculo del mismo Z1.
       let Z1_mOhm: number | null = null, kappa: number | null = null
-      let Ik_kA: number | null = null, ip_kA: number | null = null
+      let Ik_kA_max: number | null = null, ip_kA: number | null = null
+      let Ik_kA_min: number | null = null
       let Ith_002_A: number | null = null, Ith_02_A: number | null = null
       let R_cable_mOhm: number | null = null, X_cable_mOhm: number | null = null
 
@@ -144,11 +190,11 @@ export default function Cortocircuitos() {
           // ídem: datos insuficientes para este circuito puntual, no rompe la tabla.
         }
 
-        if (Icc_panel_A && nivelBarra) {
+        if (Icc_panel_A_max && nivelBarra) {
           try {
             const entrada: EntradaProyecto = {
               proyecto: { nombre: 'cortocircuitos', frecuencia_hz: 50 },
-              red_alimentacion: { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: Icc_panel_A },
+              red_alimentacion: { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: Icc_panel_A_max },
               transformadores: [],
               generadores: [],
               motores: [],
@@ -161,13 +207,37 @@ export default function Cortocircuitos() {
             const [r002, r02] = calcularProyecto(entrada)
             Z1_mOhm = Math.hypot(r002.Z1.re, r002.Z1.im) * 1000
             kappa = r002.kappa
-            Ik_kA = r002.corrientes.Ik_inicial_A / 1000
+            Ik_kA_max = r002.corrientes.Ik_inicial_A / 1000
             ip_kA = r002.corrientes.ip_A / 1000
             Ith_002_A = r002.corrientes.Ith_A
             Ith_02_A = r02.corrientes.Ith_A
           } catch {
             // Datos insuficientes o inconsistentes para este circuito puntual (ej. cable
             // sin sección resuelta todavía) — se deja en blanco, no rompe el resto de la tabla.
+          }
+        }
+
+        // Segundo cálculo, independiente del anterior: misma falla y mismo cable,
+        // pero con la Icc mínima del tablero como fuente — da la I"k más chica
+        // posible en el extremo del cable, que es lo que hay que superar para
+        // garantizar que la protección dispare (ver columna Protección más abajo).
+        if (Icc_panel_A_min && nivelBarra) {
+          try {
+            const entradaMin: EntradaProyecto = {
+              proyecto: { nombre: 'cortocircuitos', frecuencia_hz: 50 },
+              red_alimentacion: { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: Icc_panel_A_min },
+              transformadores: [],
+              generadores: [],
+              motores: [],
+              conductores: [conductor],
+              puntos_falla: [
+                { id: 'FMIN', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MINIMO' },
+              ],
+            }
+            const [rMin] = calcularProyecto(entradaMin)
+            Ik_kA_min = rMin.corrientes.Ik_inicial_A / 1000
+          } catch {
+            // ídem: datos insuficientes, se deja en blanco.
           }
         }
       }
@@ -178,36 +248,51 @@ export default function Cortocircuitos() {
       const cable_ok_002 = S_min_002 != null && S_real != null ? S_real >= S_min_002 : null
       const cable_ok_02  = S_min_02  != null && S_real != null ? S_real >= S_min_02  : null
 
+      // Protección termomagnética (u otra del catálogo) asignada al circuito:
+      // Icu tiene que soportar la falla más severa (I"k máx) y el umbral de disparo
+      // magnético (Im = multiplicador de la curva × In) tiene que dispararse incluso
+      // ante la falla más débil (I"k mín) para garantizar despeje instantáneo.
+      const proteccion = c.proteccion
+      const Icu_kA = proteccion?.Icu ?? null
+      const Icu_ok = Icu_kA != null && Ik_kA_max != null ? Icu_kA >= Ik_kA_max : null
+      const curvaMult = proteccion?.curva ? CURVA_MULTIPLICADOR[proteccion.curva] : null
+      const Im_A = curvaMult && proteccion?.In != null ? curvaMult[0] * proteccion.In : null
+      const Im_ok = Im_A != null && Ik_kA_min != null ? Im_A <= Ik_kA_min * 1000 : null
+
       return {
         id: c.id, circuito: c.circuito,
         formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
         formacionData: formacionData(c as any),
         S_real_mm2: S_real != null && !isNaN(S_real) ? S_real : null,
         R_cable_mOhm, X_cable_mOhm,
-        Z1_mOhm, kappa, Ik_kA, ip_kA,
+        Z1_mOhm, kappa, Ik_kA_max, Ik_kA_min, ip_kA,
         S_min_002, S_min_02,
         cable_ok_002, cable_ok_02,
+        proteccionId: proteccion?.id ?? null,
+        proteccionData: proteccion,
+        proteccionLabel: proteccion ? varianteLabel(proteccion, proteccion.familia?.tipo ?? '') : '—',
+        Icu_kA, Im_A, Icu_ok, Im_ok,
       }
     })
-  }, [tablero, formato])
+  }, [tablero, formato, iccTablero])
 
-  // Datos del sistema aguas arriba del tablero — la Icc de entrada y su R/X
-  // equivalente (Z_barra en la fórmula Z1 = Z_barra + Z_cable), para que se vea
-  // de dónde sale la parte de Z1 que no depende del cable de cada circuito.
+  // R/X equivalente aguas arriba de la barra (Z_barra en la fórmula Z1 = Z_barra + Z_cable),
+  // re-derivado de la Icc máxima ya calculada — mismo criterio simplificado (R/X default de
+  // red) que usa cada circuito para su propio Z1, así ambos números son consistentes entre sí.
   const redInfo = useMemo(() => {
-    if (!tablero || tablero.corriente_cc_max == null) return null
+    if (!tablero || iccTablero.Icc_max_kA == null) return null
     const nivelBarra = tablero.tension_tri ?? tablero.tension_bi ?? tablero.tension_mono ?? null
     if (!nivelBarra) return null
     try {
       const r = impedanciaRed(
-        { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: tablero.corriente_cc_max * 1000 },
+        { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: iccTablero.Icc_max_kA * 1000 },
         'MAXIMO', nivelBarra,
       )
       return { R_mOhm: r.Z1.re * 1000, X_mOhm: r.Z1.im * 1000 }
     } catch {
       return null
     }
-  }, [tablero])
+  }, [tablero, iccTablero])
 
   const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
     try { return JSON.parse(localStorage.getItem('ea_col_cortocircuitos') ?? '{}') } catch { return {} }
@@ -238,6 +323,34 @@ export default function Cortocircuitos() {
         return <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }} onClick={openModal}>{info.getValue()}</span>
       },
     }),
+    columnHelper.accessor('proteccionLabel', {
+      header: 'Protección', size: 170,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: info => {
+        const row = info.row.original
+        const openModal = (e: React.MouseEvent) => {
+          e.stopPropagation()
+          setCircuitoProteccionEditando(row.id)
+          setProteccionSeleccionada(row.proteccionData)
+          setModalProteccionAbierto(true)
+        }
+        if (!row.proteccionId) return <span onClick={openModal} style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, cursor: 'pointer' }}>Sin protección</span>
+        const { simbolo, color } = ESTADO_ICONO[estadoProteccion(row.Icu_ok, row.Im_ok)]
+        const tooltip = [
+          row.Icu_kA != null ? `Icu ${row.Icu_kA.toFixed(row.Icu_kA >= 100 ? 0 : 1)}kA` : 'Icu: sin datos',
+          row.Im_A != null ? `Im ${row.Im_A.toFixed(row.Im_A >= 100 ? 0 : 1)}A` : 'Im: sin datos',
+        ].join(' · ')
+        return (
+          <span
+            onClick={openModal} title={tooltip}
+            style={{ cursor: 'pointer', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          >
+            <span style={{ textDecoration: 'underline dotted' }}>{info.getValue()}</span>
+            <span style={{ fontWeight: 700, color }}>{simbolo}</span>
+          </span>
+        )
+      },
+    }),
     columnHelper.accessor('S_real_mm2', {
       header: 'S real (mm²)', size: 100,
       meta: { colType: 'auto' } as ColMeta,
@@ -263,8 +376,13 @@ export default function Cortocircuitos() {
       meta: { colType: 'auto' } as ColMeta,
       cell: info => <AutoCell value={info.getValue()} decimals={2} />,
     }),
-    columnHelper.accessor('Ik_kA', {
-      header: 'I"k (kA)', size: 90,
+    columnHelper.accessor('Ik_kA_max', {
+      header: 'I"k máx (kA)', size: 100,
+      meta: { colType: 'result' } as ColMeta,
+      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
+    }),
+    columnHelper.accessor('Ik_kA_min', {
+      header: 'I"k mín (kA)', size: 100,
       meta: { colType: 'result' } as ColMeta,
       cell: info => <AutoCell value={info.getValue()} decimals={2} />,
     }),
@@ -283,7 +401,7 @@ export default function Cortocircuitos() {
       meta: { colType: 'result' } as ColMeta,
       cell: info => <SminCell value={info.getValue()} ok={info.row.original.cable_ok_02} />,
     }),
-  ], [setCircuitoEditando, setFormacionSeleccionada, setModalAbierto])
+  ], [setCircuitoEditando, setFormacionSeleccionada, setModalAbierto, setCircuitoProteccionEditando, setProteccionSeleccionada, setModalProteccionAbierto])
 
   const table = useReactTable({
     data: rows,
@@ -329,13 +447,11 @@ export default function Cortocircuitos() {
             <div className="flex items-center gap-2.5">
               <span className="text-[14px] font-semibold text-font-a0">{tablero.tag}</span>
               {tablero.nombre && <span className="text-[13px] text-surface-tonal-a40">{tablero.nombre}</span>}
-              {tablero.corriente_cc_max != null && (
-                <span className="text-[12px] text-surface-tonal-a40">
-                  Icc max = {tablero.corriente_cc_max} kA
-                  {tablero.corriente_cc_min != null && <> · Icc min = {tablero.corriente_cc_min} kA</>}
-                  {redInfo && <> · R red = {redInfo.R_mOhm.toFixed(2)} mΩ · X red = {redInfo.X_mOhm.toFixed(2)} mΩ</>}
-                </span>
-              )}
+              <span className="text-[12px] text-surface-tonal-a40">
+                Icc max = {iccTablero.Icc_max_kA != null ? `${iccTablero.Icc_max_kA.toFixed(2)} kA` : '—'}
+                {' '}· Icc min = {iccTablero.Icc_min_kA != null ? `${iccTablero.Icc_min_kA.toFixed(2)} kA` : '—'}
+                {redInfo && <> · R red = {redInfo.R_mOhm.toFixed(2)} mΩ · X red = {redInfo.X_mOhm.toFixed(2)} mΩ</>}
+              </span>
             </div>
             <div className="flex items-center gap-3.5 text-[11px] text-surface-tonal-a40">
               <span className="flex items-center gap-1.5"><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4A8FD4', display: 'inline-block' }} /> Editable</span>
@@ -412,10 +528,22 @@ export default function Cortocircuitos() {
 
             <div className="flex flex-col gap-2">
               <div>
+                <span className="text-font-a20 font-medium">Icc max / Icc min (barra)</span> — la corriente de
+                cortocircuito de la barra del tablero, de donde sale <InlineMath math="Z_{barra}" /> para todos los
+                circuitos. Ya no es un dato que se carga a mano: se recorre la red aguas arriba de este tablero — si
+                tiene una fuente de alimentación propia (red, red + transformador, o generador) se calcula desde ahí;
+                si en cambio lo alimenta otro tablero a través de un circuito ALIMENTADOR, se hereda la Icc de ese
+                tablero (recursivamente) sumando en serie el cable del alimentador; si no hay ninguna de las dos cosas
+                cargada, no hay forma de derivarla y queda en <b>—</b>. Si un tablero tiene más de un camino posible
+                (ej. red normal + generador de respaldo), se evalúa cada uno por separado y se toma el peor caso —
+                el más alto para Icc max, el más bajo para Icc min — en vez de combinarlos en paralelo.
+              </div>
+
+              <div>
                 <span className="text-font-a20 font-medium">Z1 (mΩ)</span> — impedancia total entre la barra y el
                 extremo del cable: <InlineMath math="Z_1 = Z_{barra} + Z_{cable}" />.{' '}
-                <b>De dónde sale:</b> <InlineMath math="Z_{barra}" /> se deriva de la Icc máxima que cargaste a mano en
-                el tablero (no se calcula, es un dato de entrada tuyo). <InlineMath math="Z_{cable}" /> sale de la
+                <b>De dónde sale:</b> <InlineMath math="Z_{barra}" /> se deriva de la Icc máxima de la barra (ver
+                arriba). <InlineMath math="Z_{cable}" /> sale de la
                 resistencia (sección, material y longitud del cable, a 20 °C — la temperatura más fría posible, que da
                 la Icc más alta y por eso es el peor caso) y de la reactancia, calculada según la geometría real de la
                 formación (disposición trébol/plana para unipolares, o geometría interna para multipolares — misma
@@ -431,11 +559,15 @@ export default function Cortocircuitos() {
               </div>
 
               <div>
-                <span className="text-font-a20 font-medium">I&quot;k (kA)</span> — corriente de cortocircuito inicial
-                simétrica, el resultado principal: <InlineMath math="I''_{k} = \dfrac{c \cdot U_n}{\sqrt{3}\,|Z_1|}" />.{' '}
+                <span className="text-font-a20 font-medium">I&quot;k máx / mín (kA)</span> — corriente de cortocircuito
+                inicial simétrica, el resultado principal: <InlineMath math="I''_{k} = \dfrac{c \cdot U_n}{\sqrt{3}\,|Z_1|}" />.{' '}
                 <InlineMath math="U_n" /> es la tensión de línea del tablero; <InlineMath math="c" /> es el factor de
                 tensión de la norma (1,05 para baja tensión en el escenario de corriente máxima, cubre el margen de
-                +6% que puede tener la red real sobre su tensión nominal).
+                +6% que puede tener la red real sobre su tensión nominal). Se calcula dos veces con dos fuentes
+                distintas: <b>I&quot;k máx</b> usa la Icc máxima del tablero (peor caso, para dimensionar el cable y el
+                poder de corte de la protección) e <b>I&quot;k mín</b> usa la Icc mínima (peor caso opuesto — la falla
+                más débil que puede ocurrir en el extremo del cable, que es la que hay que garantizar que dispare la
+                protección). Todas las demás columnas (Z1, κ, ip, S mín) usan siempre el escenario máximo.
               </div>
 
               <div>
@@ -473,12 +605,31 @@ export default function Cortocircuitos() {
                 severas) y <b>0,2 s</b> la zona térmica (disparo temporizado, fallas menos severas que igual hay que
                 despejar). El cable tiene que soportar ambos casos.
               </div>
+
+              <div>
+                <span className="text-font-a20 font-medium">Protección</span> — la termomagnética (u otro dispositivo
+                del catálogo) asignada al circuito, con un símbolo al lado que resume si es adecuada para esta falla
+                (pasá el mouse sobre él para ver los valores de Icu/Im). Se verifican dos cosas independientes:{' '}
+                <b>Icu</b> (poder de corte) tiene que ser mayor o igual a la falla más severa,{' '}
+                <InlineMath math="I_{cu} \geq I''_{k,max}" />; y el umbral de disparo magnético{' '}
+                <InlineMath math="I_m = mult_{curva} \times I_n" /> (extremo inferior del rango de la curva B/C/D/K/Z —
+                el más exigente, para no sobrestimar la protección) tiene que quedar por debajo de la falla más débil,{' '}
+                <InlineMath math="I_m \leq I''_{k,min}" />, para garantizar que dispare instantáneamente incluso en el
+                peor caso. <b className="text-[#6aab6a]">✓</b> verde: ambas verificaciones dieron bien.{' '}
+                <b style={{ color: 'var(--clr-danger-a10)' }}>✗</b> roja: al menos una dio mal. <b style={{ color: '#d4a24a' }}>?</b>{' '}
+                ámbar: no hay datos suficientes para completar alguna de las dos verificaciones — por ejemplo, la
+                protección no tiene curva cargada (caso típico de los diferenciales) o el tablero no tiene Icc mínima
+                cargada.
+              </div>
             </div>
 
             <p>
-              <b className="text-font-a20">Qué no calcula todavía:</b> la Icc máxima/mínima del tablero es un dato que
-              cargás a mano — el motor no reconstruye la red aguas arriba (fuente de alimentación, transformadores,
-              otros tableros en cadena) para derivarla sola. Eso es la próxima pieza a conectar.
+              <b className="text-font-a20">Qué no calcula todavía:</b> las fuentes tipo UPS y paneles solares no
+              tienen fórmula de impedancia en el motor (son fuentes limitadas electrónicamente, fuera del alcance de
+              la IEC 60909-0) y se ignoran en la cadena. Si un tablero tiene más de una red o más de un transformador
+              cargados a la vez, todos los transformadores se emparejan con la primera red — no se distingue cuál
+              trafo cuelga de cuál red. Y no se modela el estado de interruptores (normalmente abiertos, enclavamientos):
+              se asume que toda fuente y todo alimentador cargado está efectivamente conectado.
             </p>
           </div>
         </div>
@@ -502,6 +653,18 @@ export default function Cortocircuitos() {
             setModalAbierto(false)
           }}
           onCerrar={() => setModalAbierto(false)}
+        />
+      )}
+
+      {modalProteccionAbierto && (
+        <ProteccionModal
+          proteccionInicial={proteccionSeleccionada}
+          onGuardar={proteccion => {
+            if (!circuitoProteccionEditando) return
+            actualizarProteccion(circuitoProteccionEditando, proteccion)
+            setModalProteccionAbierto(false)
+          }}
+          onCerrar={() => setModalProteccionAbierto(false)}
         />
       )}
     </div>

@@ -7,6 +7,7 @@ import * as fuentesApi  from '@/services/fuentesAlimentacion'
 import * as lazosApi    from '@/services/lazosInstrumentacion'
 import * as puertosRedApi from '@/services/puertosRed'
 import type { Canio, Bandeja, Segmento, Conjunto, Arquitectura, Pared } from '@/services/ruteo'
+import type { Caniero } from '@/services/canieros'
 import { prefetchCablesFamilias } from '@/context/CablesContext'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 
@@ -34,6 +35,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   const [bandejas,            setBandejas]            = useState<Bandeja[]>([])
   const [paredes,             setParedes]             = useState<Pared[]>([])
   const [tablaParedes,        setArquitecturaes]      = useState<Arquitectura[]>([])
+  const [canieros,            setCanieros]            = useState<Caniero[]>([])
   const [activeConjuntoId,    setActiveConjuntoIdState]    = useState<number | null>(null)
   const [activaArquitecturaId,setActivaArquitecturaIdState] = useState<number | null>(null)
   const [loading,             setLoading]             = useState(true)
@@ -91,7 +93,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     proyectoActivoRef.current = p
     if (!p) {
       localStorage.removeItem(LS_PROYECTO)
-      setTableros([]); setConjuntos([]); setSegmentos([]); setParedes([]); setArquitecturaes([])
+      setTableros([]); setConjuntos([]); setSegmentos([]); setParedes([]); setArquitecturaes([]); setCanieros([])
       setActiveConjuntoIdState(null); setActivaArquitecturaIdState(null)
       return
     }
@@ -127,6 +129,8 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         const tablas: Arquitectura[] = data.arquitecturas ?? []
         setArquitecturaes(tablas)
         setParedes(tablas.flatMap((tp: Arquitectura) => tp.paredes))
+
+        setCanieros(data.canieros ?? [])
 
         const availableConjIds: number[] = (data.conjuntos ?? []).map((c: any) => c.id)
         const savedConjId  = Number(localStorage.getItem(lsConjunto(p.id))) || null
@@ -377,6 +381,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       segmentos, canios, bandejas, conjuntos,
       activeConjuntoId, setActiveConjuntoId,
       paredes, tablaParedes, activaArquitecturaId, setActivaArquitecturaId,
+      canieros, setCanieros,
       ...ruteo,
     }}>
       {children}
