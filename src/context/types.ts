@@ -18,7 +18,7 @@ export type Cable = {
   familia_id: number
   Nfases: number
   Iadm: number
-  familia?: { material: string | null; temperatura: number | null; aislamiento: string | null } | null
+  familia?: { material: string | null; temperatura: number | null; aislamiento: string | null; norma: string | null } | null
 }
 
 export type Formacion = {
@@ -146,6 +146,35 @@ export type PuertoRed = {
   cantidad_cables: number | null
 }
 
+export type ElementoUnifilarAtributo = {
+  id: number
+  clave: string
+  valor: string
+}
+
+// Elemento agregado a mano sobre el unifilar (líneas/textos/símbolos que no salen
+// de Circuito/Formacion/Proteccion) — ver src/app/unifilares/_elementos.ts.
+export type ElementoUnifilar = {
+  id: number
+  tablero_id: number
+  tipo: string   // 'linea' | 'texto' | 'simbolo'
+  circuito_id: number | null
+  x1: number
+  y1: number
+  x2: number | null
+  y2: number | null
+  tipo_linea: string | null   // 'CONTINUOUS' | 'DASHED' | 'DASHDOT' | 'HIDDEN' | 'CENTER'
+  grosor: number | null
+  texto: string | null
+  tamano: number | null
+  negrita: boolean | null
+  alineacion: string | null   // 'left' | 'center' | 'right'
+  rotacion: number | null
+  nombre_bloque: string | null
+  atributos: ElementoUnifilarAtributo[]
+  color: string | null
+}
+
 export type Tablero = {
   id: number
   tag: string
@@ -173,6 +202,7 @@ export type Tablero = {
   fuentes: FuenteAlimentacion[]
   lazos: LazoInstrumentacion[]
   puertos_red: PuertoRed[]
+  elementos_unifilar: ElementoUnifilar[]
 }
 
 export type SegPatch = Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>

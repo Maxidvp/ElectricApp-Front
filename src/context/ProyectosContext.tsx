@@ -197,7 +197,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   async function agregarTablero(data: any): Promise<Tablero> {
     const real = await tablerosApi.createTablero({ ...data, proyecto_id: proyectoActivo?.id ?? null }) as Tablero
-    setTableros(prev => [...prev, { ...real, circuitos: [], fuentes: [], lazos: [], puertos_red: [] }])
+    setTableros(prev => [...prev, { ...real, circuitos: [], fuentes: [], lazos: [], puertos_red: [], elementos_unifilar: [] }])
     return real
   }
 
@@ -209,6 +209,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       fuentes: real.fuentes ?? [],
       lazos: real.lazos ?? [],
       puertos_red: real.puertos_red ?? [],
+      elementos_unifilar: real.elementos_unifilar ?? [],
     }])
     return real
   }

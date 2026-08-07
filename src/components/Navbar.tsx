@@ -18,6 +18,7 @@ const NAV_LINKS: { href: string; label: string; categoria: NavCategoria }[] = [
   { href: '/ampacidad',      label: 'Ampacidad',      categoria: 'POTENCIA' },
   { href: '/caidas',         label: 'Caídas',         categoria: 'POTENCIA' },
   { href: '/cortocircuitos', label: 'Cortocircuitos', categoria: 'POTENCIA' },
+  { href: '/unifilares',     label: 'Unifilares',     categoria: 'POTENCIA' },
   { href: '/ruteo',          label: 'Ruteo',          categoria: null },
   { href: '/ocupaciones',    label: 'Ocupaciones',    categoria: null },
   { href: '/caneros',        label: 'Cañeros',        categoria: null },
