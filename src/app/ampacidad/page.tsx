@@ -134,13 +134,13 @@ function MetodoCell({ value, onChange }: { value: string; onChange: (v: string) 
       onChange={e => onChange(e.target.value)}
       style={{
         width: '100%', height: 26, padding: '0 4px', fontSize: 11, textAlign: 'center',
-        background: 'color-mix(in srgb, #4A8FD4 4%, transparent)',
+        background: 'var(--clr-surface-a10)',
         color: value ? 'var(--clr-font-a0)' : 'var(--clr-surface-tonal-a40)',
-        border: '1px solid transparent', borderRadius: 3, outline: 'none', cursor: 'pointer',
+        border: '1px solid var(--clr-surface-tonal-a20)', borderRadius: 3, outline: 'none', cursor: 'pointer',
       }}
     >
       {METODOS.map(m => (
-        <option key={m.value} value={m.value}>{m.label}</option>
+        <option key={m.value} value={m.value} style={{ background: 'var(--clr-surface-a10)', color: 'var(--clr-font-a0)' }}>{m.label}</option>
       ))}
     </select>
   )

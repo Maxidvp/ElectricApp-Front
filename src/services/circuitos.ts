@@ -1,13 +1,13 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+import { apiFetch } from './apiFetch'
 
 export async function getCircuito(id: number) {
-  const res = await fetch(`${API_URL}/circuitos/${id}`)
+  const res = await apiFetch(`/circuitos/${id}`)
   if (!res.ok) throw new Error('Error al traer el circuito')
   return res.json()
 }
 
 export async function deleteCircuito(id: number) {
-  const res = await fetch(`${API_URL}/circuitos/${id}`, {
+  const res = await apiFetch(`/circuitos/${id}`, {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error('Error al eliminar el circuito')
@@ -15,7 +15,7 @@ export async function deleteCircuito(id: number) {
 }
 
 export async function updateFPCircuito(id: number, fp: number | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/fp`, {
+  const res = await apiFetch(`/circuitos/${id}/fp`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ FP: fp }),
@@ -25,7 +25,7 @@ export async function updateFPCircuito(id: number, fp: number | null) {
 }
 
 export async function updateLargoCircuito(id: number, largo: number | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/largo`, {
+  const res = await apiFetch(`/circuitos/${id}/largo`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ Largo: largo }),
@@ -35,7 +35,7 @@ export async function updateLargoCircuito(id: number, largo: number | null) {
 }
 
 export async function updateDescripcionCircuito(id: number, descripcion: string | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/descripcion`, {
+  const res = await apiFetch(`/circuitos/${id}/descripcion`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ descripcion }),
@@ -45,7 +45,7 @@ export async function updateDescripcionCircuito(id: number, descripcion: string 
 }
 
 export async function updateEsAcometidaCircuito(id: number, es_acometida: boolean) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/es_acometida`, {
+  const res = await apiFetch(`/circuitos/${id}/es_acometida`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ es_acometida }),
@@ -55,7 +55,7 @@ export async function updateEsAcometidaCircuito(id: number, es_acometida: boolea
 }
 
 export async function updateFaseCircuito(id: number, fase: string | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/fase`, {
+  const res = await apiFetch(`/circuitos/${id}/fase`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fase }),
@@ -65,7 +65,7 @@ export async function updateFaseCircuito(id: number, fase: string | null) {
 }
 
 export async function updateTipoTensionCircuito(id: number, tipo_tension: string | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/tipo_tension`, {
+  const res = await apiFetch(`/circuitos/${id}/tipo_tension`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tipo_tension }),
@@ -75,7 +75,7 @@ export async function updateTipoTensionCircuito(id: number, tipo_tension: string
 }
 
 export async function updatePotenciaCircuito(id: number, potencia: number | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/potencia`, {
+  const res = await apiFetch(`/circuitos/${id}/potencia`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ potencia }),
@@ -85,7 +85,7 @@ export async function updatePotenciaCircuito(id: number, potencia: number | null
 }
 
 export async function updateMetodoInstalacionCircuito(id: number, metodo_instalacion: string | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/metodo-instalacion`, {
+  const res = await apiFetch(`/circuitos/${id}/metodo-instalacion`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ metodo_instalacion }),
@@ -95,7 +95,7 @@ export async function updateMetodoInstalacionCircuito(id: number, metodo_instala
 }
 
 export async function updateFcManualCircuito(id: number, fc_manual: number | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/fc-manual`, {
+  const res = await apiFetch(`/circuitos/${id}/fc-manual`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fc_manual }),
@@ -105,7 +105,7 @@ export async function updateFcManualCircuito(id: number, fc_manual: number | nul
 }
 
 export async function updateFtManualCircuito(id: number, ft_manual: number | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/ft-manual`, {
+  const res = await apiFetch(`/circuitos/${id}/ft-manual`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ft_manual }),
@@ -115,7 +115,7 @@ export async function updateFtManualCircuito(id: number, ft_manual: number | nul
 }
 
 export async function updateNombreCircuito(id: number, circuito: string) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/nombre`, {
+  const res = await apiFetch(`/circuitos/${id}/nombre`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ circuito })
@@ -128,7 +128,7 @@ export async function updateNombreCircuito(id: number, circuito: string) {
 }
 
 export async function crearCircuitoVacio(tableroId: number) {
-  const res = await fetch(`${API_URL}/circuitos/vacio`, {
+  const res = await apiFetch(`/circuitos/vacio`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tablero_id: tableroId })
@@ -138,7 +138,7 @@ export async function crearCircuitoVacio(tableroId: number) {
 }
 
 export async function duplicarCircuito(circuitoId: number) {
-  const res = await fetch(`${API_URL}/circuitos/duplicar/${circuitoId}`, {
+  const res = await apiFetch(`/circuitos/duplicar/${circuitoId}`, {
     method: 'POST',
   })
   if (!res.ok) throw new Error('Error al duplicar el circuito')
@@ -146,7 +146,7 @@ export async function duplicarCircuito(circuitoId: number) {
 }
 
 export async function updateTipoCircuito(id: number, tipo: string | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/tipo`, {
+  const res = await apiFetch(`/circuitos/${id}/tipo`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tipo }),
@@ -156,7 +156,7 @@ export async function updateTipoCircuito(id: number, tipo: string | null) {
 }
 
 export async function updateTableroDestinoCircuito(id: number, tablero_destino_id: number | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/tablero-destino`, {
+  const res = await apiFetch(`/circuitos/${id}/tablero-destino`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tablero_destino_id }),
@@ -179,7 +179,7 @@ export type FormacionPatch = {
 }
 
 export async function actualizarFasesBulk(items: { id: number; fase: string | null }[]) {
-  const res = await fetch(`${API_URL}/circuitos/fase-bulk`, {
+  const res = await apiFetch(`/circuitos/fase-bulk`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(items),
@@ -189,7 +189,7 @@ export async function actualizarFasesBulk(items: { id: number; fase: string | nu
 }
 
 export async function renombrarCircuitosBulk(items: { id: number; circuito: string }[]) {
-  const res = await fetch(`${API_URL}/circuitos/renombrar-bulk`, {
+  const res = await apiFetch(`/circuitos/renombrar-bulk`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(items),
@@ -199,7 +199,7 @@ export async function renombrarCircuitosBulk(items: { id: number; circuito: stri
 }
 
 export async function reordenarCircuitos(ordenes: { id: number; orden: number }[]) {
-  const res = await fetch(`${API_URL}/circuitos/reordenar`, {
+  const res = await apiFetch(`/circuitos/reordenar`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(ordenes),
@@ -208,7 +208,7 @@ export async function reordenarCircuitos(ordenes: { id: number; orden: number }[
 }
 
 export async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 'combinacion') {
-  const res = await fetch(`${API_URL}/circuitos/${parentId}/auxiliar`, {
+  const res = await apiFetch(`/circuitos/${parentId}/auxiliar`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ role }),
@@ -218,7 +218,7 @@ export async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 
 }
 
 export async function updateProteccionCircuito(id: number, proteccion_id: number | null) {
-  const res = await fetch(`${API_URL}/circuitos/${id}/proteccion`, {
+  const res = await apiFetch(`/circuitos/${id}/proteccion`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ proteccion_id }),
@@ -228,7 +228,7 @@ export async function updateProteccionCircuito(id: number, proteccion_id: number
 }
 
 export async function updateFormacion(circuitoId: number, data: FormacionPatch) {
-  const res = await fetch(`${API_URL}/circuitos/${circuitoId}`, {
+  const res = await apiFetch(`/circuitos/${circuitoId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)

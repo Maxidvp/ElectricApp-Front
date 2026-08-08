@@ -219,6 +219,8 @@ export type ProyectosContextType = {
   eliminarProyecto: (id: number) => Promise<void>
   agregarFamiliaProyecto: (familiaId: number) => Promise<void>
   quitarFamiliaProyecto: (familiaId: number) => Promise<void>
+  agregarParticipante: (email: string) => Promise<void>
+  quitarParticipante: (usuarioId: number) => Promise<void>
 
   // Tableros & circuitos
   tableros: Tablero[]

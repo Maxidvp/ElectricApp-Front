@@ -1,7 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+import { apiFetch } from './apiFetch'
 
 export async function getFamiliasCables() {
-  const res = await fetch(`${API_URL}/familias_cables`)
+  const res = await apiFetch(`/familias_cables`)
   if (!res.ok) throw new Error('Error al traer las familias de cables')
   return res.json()
 }
@@ -24,7 +24,7 @@ export type FamiliaCablePatch = {
 }
 
 export async function createFamiliaCable(data: FamiliaCablePatch) {
-  const res = await fetch(`${API_URL}/familias_cables`, {
+  const res = await apiFetch(`/familias_cables`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -37,7 +37,7 @@ export async function createFamiliaCable(data: FamiliaCablePatch) {
 }
 
 export async function updateFamiliaCable(id: number, data: FamiliaCablePatch) {
-  const res = await fetch(`${API_URL}/familias_cables/${id}`, {
+  const res = await apiFetch(`/familias_cables/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -50,7 +50,7 @@ export async function updateFamiliaCable(id: number, data: FamiliaCablePatch) {
 }
 
 export async function deleteFamiliaCable(id: number) {
-  const res = await fetch(`${API_URL}/familias_cables/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/familias_cables/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar la familia')
   return res.json()
 }

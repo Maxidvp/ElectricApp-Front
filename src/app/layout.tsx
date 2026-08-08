@@ -6,8 +6,10 @@ import "katex/dist/katex.min.css";
 import { ProyectosProvider } from "@/context/ProyectosContext";
 import { CablesProvider } from "@/context/CablesContext";
 import { ProteccionesProvider } from "@/context/ProteccionesContext";
+import { AuthProvider } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 import LoadingGate from "@/components/LoadingGate";
+import RequireAuth from "@/components/RequireAuth";
 
 // Fuentes de Google cargadas con el sistema de Next.js
 // se inyectan como variables CSS y se aplican en el <html>
@@ -39,16 +41,20 @@ export default function RootLayout({
     >
       <body>
 
-        <ProyectosProvider>
-          <LoadingGate>
-            <Navbar />
-            <CablesProvider>
-              <ProteccionesProvider>
-                {children}
-              </ProteccionesProvider>
-            </CablesProvider>
-          </LoadingGate>
-        </ProyectosProvider>
+        <AuthProvider>
+          <RequireAuth>
+            <ProyectosProvider>
+              <LoadingGate>
+                <Navbar />
+                <CablesProvider>
+                  <ProteccionesProvider>
+                    {children}
+                  </ProteccionesProvider>
+                </CablesProvider>
+              </LoadingGate>
+            </ProyectosProvider>
+          </RequireAuth>
+        </AuthProvider>
 
       </body>
     </html>

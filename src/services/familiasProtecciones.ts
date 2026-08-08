@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+import { apiFetch } from './apiFetch'
 
 export type FamiliaProteccionPatch = {
   tipo: string   // 'termomagnetico' | 'diferencial' | 'guardamotor' | 'caja_moldeada'
@@ -9,13 +9,13 @@ export type FamiliaProteccionPatch = {
 }
 
 export async function getFamiliasProtecciones(tipo?: string) {
-  const res = await fetch(`${API_URL}/familias_protecciones${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`)
+  const res = await apiFetch(`/familias_protecciones${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`)
   if (!res.ok) throw new Error('Error al traer las familias de protecciones')
   return res.json()
 }
 
 export async function createFamiliaProteccion(data: FamiliaProteccionPatch) {
-  const res = await fetch(`${API_URL}/familias_protecciones`, {
+  const res = await apiFetch(`/familias_protecciones`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -28,7 +28,7 @@ export async function createFamiliaProteccion(data: FamiliaProteccionPatch) {
 }
 
 export async function updateFamiliaProteccion(id: number, data: FamiliaProteccionPatch) {
-  const res = await fetch(`${API_URL}/familias_protecciones/${id}`, {
+  const res = await apiFetch(`/familias_protecciones/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -41,7 +41,7 @@ export async function updateFamiliaProteccion(id: number, data: FamiliaProteccio
 }
 
 export async function deleteFamiliaProteccion(id: number) {
-  const res = await fetch(`${API_URL}/familias_protecciones/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/familias_protecciones/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar la familia')
   return res.json()
 }

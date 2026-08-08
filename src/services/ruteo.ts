@@ -1,4 +1,4 @@
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+import { apiFetch } from './apiFetch'
 
 export type Canio = {
   id: number
@@ -64,13 +64,13 @@ export type CreateSegmentoInput = Omit<Segmento, 'id' | 'canio' | 'bandeja' | 'c
 
 // Canios
 export async function getCanios(): Promise<Canio[]> {
-  const res = await fetch(`${API}/canios`)
+  const res = await apiFetch(`/canios`)
   if (!res.ok) throw new Error('Error al traer caños')
   return res.json()
 }
 
 export async function createCanio(data: Omit<Canio, 'id'>): Promise<Canio> {
-  const res = await fetch(`${API}/canios`, {
+  const res = await apiFetch(`/canios`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -81,13 +81,13 @@ export async function createCanio(data: Omit<Canio, 'id'>): Promise<Canio> {
 
 // Bandejas
 export async function getBandejas(): Promise<Bandeja[]> {
-  const res = await fetch(`${API}/bandejas`)
+  const res = await apiFetch(`/bandejas`)
   if (!res.ok) throw new Error('Error al traer bandejas')
   return res.json()
 }
 
 export async function createBandeja(data: Omit<Bandeja, 'id'>): Promise<Bandeja> {
-  const res = await fetch(`${API}/bandejas`, {
+  const res = await apiFetch(`/bandejas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -98,7 +98,7 @@ export async function createBandeja(data: Omit<Bandeja, 'id'>): Promise<Bandeja>
 
 // Segmentos
 export async function getSegmentos(): Promise<Segmento[]> {
-  const res = await fetch(`${API}/segmentos`)
+  const res = await apiFetch(`/segmentos`)
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || `Error ${res.status} al traer segmentos`)
@@ -107,7 +107,7 @@ export async function getSegmentos(): Promise<Segmento[]> {
 }
 
 export async function createSegmento(data: CreateSegmentoInput): Promise<Segmento> {
-  const res = await fetch(`${API}/segmentos`, {
+  const res = await apiFetch(`/segmentos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -123,7 +123,7 @@ export async function createSegmentosBulk(
   items: Omit<CreateSegmentoInput, 'conjunto_ids'>[],
   conjunto_ids: number[]
 ): Promise<Segmento[]> {
-  const res = await fetch(`${API}/segmentos/bulk`, {
+  const res = await apiFetch(`/segmentos/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items, conjunto_ids }),
@@ -133,7 +133,7 @@ export async function createSegmentosBulk(
 }
 
 export async function createParedesBulk(items: CreateParedInput[]): Promise<Pared[]> {
-  const res = await fetch(`${API}/paredes/bulk`, {
+  const res = await apiFetch(`/paredes/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items }),
@@ -143,7 +143,7 @@ export async function createParedesBulk(items: CreateParedInput[]): Promise<Pare
 }
 
 export async function deleteSegmentosBulk(ids: number[]): Promise<void> {
-  const res = await fetch(`${API}/segmentos/bulk`, {
+  const res = await apiFetch(`/segmentos/bulk`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids }),
@@ -152,7 +152,7 @@ export async function deleteSegmentosBulk(ids: number[]): Promise<void> {
 }
 
 export async function updateSegmentosZBulk(ids: number[], z: number): Promise<void> {
-  const res = await fetch(`${API}/segmentos/bulk-z`, {
+  const res = await apiFetch(`/segmentos/bulk-z`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids, z1: z, z2: z }),
@@ -161,7 +161,7 @@ export async function updateSegmentosZBulk(ids: number[], z: number): Promise<vo
 }
 
 export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'lazos' | 'puertos_red' | 'conjuntos'>>): Promise<Segmento> {
-  const res = await fetch(`${API}/segmentos/${id}`, {
+  const res = await apiFetch(`/segmentos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -171,12 +171,12 @@ export async function updateSegmento(id: number, data: Partial<Omit<Segmento, 'c
 }
 
 export async function deleteSegmento(id: number): Promise<void> {
-  const res = await fetch(`${API}/segmentos/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/segmentos/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar segmento')
 }
 
 export async function splitSegmento(id: number, x: number, y: number, z: number): Promise<{ updated: Segmento; created: Segmento }> {
-  const res = await fetch(`${API}/segmentos/${id}/split`, {
+  const res = await apiFetch(`/segmentos/${id}/split`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ x, y, z }),
@@ -186,50 +186,50 @@ export async function splitSegmento(id: number, x: number, y: number, z: number)
 }
 
 export async function addCircuitoToSegmento(segmentoId: number, circuitoId: number): Promise<Segmento> {
-  const res = await fetch(`${API}/segmentos/${segmentoId}/circuitos/${circuitoId}`, { method: 'POST' })
+  const res = await apiFetch(`/segmentos/${segmentoId}/circuitos/${circuitoId}`, { method: 'POST' })
   if (!res.ok) throw new Error('Error al agregar circuito')
   return res.json()
 }
 
 export async function removeCircuitoFromSegmento(segmentoId: number, circuitoId: number): Promise<Segmento> {
-  const res = await fetch(`${API}/segmentos/${segmentoId}/circuitos/${circuitoId}`, { method: 'DELETE' })
+  const res = await apiFetch(`/segmentos/${segmentoId}/circuitos/${circuitoId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar circuito')
   return res.json()
 }
 
 export async function addLazoToSegmento(segmentoId: number, lazoId: number): Promise<Segmento> {
-  const res = await fetch(`${API}/segmentos/${segmentoId}/lazos/${lazoId}`, { method: 'POST' })
+  const res = await apiFetch(`/segmentos/${segmentoId}/lazos/${lazoId}`, { method: 'POST' })
   if (!res.ok) throw new Error('Error al agregar lazo')
   return res.json()
 }
 
 export async function removeLazoFromSegmento(segmentoId: number, lazoId: number): Promise<Segmento> {
-  const res = await fetch(`${API}/segmentos/${segmentoId}/lazos/${lazoId}`, { method: 'DELETE' })
+  const res = await apiFetch(`/segmentos/${segmentoId}/lazos/${lazoId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar lazo')
   return res.json()
 }
 
 export async function addPuertoRedToSegmento(segmentoId: number, puertoId: number): Promise<Segmento> {
-  const res = await fetch(`${API}/segmentos/${segmentoId}/puertos_red/${puertoId}`, { method: 'POST' })
+  const res = await apiFetch(`/segmentos/${segmentoId}/puertos_red/${puertoId}`, { method: 'POST' })
   if (!res.ok) throw new Error('Error al agregar puerto de red')
   return res.json()
 }
 
 export async function removePuertoRedFromSegmento(segmentoId: number, puertoId: number): Promise<Segmento> {
-  const res = await fetch(`${API}/segmentos/${segmentoId}/puertos_red/${puertoId}`, { method: 'DELETE' })
+  const res = await apiFetch(`/segmentos/${segmentoId}/puertos_red/${puertoId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar puerto de red')
   return res.json()
 }
 
 // Conjuntos
 export async function getConjuntos(): Promise<Conjunto[]> {
-  const res = await fetch(`${API}/conjuntos`)
+  const res = await apiFetch(`/conjuntos`)
   if (!res.ok) throw new Error('Error al traer conjuntos')
   return res.json()
 }
 
 export async function createConjunto(nombre: string, proyecto_id?: number | null): Promise<Conjunto> {
-  const res = await fetch(`${API}/conjuntos`, {
+  const res = await apiFetch(`/conjuntos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nombre, proyecto_id }),
@@ -239,7 +239,7 @@ export async function createConjunto(nombre: string, proyecto_id?: number | null
 }
 
 export async function updateConjunto(id: number, nombre: string): Promise<Conjunto> {
-  const res = await fetch(`${API}/conjuntos/${id}`, {
+  const res = await apiFetch(`/conjuntos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nombre }),
@@ -249,29 +249,29 @@ export async function updateConjunto(id: number, nombre: string): Promise<Conjun
 }
 
 export async function deleteConjunto(id: number): Promise<void> {
-  const res = await fetch(`${API}/conjuntos/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/conjuntos/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar conjunto')
 }
 
 export async function addTableroToConjunto(conjuntoId: number, tableroId: number): Promise<Conjunto> {
-  const res = await fetch(`${API}/conjuntos/${conjuntoId}/tableros/${tableroId}`, { method: 'POST' })
+  const res = await apiFetch(`/conjuntos/${conjuntoId}/tableros/${tableroId}`, { method: 'POST' })
   if (!res.ok) throw new Error('Error al agregar tablero al conjunto')
   return res.json()
 }
 
 export async function removeTableroFromConjunto(conjuntoId: number, tableroId: number): Promise<Conjunto> {
-  const res = await fetch(`${API}/conjuntos/${conjuntoId}/tableros/${tableroId}`, { method: 'DELETE' })
+  const res = await apiFetch(`/conjuntos/${conjuntoId}/tableros/${tableroId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar tablero del conjunto')
   return res.json()
 }
 
 export async function addSegmentoToConjunto(segId: number, conjuntoId: number): Promise<void> {
-  const res = await fetch(`${API}/conjuntos/${conjuntoId}/segmentos/${segId}`, { method: 'POST' })
+  const res = await apiFetch(`/conjuntos/${conjuntoId}/segmentos/${segId}`, { method: 'POST' })
   if (!res.ok) throw new Error('Error al agregar segmento al conjunto')
 }
 
 export async function removeSegmentoFromConjunto(segId: number, conjuntoId: number): Promise<void> {
-  const res = await fetch(`${API}/conjuntos/${conjuntoId}/segmentos/${segId}`, { method: 'DELETE' })
+  const res = await apiFetch(`/conjuntos/${conjuntoId}/segmentos/${segId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar segmento del conjunto')
 }
 
@@ -288,7 +288,7 @@ export type Pared = {
 export type CreateParedInput = Omit<Pared, 'id'>
 
 export async function createPared(data: CreateParedInput): Promise<Pared> {
-  const res = await fetch(`${API}/paredes`, {
+  const res = await apiFetch(`/paredes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -298,7 +298,7 @@ export async function createPared(data: CreateParedInput): Promise<Pared> {
 }
 
 export async function updatePared(id: number, data: Partial<Omit<Pared, 'id'>>): Promise<Pared> {
-  const res = await fetch(`${API}/paredes/${id}`, {
+  const res = await apiFetch(`/paredes/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -308,7 +308,7 @@ export async function updatePared(id: number, data: Partial<Omit<Pared, 'id'>>):
 }
 
 export async function deletePared(id: number): Promise<void> {
-  const res = await fetch(`${API}/paredes/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/paredes/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar pared')
 }
 
@@ -321,7 +321,7 @@ export type Arquitectura = {
 }
 
 export async function createArquitectura(nombre: string, proyecto_id: number): Promise<Arquitectura> {
-  const res = await fetch(`${API}/arquitecturas`, {
+  const res = await apiFetch(`/arquitecturas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nombre, proyecto_id }),
@@ -331,7 +331,7 @@ export async function createArquitectura(nombre: string, proyecto_id: number): P
 }
 
 export async function updateArquitectura(id: number, nombre: string): Promise<Arquitectura> {
-  const res = await fetch(`${API}/arquitecturas/${id}`, {
+  const res = await apiFetch(`/arquitecturas/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nombre }),
@@ -341,18 +341,18 @@ export async function updateArquitectura(id: number, nombre: string): Promise<Ar
 }
 
 export async function deleteArquitectura(id: number): Promise<void> {
-  const res = await fetch(`${API}/arquitecturas/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/arquitecturas/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar tabla de paredes')
 }
 
 export async function addArquitecturaToConjunto(tablaParedId: number, conjuntoId: number): Promise<Arquitectura> {
-  const res = await fetch(`${API}/arquitecturas/${tablaParedId}/conjuntos/${conjuntoId}`, { method: 'POST' })
+  const res = await apiFetch(`/arquitecturas/${tablaParedId}/conjuntos/${conjuntoId}`, { method: 'POST' })
   if (!res.ok) throw new Error('Error al aplicar tabla al conjunto')
   return res.json()
 }
 
 export async function removeArquitecturaFromConjunto(tablaParedId: number, conjuntoId: number): Promise<Arquitectura> {
-  const res = await fetch(`${API}/arquitecturas/${tablaParedId}/conjuntos/${conjuntoId}`, { method: 'DELETE' })
+  const res = await apiFetch(`/arquitecturas/${tablaParedId}/conjuntos/${conjuntoId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al quitar tabla del conjunto')
   return res.json()
 }

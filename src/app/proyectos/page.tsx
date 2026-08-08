@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables } from '@/context/CablesContext'
+import { useAuth } from '@/context/AuthContext'
 import type { FormatoFormacion, NomenclaturaFases } from '@/services/proyectos'
 
 // ── Estilos compartidos ────────────────────────────────────────────
@@ -16,7 +17,7 @@ const cx = {
   grid:    'p-3 grid gap-[10px] bg-surface-a10',
 }
 
-type Seccion = 'general' | 'cables' | 'expresiones' | 'eliminar'
+type Seccion = 'general' | 'cables' | 'expresiones' | 'participantes' | 'eliminar'
 
 const FORMATOS: { id: FormatoFormacion; label: string; desc: string }[] = [
   { id: 'ingles',    label: 'Sistema inglés',      desc: 'Ej: 4C#10 AWG (3P-N)+1C#10 AWG (G)' },
@@ -33,10 +34,11 @@ const NOMENCLATURAS: { id: NomenclaturaFases; label: string; fases: string; desc
 ]
 
 const secciones: { id: Seccion; label: string }[] = [
-  { id: 'general',     label: 'General' },
-  { id: 'cables',      label: 'Cables' },
-  { id: 'expresiones', label: 'Expresiones' },
-  { id: 'eliminar',    label: 'Eliminar' },
+  { id: 'general',      label: 'General' },
+  { id: 'cables',       label: 'Cables' },
+  { id: 'expresiones',  label: 'Expresiones' },
+  { id: 'participantes', label: 'Participantes' },
+  { id: 'eliminar',     label: 'Eliminar' },
 ]
 
 export default function ProyectoPage() {
@@ -44,8 +46,10 @@ export default function ProyectoPage() {
   const {
     proyectoActivo, actualizarProyecto, eliminarProyecto,
     agregarFamiliaProyecto, quitarFamiliaProyecto,
+    agregarParticipante, quitarParticipante,
   } = useProyectos()
   const { familias: todasLasFamilias } = useCables()
+  const { usuario } = useAuth()
 
   const [seccion,   setSeccion]   = useState<Seccion>('general')
   const [nombre,    setNombre]    = useState(proyectoActivo?.nombre ?? '')
@@ -55,6 +59,9 @@ export default function ProyectoPage() {
   const [guardado,  setGuardado]  = useState(false)
   const [confirmText, setConfirmText] = useState('')
   const [eliminando,  setEliminando]  = useState(false)
+  const [emailNuevo, setEmailNuevo] = useState('')
+  const [errorParticipante, setErrorParticipante] = useState<string | null>(null)
+  const [agregandoParticipante, setAgregandoParticipante] = useState(false)
 
   if (!proyectoActivo) {
     return (
@@ -65,6 +72,21 @@ export default function ProyectoPage() {
   }
 
   const proyecto = proyectoActivo
+  const esDueño = usuario?.id === proyecto.usuario_id || usuario?.role === 'ADMIN'
+
+  const handleAgregarParticipante = async () => {
+    if (!emailNuevo.trim() || agregandoParticipante) return
+    setAgregandoParticipante(true)
+    try {
+      await agregarParticipante(emailNuevo.trim())
+      setEmailNuevo('')
+      setErrorParticipante(null)
+    } catch (err) {
+      setErrorParticipante((err as Error).message)
+    } finally {
+      setAgregandoParticipante(false)
+    }
+  }
 
   const handleGuardar = async () => {
     if (!nombre.trim()) return
@@ -246,6 +268,52 @@ export default function ProyectoPage() {
                       </div>
                     )
                   })}
+                </div>
+              </div>
+            )}
+
+            {seccion === 'participantes' && (
+              <div className={cx.section}>
+                <div className={cx.hdr}>Participantes</div>
+                <div className="p-3 flex flex-col gap-2 bg-surface-a10">
+                  <div className="px-3 py-2 rounded-[7px] border border-surface-tonal-a20 bg-surface-tonal-a0 text-[13px] text-font-a0">
+                    Dueño: {proyecto.usuario?.email}
+                  </div>
+                  {proyecto.participantes.map(({ usuario: p }) => (
+                    <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-[7px] border border-surface-tonal-a20 bg-surface-tonal-a0">
+                      <span className="text-[13px] text-font-a0">{p.email}</span>
+                      {esDueño && (
+                        <button
+                          onClick={() => quitarParticipante(p.id)}
+                          className="h-[28px] px-3 rounded-[6px] text-[12px] font-medium cursor-pointer border-none transition-colors bg-danger-a0/15 text-danger-a10 hover:bg-danger-a0/25"
+                        >
+                          − Quitar
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {proyecto.participantes.length === 0 && (
+                    <p className="text-xs text-surface-tonal-a40 py-2">Todavía no hay participantes agregados.</p>
+                  )}
+                  {esDueño && (
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        className={cx.input}
+                        value={emailNuevo}
+                        onChange={e => { setEmailNuevo(e.target.value); setErrorParticipante(null) }}
+                        placeholder="email@ejemplo.com"
+                        autoComplete="off"
+                      />
+                      <button
+                        onClick={handleAgregarParticipante}
+                        disabled={!emailNuevo.trim() || agregandoParticipante}
+                        className="h-[34px] px-4 rounded-[7px] text-[13px] font-medium cursor-pointer border-none transition-colors bg-info-a0/15 text-info-a10 hover:bg-info-a0/25 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {agregandoParticipante ? 'Agregando…' : '+ Agregar'}
+                      </button>
+                    </div>
+                  )}
+                  {errorParticipante && <p className="text-xs text-danger-a10">{errorParticipante}</p>}
                 </div>
               </div>
             )}

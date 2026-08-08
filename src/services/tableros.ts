@@ -1,19 +1,19 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+import { apiFetch } from './apiFetch'
 
 export async function getTableros() {
-  const res = await fetch(`${API_URL}/tableros`)
+  const res = await apiFetch(`/tableros`)
   if (!res.ok) throw new Error('Error al traer los tableros')
   return res.json()
 }
 
 export async function getTablero(id: number) {
-  const res = await fetch(`${API_URL}/tableros/${id}`)
+  const res = await apiFetch(`/tableros/${id}`)
   if (!res.ok) throw new Error('Error al traer el tablero')
   return res.json()
 }
 
 export async function createTablero(data: any) {
-  const res = await fetch(`${API_URL}/tableros`, {
+  const res = await apiFetch(`/tableros`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -23,7 +23,7 @@ export async function createTablero(data: any) {
 }
 
 export async function updateTablero(id: number, data: any) {
-  const res = await fetch(`${API_URL}/tableros/${id}`, {
+  const res = await apiFetch(`/tableros/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -33,13 +33,13 @@ export async function updateTablero(id: number, data: any) {
 }
 
 export async function duplicarTablero(id: number) {
-  const res = await fetch(`${API_URL}/tableros/duplicar/${id}`, { method: 'POST' })
+  const res = await apiFetch(`/tableros/duplicar/${id}`, { method: 'POST' })
   if (!res.ok) throw new Error('Error al duplicar el tablero')
   return res.json()
 }
 
 export async function deleteTablero(id: number) {
-  const res = await fetch(`${API_URL}/tableros/${id}`, {
+  const res = await apiFetch(`/tableros/${id}`, {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error('Error al eliminar el tablero')

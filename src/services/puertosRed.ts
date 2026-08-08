@@ -1,7 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+import { apiFetch } from './apiFetch'
 
 export async function createPuertoRed(data: any) {
-  const res = await fetch(`${API_URL}/puertos-red`, {
+  const res = await apiFetch(`/puertos-red`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -11,7 +11,7 @@ export async function createPuertoRed(data: any) {
 }
 
 export async function updatePuertoRed(id: number, data: any) {
-  const res = await fetch(`${API_URL}/puertos-red/${id}`, {
+  const res = await apiFetch(`/puertos-red/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -21,13 +21,13 @@ export async function updatePuertoRed(id: number, data: any) {
 }
 
 export async function deletePuertoRed(id: number) {
-  const res = await fetch(`${API_URL}/puertos-red/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/puertos-red/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar el puerto de red')
   return res.json()
 }
 
 export async function crearPuertoRedVacio(tableroId: number) {
-  const res = await fetch(`${API_URL}/puertos-red/vacio`, {
+  const res = await apiFetch(`/puertos-red/vacio`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tablero_id: tableroId }),
@@ -37,13 +37,13 @@ export async function crearPuertoRedVacio(tableroId: number) {
 }
 
 export async function duplicarPuertoRed(puertoId: number) {
-  const res = await fetch(`${API_URL}/puertos-red/duplicar/${puertoId}`, { method: 'POST' })
+  const res = await apiFetch(`/puertos-red/duplicar/${puertoId}`, { method: 'POST' })
   if (!res.ok) throw new Error('Error al duplicar el puerto de red')
   return res.json()
 }
 
 export async function reordenarPuertosRed(ordenes: { id: number; orden: number }[]) {
-  const res = await fetch(`${API_URL}/puertos-red/reordenar`, {
+  const res = await apiFetch(`/puertos-red/reordenar`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(ordenes),

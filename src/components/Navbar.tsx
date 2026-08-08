@@ -1,14 +1,15 @@
 'use client'
 import { useEffect, useReducer } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useProyectos } from '@/context/ProyectosContext'
+import { useAuth } from '@/context/AuthContext'
 import { getLastTableroId, TABLERO_ID_EVENT } from '@/utils/cookies'
 
 // `categoria: null` = siempre visible, no depende del tablero seleccionado.
 type NavCategoria = 'POTENCIA' | 'CONTROL' | 'DATOS' | null
 
-const NAV_LINKS: { href: string; label: string; categoria: NavCategoria }[] = [
+const NAV_LINKS: { href: string; label: string; categoria: NavCategoria; adminOnly?: boolean }[] = [
   { href: '/proyectos',      label: 'Proyecto',       categoria: null },
   { href: '/tableros',       label: 'Tableros',       categoria: null },
   { href: '/locales',        label: 'Locales',        categoria: null },
@@ -26,11 +27,14 @@ const NAV_LINKS: { href: string; label: string; categoria: NavCategoria }[] = [
   { href: '/nec_panel_tag',  label: 'NEC Panel',      categoria: 'POTENCIA' },
   { href: '/cables',         label: 'Cables',         categoria: null },
   { href: '/protecciones',  label: 'Protecciones',   categoria: null },
+  { href: '/admin',         label: 'Admin',          categoria: null, adminOnly: true },
 ]
 
 export default function Navbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { tableros } = useProyectos()
+  const { usuario, logout } = useAuth()
 
   // El cambio de tablero se persiste en una cookie leída por cada página (no en
   // el contexto), así que este componente no se entera solo con el re-render
@@ -50,7 +54,15 @@ export default function Navbar() {
       ? tableroSeleccionado.categoria
       : 'POTENCIA'
 
-  const linksVisibles = NAV_LINKS.filter(l => l.categoria === null || l.categoria === categoriaActiva)
+  const linksVisibles = NAV_LINKS.filter(l =>
+    (l.categoria === null || l.categoria === categoriaActiva) &&
+    (!l.adminOnly || usuario?.role === 'ADMIN')
+  )
+
+  async function handleLogout() {
+    await logout()
+    router.push('/login')
+  }
 
   return (
     <nav className="h-12 bg-surface-tonal-a0 border-b border-surface-tonal-a20 flex items-center px-5 gap-6 sticky top-0 z-[100]">
@@ -75,6 +87,18 @@ export default function Navbar() {
           </Link>
         ))}
       </div>
+
+      {usuario && (
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-[13px] text-surface-tonal-a40">{usuario.email}</span>
+          <button
+            onClick={handleLogout}
+            className="text-[13px] text-surface-tonal-a40 hover:text-font-a0 py-[5px] px-[10px] rounded-md hover:bg-surface-tonal-a10 transition-colors"
+          >
+            Cerrar sesión
+          </button>
+        </div>
+      )}
 
     </nav>
   )

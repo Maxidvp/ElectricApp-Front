@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+import { apiFetch } from './apiFetch'
 
 export type ProteccionPatch = {
   polos: number | null
@@ -12,19 +12,19 @@ export type ProteccionPatch = {
 }
 
 export async function getProtecciones(tipo?: string) {
-  const res = await fetch(`${API_URL}/protecciones${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`)
+  const res = await apiFetch(`/protecciones${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`)
   if (!res.ok) throw new Error('Error al traer las protecciones')
   return res.json()
 }
 
 export async function getProteccionesPorFamilia(familiaId: number) {
-  const res = await fetch(`${API_URL}/protecciones/familia/${familiaId}`)
+  const res = await apiFetch(`/protecciones/familia/${familiaId}`)
   if (!res.ok) throw new Error('Error al traer las protecciones de la familia')
   return res.json()
 }
 
 export async function createProteccion(familiaId: number, data: ProteccionPatch) {
-  const res = await fetch(`${API_URL}/protecciones`, {
+  const res = await apiFetch(`/protecciones`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...data, familia_id: familiaId }),
@@ -37,7 +37,7 @@ export async function createProteccion(familiaId: number, data: ProteccionPatch)
 }
 
 export async function createProteccionesBulk(familiaId: number, items: ProteccionPatch[]) {
-  const res = await fetch(`${API_URL}/protecciones/bulk`, {
+  const res = await apiFetch(`/protecciones/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ familia_id: familiaId, items }),
@@ -50,7 +50,7 @@ export async function createProteccionesBulk(familiaId: number, items: Proteccio
 }
 
 export async function updateProteccion(id: number, data: Partial<ProteccionPatch>) {
-  const res = await fetch(`${API_URL}/protecciones/${id}`, {
+  const res = await apiFetch(`/protecciones/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -63,7 +63,7 @@ export async function updateProteccion(id: number, data: Partial<ProteccionPatch
 }
 
 export async function deleteProteccion(id: number) {
-  const res = await fetch(`${API_URL}/protecciones/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/protecciones/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar la protección')
   return res.json()
 }

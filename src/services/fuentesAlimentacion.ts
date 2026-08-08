@@ -1,7 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+import { apiFetch } from './apiFetch'
 
 export async function createFuenteAlimentacion(data: any) {
-  const res = await fetch(`${API_URL}/fuentes-alimentacion`, {
+  const res = await apiFetch(`/fuentes-alimentacion`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -11,7 +11,7 @@ export async function createFuenteAlimentacion(data: any) {
 }
 
 export async function updateFuenteAlimentacion(id: number, data: any) {
-  const res = await fetch(`${API_URL}/fuentes-alimentacion/${id}`, {
+  const res = await apiFetch(`/fuentes-alimentacion/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -21,7 +21,7 @@ export async function updateFuenteAlimentacion(id: number, data: any) {
 }
 
 export async function deleteFuenteAlimentacion(id: number) {
-  const res = await fetch(`${API_URL}/fuentes-alimentacion/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/fuentes-alimentacion/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Error al eliminar la fuente de alimentación')
   return res.json()
 }

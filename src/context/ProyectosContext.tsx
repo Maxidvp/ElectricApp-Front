@@ -6,10 +6,12 @@ import * as proyectosApi from '@/services/proyectos'
 import * as fuentesApi  from '@/services/fuentesAlimentacion'
 import * as lazosApi    from '@/services/lazosInstrumentacion'
 import * as puertosRedApi from '@/services/puertosRed'
+import { apiFetch } from '@/services/apiFetch'
 import type { Canio, Bandeja, Segmento, Conjunto, Arquitectura, Pared } from '@/services/ruteo'
 import type { Caniero } from '@/services/canieros'
 import { prefetchCablesFamilias } from '@/context/CablesContext'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import { useAuth } from '@/context/AuthContext'
 
 import type { Tablero, Circuito, FuenteAlimentacion, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta } from './types'
 import { deriveSegmentos, nextTempId, DESCRIPCION_CREANDO } from './helpers'
@@ -40,6 +42,8 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   const [activaArquitecturaId,setActivaArquitecturaIdState] = useState<number | null>(null)
   const [loading,             setLoading]             = useState(true)
   const [error,               setError]               = useState<string | null>(null)
+
+  const { usuario, loading: authLoading } = useAuth()
 
   const pendingCircuitos = useRef<Map<number, Promise<Circuito>>>(new Map())
   const pendingSegmentos = useRef<Map<number, Promise<Segmento>>>(new Map())
@@ -74,6 +78,8 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   // ── Bootstrap ─────────────────────────────────────────────────
   useEffect(() => {
+    if (authLoading) return
+    if (!usuario) { setLoading(false); return }
     Promise.all([proyectosApi.getProyectos(), ruteoApi.getCanios(), ruteoApi.getBandejas()])
       .then(([projs, cans, bans]) => {
         setProyectos(projs)
@@ -85,7 +91,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         else          setLoading(false)
       })
       .catch(err => { setError(err.message); setLoading(false) })
-  }, [])
+  }, [authLoading, usuario])
 
   // ── Carga del proyecto activo ─────────────────────────────────
   function setProyectoActivo(p: ProyectoMeta | null) {
@@ -99,7 +105,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     }
     localStorage.setItem(LS_PROYECTO, String(p.id))
     setLoading(true)
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/proyectos/${p.id}`)
+    apiFetch(`/proyectos/${p.id}`)
       .then(r => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json() })
       .then(data => {
         const tablerosList = data.tableros ?? []
@@ -184,6 +190,20 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       p.id === proyectoActivo.id ? { ...p, familia_ids: p.familia_ids.filter(id => id !== familiaId) } : p
     ))
     setProyectoActivoState(prev => prev ? { ...prev, familia_ids: prev.familia_ids.filter(id => id !== familiaId) } : prev)
+  }
+
+  async function agregarParticipante(email: string) {
+    if (!proyectoActivo) return
+    const actualizado = await proyectosApi.agregarParticipante(proyectoActivo.id, email)
+    setProyectos(prev => prev.map(p => p.id === actualizado.id ? actualizado : p))
+    setProyectoActivoState(actualizado)
+  }
+
+  async function quitarParticipante(usuarioId: number) {
+    if (!proyectoActivo) return
+    const actualizado = await proyectosApi.quitarParticipante(proyectoActivo.id, usuarioId)
+    setProyectos(prev => prev.map(p => p.id === actualizado.id ? actualizado : p))
+    setProyectoActivoState(actualizado)
   }
 
   // ── Tableros CRUD ─────────────────────────────────────────────
@@ -370,6 +390,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       proyectos, proyectoActivo, setProyectoActivo,
       crearProyecto, actualizarProyecto, eliminarProyecto,
       agregarFamiliaProyecto, quitarFamiliaProyecto,
+      agregarParticipante, quitarParticipante,
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
