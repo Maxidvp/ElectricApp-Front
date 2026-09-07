@@ -1,8 +1,9 @@
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import * as circuitosApi from '@/services/circuitos'
 import type { FormacionPatch } from '@/services/circuitos'
-import type { Tablero, Circuito, Cable, Proteccion } from './types'
+import type { Tablero, Circuito, Cable, Proteccion, GrupoDiferencial } from './types'
 import { nextTempId, mapCirc, addCirc, replaceCirc, mergeWithTemp, DESCRIPCION_CREANDO } from './helpers'
+import { useToast } from './ToastContext'
 
 type SetTableros = Dispatch<SetStateAction<Tablero[]>>
 type PendingMap  = MutableRefObject<Map<number, Promise<Circuito>>>
@@ -23,9 +24,11 @@ export function useCircuitosActions(
   pendingCircuitos: PendingMap,
   recargar: () => void,
 ) {
+  const { showError } = useToast()
+
   function renombrarCircuito(id: number, nombre: string) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, circuito: nombre })))
-    circuitosApi.updateNombreCircuito(id, nombre).catch(console.error)
+    circuitosApi.updateNombreCircuito(id, nombre).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   // Inserta el circuito optimistamente en la posición deseada, luego confirma el ID real
@@ -47,6 +50,7 @@ export function useCircuitosActions(
         id: tempId, orden: i, circuito: tag, descripcion: DESCRIPCION_CREANDO, tipo: null,
         tablero_id: tableroId, formacion_id: null, formacion: null,
         proteccion_id: null, proteccion: null,
+        grupo_diferencial_id: null, grupo_diferencial: null,
         FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: false, potencia: null,
         metodo_instalacion: null, fc_manual: null, ft_manual: null,
         role: null, parent_id: null, tablero_destino_id: null, tablero_destino: null,
@@ -133,10 +137,10 @@ export function useCircuitosActions(
     })))
     const realIds = orderedHijoIds.filter(id => id > 0)
     if (realIds.length > 0)
-      circuitosApi.reordenarCircuitos(realIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
+      circuitosApi.reordenarCircuitos(realIds.map((id, i) => ({ id, orden: i }))).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
-  async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 'combinacion'): Promise<Circuito> {
+  async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 'combinacion' | 'ramal'): Promise<Circuito> {
     const real: Circuito = await circuitosApi.crearCircuitoAuxiliar(parentId, role)
     setTableros(prev => prev.map(t =>
       t.id === real.tablero_id ? { ...t, circuitos: [...t.circuitos, real] } : t
@@ -151,37 +155,37 @@ export function useCircuitosActions(
       return { ...t, circuitos: orderedIds.map((id, i) => ({ ...byId.get(id)!, orden: i })) }
     }))
     const realIds = orderedIds.filter(id => id > 0)
-    circuitosApi.reordenarCircuitos(realIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
+    circuitosApi.reordenarCircuitos(realIds.map((id, i) => ({ id, orden: i }))).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function actualizarDescripcion(id: number, descripcion: string | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, descripcion })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateDescripcionCircuito(rid, descripcion).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateDescripcionCircuito(rid, descripcion).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarFP(id: number, fp: number | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, FP: fp })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateFPCircuito(rid, fp).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateFPCircuito(rid, fp).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarLargo(id: number, largo: number | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, Largo: largo })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateLargoCircuito(rid, largo).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateLargoCircuito(rid, largo).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarPotencia(id: number, potencia: number | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, potencia })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updatePotenciaCircuito(rid, potencia).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updatePotenciaCircuito(rid, potencia).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarTipoTension(id: number, tipo: string | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo_tension: tipo })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateTipoTensionCircuito(rid, tipo).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateTipoTensionCircuito(rid, tipo).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarFase(id: number, fase: string | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, fase })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateFaseCircuito(rid, fase).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateFaseCircuito(rid, fase).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarTipo(id: number, tipo: string | null) {
@@ -191,27 +195,27 @@ export function useCircuitosActions(
       // Si deja de ser ALIMENTADOR se pierde el vínculo con el tablero destino.
       ...(tipo !== 'ALIMENTADOR' ? { tablero_destino_id: null, tablero_destino: null } : {}),
     })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateTipoCircuito(rid, tipo).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateTipoCircuito(rid, tipo).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarEsAcometida(id: number, val: boolean) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, es_acometida: val })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateEsAcometidaCircuito(rid, val).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateEsAcometidaCircuito(rid, val).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarMetodoInstalacion(id: number, metodo: string | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, metodo_instalacion: metodo })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateMetodoInstalacionCircuito(rid, metodo).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateMetodoInstalacionCircuito(rid, metodo).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarFcManual(id: number, fc: number | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, fc_manual: fc })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateFcManualCircuito(rid, fc).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateFcManualCircuito(rid, fc).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function actualizarFtManual(id: number, ft: number | null) {
     setTableros(prev => mapCirc(prev, id, c => ({ ...c, ft_manual: ft })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateFtManualCircuito(rid, ft).catch(console.error))
+    firePending(id, pendingCircuitos, rid => circuitosApi.updateFtManualCircuito(rid, ft).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   // Vincula (o desvincula, con tableroDestinoId null) un circuito ALIMENTADOR a otro tablero.
@@ -239,6 +243,7 @@ export function useCircuitosActions(
       id: tempId, orden: insertIndex, circuito: nombre, descripcion: null, tipo: 'ACOMETIDA',
       tablero_id: tableroId, formacion_id: null, formacion: null,
       proteccion_id: null, proteccion: null,
+      grupo_diferencial_id: null, grupo_diferencial: null,
       FP: null, Largo: null, tipo_tension: null, fase: null, es_acometida: true, potencia: null,
       metodo_instalacion: null, fc_manual: null, ft_manual: null,
       role: null, parent_id: null, tablero_destino_id: null, tablero_destino: null,
@@ -299,7 +304,7 @@ export function useCircuitosActions(
     const fire = (realId: number) =>
       circuitosApi.updateFormacion(realId, data)
         .then(real => setTableros(prev => mapCirc(prev, realId, c => ({ ...c, ...real as Circuito }))))
-        .catch(console.error)
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     firePending(circuitoId, pendingCircuitos, fire)
   }
 
@@ -308,7 +313,16 @@ export function useCircuitosActions(
     const fire = (realId: number) =>
       circuitosApi.updateProteccionCircuito(realId, proteccion?.id ?? null)
         .then(real => setTableros(prev => mapCirc(prev, realId, c => ({ ...c, ...real as Circuito }))))
-        .catch(console.error)
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    firePending(circuitoId, pendingCircuitos, fire)
+  }
+
+  function asignarGrupoDiferencial(circuitoId: number, grupo: GrupoDiferencial | null) {
+    setTableros(prev => mapCirc(prev, circuitoId, c => ({ ...c, grupo_diferencial_id: grupo?.id ?? null, grupo_diferencial: grupo })))
+    const fire = (realId: number) =>
+      circuitosApi.updateGrupoDiferencialCircuito(realId, grupo?.id ?? null)
+        .then(real => setTableros(prev => mapCirc(prev, realId, c => ({ ...c, ...real as Circuito }))))
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     firePending(circuitoId, pendingCircuitos, fire)
   }
 
@@ -319,6 +333,6 @@ export function useCircuitosActions(
     actualizarTipoTension, actualizarFase, actualizarTipo, actualizarEsAcometida,
     actualizarMetodoInstalacion, actualizarFcManual, actualizarFtManual,
     vincularTableroAlimentador,
-    agregarAcometida, actualizarFormacion, actualizarProteccion, crearCircuitoAuxiliar, reordenarSubcircuitos,
+    agregarAcometida, actualizarFormacion, actualizarProteccion, asignarGrupoDiferencial, crearCircuitoAuxiliar, reordenarSubcircuitos,
   }
 }

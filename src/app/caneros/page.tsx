@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useToast } from '@/context/ToastContext'
 import { useProyectos } from '@/context/ProyectosContext'
 import CircuitosPanel from '@/components/CircuitosPanel'
 import { calcOcupacionCanio, colorOcupacion, tapadaSugerida, ESPACIAMIENTOS_TIPICOS_M, RECUBRIMIENTO_HORMIGON_M } from '@/utils/electricidad'
@@ -472,6 +473,7 @@ function FilaCanios({
 // ── Página ──────────────────────────────────────────────────────────
 
 export default function CanerosPage() {
+  const { showError } = useToast()
   // canieros/setCanieros viven en ProyectosContext (cargados junto con el resto del
   // proyecto) — ya no hace falta un fetch propio al entrar a la ruta.
   const { proyectoActivo, tableros, getCircuito, canios, canieros, setCanieros } = useProyectos()
@@ -607,7 +609,7 @@ export default function CanerosPage() {
       .then(real => setCanieros(prev => prev.map(cn => cn.id !== canieroId ? cn : {
         ...cn, canios: cn.canios.map(cd => cd.id === canioId ? real : cd),
       })))
-      .catch(console.error)
+      .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   const handleQuitar = (canioDeCanieroId: number, circId: number) => {
@@ -620,7 +622,7 @@ export default function CanerosPage() {
       .then(real => setCanieros(prev => prev.map(cn => cn.id !== canieroId ? cn : {
         ...cn, canios: cn.canios.map(cd => cd.id === canioDeCanieroId ? real : cd),
       })))
-      .catch(console.error)
+      .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   const selectedCanio = caniero?.canios.find(c => c.id === selectedCanioId) ?? null

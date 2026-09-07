@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import * as authApi from '@/services/auth'
 import type { Usuario } from '@/services/auth'
+import { setUnauthorizedHandler } from '@/services/apiFetch'
 
 type AuthContextType = {
   usuario: Usuario | null
@@ -24,6 +25,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(setUsuario)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
+  }, [])
+
+  // Cualquier 401 de apiFetch (sesión expirada o revocada en medio del uso) cae acá:
+  // limpia el usuario local para que RequireAuth redirija a /login.
+  useEffect(() => {
+    setUnauthorizedHandler(() => setUsuario(null))
+    return () => setUnauthorizedHandler(null)
   }, [])
 
   async function login(email: string, password: string) {

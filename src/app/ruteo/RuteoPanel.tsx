@@ -50,7 +50,8 @@ export function RuteoPanel({
   } = useProyectos()
 
   const TIPOS_ILUMINACION = ['IUG', 'IUE']
-  const [creando,          setCreando]          = useState<{ parentId: number; role: 'retorno' | 'combinacion' } | null>(null)
+  const TIPOS_RAMAL = ['TUG', 'TUE']
+  const [creando,          setCreando]          = useState<{ parentId: number; role: 'retorno' | 'combinacion' | 'ramal' } | null>(null)
   const [subcircEditId,    setSubcircEditId]    = useState<number | null>(null)
   const prevToolRef   = useRef<ToolType>(tool)
   const activeCircRef = useRef<HTMLButtonElement | null>(null)
@@ -194,8 +195,9 @@ export function RuteoPanel({
                   }`}
                 >
                   {c.circuito}
-                  {TIPOS_ILUMINACION.includes(c.tipo ?? '') && medirCircId === c.id && medirCircIds.size > 1 && (
-                    <span className="ml-1.5 text-[10px] text-surface-tonal-a30">+retornos</span>
+                  {(TIPOS_ILUMINACION.includes(c.tipo ?? '') || (TIPOS_RAMAL.includes(c.tipo ?? '') && c.tipo_tension === 'tri')) &&
+                    medirCircId === c.id && medirCircIds.size > 1 && (
+                    <span className="ml-1.5 text-[10px] text-surface-tonal-a30">+subcircuitos</span>
                   )}
                 </button>
               ))}
@@ -296,6 +298,10 @@ export function RuteoPanel({
             : asignarCircuitos.filter(c => c.parent_id === null).map(c => {
                 const hijos    = asignarCircuitos.filter(h => h.parent_id === c.id)
                 const esIlum   = TIPOS_ILUMINACION.includes(c.tipo ?? '')
+                const esRamal  = TIPOS_RAMAL.includes(c.tipo ?? '') && c.tipo_tension === 'tri'
+                const tieneSub = esIlum || esRamal
+                const rolesDisponibles: ('retorno' | 'combinacion' | 'ramal')[] =
+                  esIlum ? ['retorno', 'combinacion'] : esRamal ? ['ramal'] : []
                 const isActiveC = activeItem?.tipo === 'circuito' && activeItem.id === c.id
                 const isActive = isActiveC || (activeItem?.tipo === 'circuito' && hijos.some(h => h.id === activeItem.id))
                 return (
@@ -313,10 +319,10 @@ export function RuteoPanel({
                         }`}
                       >
                         {c.circuito}
-                        {esIlum && <span className="ml-1.5 text-[10px] text-surface-tonal-a30">{c.tipo}</span>}
+                        {tieneSub && <span className="ml-1.5 text-[10px] text-surface-tonal-a30">{c.tipo}</span>}
                         {!circuitosRuteadosIds.has(c.id) && <SinRutear />}
                       </button>
-                      {esIlum && (
+                      {tieneSub && (
                         <button
                           onClick={() => setSubcircEditId(c.id)}
                           title="Editar subcircuitos"
@@ -324,7 +330,7 @@ export function RuteoPanel({
                         >⋯</button>
                       )}
                     </div>
-                    {esIlum && (
+                    {tieneSub && (
                       <div className="ml-4 flex flex-col gap-0.5 mt-0.5">
                         {hijos.map(h => {
                           const isActiveH = activeItem?.tipo === 'circuito' && activeItem.id === h.id
@@ -338,12 +344,13 @@ export function RuteoPanel({
                                   : 'border-transparent bg-transparent text-font-a30 hover:bg-surface-tonal-a10 hover:text-font-a0'
                               }`}
                             >
-                              {h.role === 'retorno' ? '↩' : '⟷'} {h.circuito}
+                              {h.role === 'retorno' ? '↩' : h.role === 'combinacion' ? '⟷' : '↳'} {h.circuito}
+                              {h.role === 'ramal' && h.fase && <span className="text-surface-tonal-a30"> ({h.fase})</span>}
                               {!circuitosRuteadosIds.has(h.id) && <SinRutear />}
                             </button>
                           )
                         })}
-                        {(['retorno', 'combinacion'] as const).map(role => {
+                        {rolesDisponibles.map(role => {
                           const busy = creando?.parentId === c.id && creando?.role === role
                           return (
                             <button key={role}
@@ -359,7 +366,9 @@ export function RuteoPanel({
                               }}
                               className="text-left px-2 py-0.75 text-[11px] text-surface-tonal-a30 hover:text-font-a0 cursor-pointer bg-transparent border-none disabled:cursor-default disabled:opacity-60"
                             >
-                              {busy ? `creando ${role}…` : `+ ${role}`}
+                              {busy
+                                ? `creando ${role === 'ramal' ? 'ramal monofásico' : role}…`
+                                : `+ ${role === 'ramal' ? 'ramal monofásico' : role}`}
                             </button>
                           )
                         })}

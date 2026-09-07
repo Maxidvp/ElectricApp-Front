@@ -58,6 +58,19 @@ export type Proteccion = {
   familia: FamiliaProteccion
 }
 
+// Protección diferencial que cubre a este circuito junto con sus hermanos de grupo
+// (ver GrupoDiferencial más abajo) — independiente de `proteccion` (esa es la propia
+// de este circuito, ej. el ITM).
+// proteccion_id/proteccion nulos = grupo creado pero sin device elegido todavía — se
+// dibuja igual en el unifilar, solo que sin datos de protección (ver DiferencialesModal).
+export type GrupoDiferencial = {
+  id: number
+  tablero_id: number
+  nombre: string | null
+  proteccion_id: number | null
+  proteccion: Proteccion | null
+}
+
 export type Circuito = {
   id: number
   orden: number
@@ -69,6 +82,8 @@ export type Circuito = {
   formacion: Formacion | null
   proteccion_id: number | null
   proteccion: Proteccion | null
+  grupo_diferencial_id: number | null
+  grupo_diferencial: GrupoDiferencial | null
   FP: number | null
   Largo: number | null
   tipo_tension: string | null
@@ -78,7 +93,7 @@ export type Circuito = {
   metodo_instalacion: string | null
   fc_manual: number | null
   ft_manual: number | null
-  role: string | null       // null = principal, 'retorno', 'combinacion'
+  role: string | null       // null = principal, 'retorno', 'combinacion', 'ramal'
   parent_id: number | null
   // Solo aplica si tipo === 'ALIMENTADOR': tablero al que este circuito alimenta
   tablero_destino_id: number | null
@@ -203,6 +218,7 @@ export type Tablero = {
   lazos: LazoInstrumentacion[]
   puertos_red: PuertoRed[]
   elementos_unifilar: ElementoUnifilar[]
+  grupos_diferenciales: GrupoDiferencial[]
 }
 
 export type SegPatch = Partial<Omit<Segmento, 'canio' | 'bandeja' | 'circuitos' | 'conjuntos'>>
@@ -247,12 +263,13 @@ export type ProyectosContextType = {
   actualizarFtManual: (id: number, ft: number | null) => void
   vincularTableroAlimentador: (id: number, tableroDestinoId: number | null) => void
   agregarAcometida: (tableroId: number, nombre: string, insertIndex: number) => void
-  crearCircuitoAuxiliar: (parentId: number, role: 'retorno' | 'combinacion') => Promise<Circuito>
+  crearCircuitoAuxiliar: (parentId: number, role: 'retorno' | 'combinacion' | 'ramal') => Promise<Circuito>
   reordenarSubcircuitos: (orderedHijoIds: number[]) => void
   appendSegmentos: (segs: Segmento[]) => void
   appendParedes: (paredes: Pared[]) => void
   actualizarFormacion: (circuitoId: number, data: FormacionPatch, cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null }) => void
   actualizarProteccion: (circuitoId: number, proteccion: Proteccion | null) => void
+  asignarGrupoDiferencial: (circuitoId: number, grupo: GrupoDiferencial | null) => void
   agregarTablero: (data: any) => Promise<Tablero>
   duplicarTablero: (id: number) => Promise<Tablero>
   actualizarTablero: (id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos' | 'fuentes' | 'lazos' | 'puertos_red'>>) => Promise<void>
@@ -260,6 +277,10 @@ export type ProyectosContextType = {
   agregarFuente: (tableroId: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) => Promise<void>
   actualizarFuente: (id: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) => Promise<void>
   eliminarFuente: (id: number) => Promise<void>
+  // Reemplaza TODOS los grupos diferenciales del tablero por los tramos calculados en
+  // DiferencialesModal (borra los viejos, crea uno por tramo y reasigna los circuitos)
+  // — más simple que diffear altas/bajas/ediciones circuito por circuito.
+  guardarGruposDiferenciales: (tableroId: number, runs: { nombre: string; proteccionId: number | null; circuitoIds: number[] }[]) => Promise<void>
   agregarLazo: (tableroId: number, data: Omit<LazoInstrumentacion, 'id' | 'tablero_id'>) => Promise<void>
   actualizarLazo: (id: number, data: Omit<LazoInstrumentacion, 'id' | 'tablero_id'>) => Promise<void>
   eliminarLazo: (id: number) => Promise<void>

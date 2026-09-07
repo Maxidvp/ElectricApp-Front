@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useToast } from '@/context/ToastContext'
 import {
   getFamiliasProtecciones, createFamiliaProteccion, updateFamiliaProteccion,
   type FamiliaProteccionPatch,
@@ -209,6 +210,7 @@ function NuevaVarianteForm({ familia, onCreada }: { familia: Familia; onCreada: 
 // ── Página ────────────────────────────────────────────────────────
 
 export default function ProteccionesPage() {
+  const { showError } = useToast()
   const [familias, setFamilias] = useState<Familia[]>([])
   const [familiaId, setFamiliaId] = useState<number | null>(null)
   const [creandoFamilia, setCreandoFamilia] = useState(false)
@@ -237,7 +239,7 @@ export default function ProteccionesPage() {
     }))
     updateProteccion(id, patch)
       .then(() => { if (familiaId != null) invalidarCacheProtecciones(familiaId) })
-      .catch(console.error)
+      .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   const eliminarVariante = async (id: number) => {

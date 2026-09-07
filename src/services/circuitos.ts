@@ -207,7 +207,7 @@ export async function reordenarCircuitos(ordenes: { id: number; orden: number }[
   if (!res.ok) throw new Error('Error al reordenar circuitos')
 }
 
-export async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 'combinacion') {
+export async function crearCircuitoAuxiliar(parentId: number, role: 'retorno' | 'combinacion' | 'ramal') {
   const res = await apiFetch(`/circuitos/${parentId}/auxiliar`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -224,6 +224,16 @@ export async function updateProteccionCircuito(id: number, proteccion_id: number
     body: JSON.stringify({ proteccion_id }),
   })
   if (!res.ok) throw new Error('Error al actualizar la protección')
+  return res.json()
+}
+
+export async function updateGrupoDiferencialCircuito(id: number, grupo_diferencial_id: number | null) {
+  const res = await apiFetch(`/circuitos/${id}/grupo-diferencial`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ grupo_diferencial_id }),
+  })
+  if (!res.ok) throw new Error('Error al actualizar el grupo diferencial')
   return res.json()
 }
 

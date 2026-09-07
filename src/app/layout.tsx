@@ -7,6 +7,7 @@ import { ProyectosProvider } from "@/context/ProyectosContext";
 import { CablesProvider } from "@/context/CablesContext";
 import { ProteccionesProvider } from "@/context/ProteccionesContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { ToastProvider } from "@/context/ToastContext";
 import Navbar from "@/components/Navbar";
 import LoadingGate from "@/components/LoadingGate";
 import RequireAuth from "@/components/RequireAuth";
@@ -41,20 +42,22 @@ export default function RootLayout({
     >
       <body>
 
-        <AuthProvider>
-          <RequireAuth>
-            <ProyectosProvider>
-              <LoadingGate>
-                <Navbar />
-                <CablesProvider>
-                  <ProteccionesProvider>
-                    {children}
-                  </ProteccionesProvider>
-                </CablesProvider>
-              </LoadingGate>
-            </ProyectosProvider>
-          </RequireAuth>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <RequireAuth>
+              <ProyectosProvider>
+                <LoadingGate>
+                  <Navbar />
+                  <CablesProvider>
+                    <ProteccionesProvider>
+                      {children}
+                    </ProteccionesProvider>
+                  </CablesProvider>
+                </LoadingGate>
+              </ProyectosProvider>
+            </RequireAuth>
+          </AuthProvider>
+        </ToastProvider>
 
       </body>
     </html>

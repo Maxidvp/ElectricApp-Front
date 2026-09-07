@@ -8,65 +8,101 @@ import type { Circuito, Proteccion } from '@/context/types'
 import { columnX, diagramWidth, type ColumnLayout } from './_layout'
 import { CABLE_MARK_BY_POLES, CABLE_GND, BORNE, ITM, CARTEL_RIESGO_ELECTRICO, type SymbolDef } from './_symbols'
 
-// Entrada (acometida) — todavía con geometría "a ojo", pendiente de acotar con el
-// mismo criterio que los circuitos terminales (ver abajo).
-export const ENTRY_TOP_Y = 10
-export const ENTRY_TICK_Y = 28
-export const ENTRY_BREAKER_CENTER_Y = 64
-export const BUS_Y = 108
+// ─────────────────────────────────────────────────────────────────────────
+// Cotas del dibujo — todas las distancias y márgenes agrupadas por eje (X/Y), en el
+// orden en que se usan de arriba a abajo / de izquierda a derecha, para poder
+// ajustarlas de un vistazo en vez de rastrearlas dispersas por el archivo. "a ojo" en
+// un comentario = todavía no sale de una medida real, es un valor visual pendiente de
+// contrastar contra un plano acotado. Las cotas internas del cartel de riesgo
+// eléctrico (dónde va el texto DENTRO de su propio recuadro) no están acá — esas
+// dependen de la geometría fija del símbolo (ver CARTEL_RIESGO_ELECTRICO en
+// _symbols.ts), no son márgenes entre elementos del dibujo.
+// ─────────────────────────────────────────────────────────────────────────
 
-// Placeholder para cualquier símbolo del que todavía no tenemos el bloque real
-// digitalizado (ver _symbols.ts) — un rectángulo celeste simple, para no bloquear el
-// dibujo mientras se consigue el SVG real (ej. el seccionador de entrada, o una
-// cantidad de polos sin marca de cable todavía en CABLE_MARK_BY_POLES).
-export const MISSING_SYMBOL_W = 4
-export const MISSING_SYMBOL_H = 12
+export const TEXT_SIZE_UNIFILAR = 1.8    // tamaño de texto normalizado para todo el unifilar
+export const LINE_WEIGHT_UNIFILAR = 0.25 // grosor de línea normalizado para todo el unifilar
 
-export function missingSymbolRect(cx: number, cy: number): ModelRect {
-  return { x: cx - MISSING_SYMBOL_W / 2, y: cy - MISSING_SYMBOL_H / 2, w: MISSING_SYMBOL_W, h: MISSING_SYMBOL_H }
-}
+// ── Eje Y (vertical, de arriba hacia abajo) ────────────────────────────────
+export const ENTRY_TOP_Y = 10                     // tope del dibujo -> arranque de la entrada (a ojo)
+export const ENTRY_TICK_Y = 28                    // entrada -> marca de cantidad de cables (a ojo)
+export const ENTRY_TITULO_OFFSET_Y = -1           // título de la entrada, respecto a ENTRY_TOP_Y
+export const ENTRY_FORMACION_TEXTO_OFFSET_Y = -6  // texto de formación, respecto a ENTRY_TICK_Y
+export const ENTRY_BREAKER_CENTER_Y = 64          // entrada -> centro del seccionador (a ojo)
+export const ENTRY_PROTECCION_TEXTO_OFFSET_Y = -6 // texto de protección, respecto a ENTRY_BREAKER_CENTER_Y
+export const BUS_Y = 108                          // entrada -> barra de potencia (a ojo)
 
 // Circuitos terminales — cotas reales en mm provistas por el usuario, medidas desde
-// O = tope de la protección:
-//   barra -> O:                    15 mm (LINEA_PRINCIPAL)
+// O = tope de la protección de cada circuito:
+//   barra -> O:                    10 mm (LINEA_PRINCIPAL)
 //   alto de la protección:         12 mm (PROTECCION_H)
-//   O -> marca de cantidad de cables: 15 mm
+//   O -> marca de cantidad de cables: 20 mm
 //   O -> barra de tierra:          30 mm
 //   barra de tierra -> cable de tierra: 5 mm  (o sea, 35 mm desde O)
 //   O -> bornera:                  40 mm (una en la línea principal, blanca, y otra
 //                                  en la derivación de tierra, verde — mismo bloque)
 //   O -> fin del tramo:            50 mm (deja 10 mm de margen después de la bornera)
-export const LINEA_PRINCIPAL = 10
-export const PROTECCION_H = 12
-export const DIST_MARCA_CABLE = 20
-export const DIST_BARRA_TIERRA = 30
-export const DIST_CABLE_TIERRA = DIST_BARRA_TIERRA + 5
-export const DIST_BORNERA = 40
-export const LARGO_TRAMO = 50
-// La derivación de tierra es un conductor propio, no la misma línea recoloreada —
-// sale de la barra de tierra corrida a un costado (sin cota real todavía, valor a ojo).
-export const DERIVACION_TIERRA_OFFSET = 5
+export const LINEA_PRINCIPAL = 10        // barra -> O
+export const PROTECCION_H = 12           // alto de la protección (ITM)
+export const MISSING_SYMBOL_H = 12       // alto del placeholder de un símbolo sin bloque real
+export const DATOS_CIRCUITO_OFFSET_Y = 1 // primera línea del bloque de datos, respecto a O
+export const DATOS_CIRCUITO_LINE_H = 2.2 // alto de línea entre esos datos
+export const DIST_MARCA_CABLE = 20       // O -> marca de cantidad de cables
+export const DIST_BARRA_TIERRA = 30      // O -> barra de tierra
+export const DIST_CABLE_TIERRA = DIST_BARRA_TIERRA + 5 // O -> marca del cable de tierra (35)
+export const DIST_BORNERA = 40           // O -> bornera (potencia y tierra)
+export const LARGO_TRAMO = 50            // O -> fin del tramo (deja 10mm de margen tras la bornera)
 
-export const CANVAS_H = 230
+// Grupos diferenciales (ver GrupoDiferencial en context/types.ts): un ID compartido
+// entre varios circuitos consecutivos, colgado de un peine de conexión — mismo criterio
+// que un plano real (barra -> ID -> peine -> ITM de cada circuito).
+export const DIST_PEINE_GRUPO = 20 // barra -> peine de un grupo diferencial (a ojo)
+// Cuando el tablero tiene al menos un grupo, O se corre para TODOS los circuitos (con
+// o sin grupo) para dejarle lugar al peine + ID — si no, el símbolo del ID (mismo alto
+// que MISSING_SYMBOL_H) no entraría en los 10mm de LINEA_PRINCIPAL.
+export const EXTRA_LINEA_CON_GRUPO = DIST_PEINE_GRUPO + 5 // (25)
 
-// Separación vertical entre el unifilar y la planilla — comparten el mismo canvas
-// (ver UnifilarCanvas.tsx) y el mismo .lsp (ver _export.ts), así que este número
-// vive en un solo lugar para que los dos usen exactamente el mismo offset.
-export const GAP_UNIFILAR_PLANILLA = 10
+// Recuadro límite del tablero y cartel de riesgo eléctrico.
+export const LIMITE_INSET_TOP = 5    // cuánto entra el borde superior del recuadro (a ojo)
+export const LIMITE_INSET_BOTTOM = 5 // cuánto entra el borde inferior del recuadro (a ojo)
+export const CARTEL_ALTURA = 38.26   // alto de CARTEL_RIESGO_ELECTRICO, ver _symbols.ts
+export const CARTEL_OFFSET_Y = 10    // cuánto sube el cartel desde el fin del contenido (maxY)
 
-// Tamaño de texto normalizado para todo lo que es dibujo del unifilar (no la
-// planilla, que tiene el suyo propio — ver TEXT_SIZE_TITULO/DATO en _planilla.ts).
-export const TEXT_SIZE_UNIFILAR = 1.8
-// Mismo criterio para el grosor de línea — un solo valor para todo el unifilar (bus,
-// bajadas, caja de protección, tierra) en vez de números sueltos por elemento.
-export const LINE_WEIGHT_UNIFILAR = 0.25
+export const GAP_UNIFILAR_PLANILLA = 10 // unifilar -> planilla (mismo canvas, ver UnifilarCanvas.tsx y _export.ts)
+export const CANVAS_H = 230              // alto de respaldo si el tablero no tiene circuitos
+
+// ── Eje X (horizontal, de izquierda a derecha) ─────────────────────────────
+export const ENTRY_TITULO_OFFSET_X = 96           // título de la entrada, a la izquierda de la entrada (a ojo)
+export const ENTRY_TITULO_W = 88                  // ancho del texto de título de la entrada (a ojo)
+export const ENTRY_FORMACION_TEXTO_OFFSET_X = 10  // texto de formación, a la derecha de la entrada
+export const ENTRY_PROTECCION_TEXTO_OFFSET_X = 14 // texto de protección, a la derecha de la entrada
+
+export const LIMITE_MARGIN = 8                // recuadro límite -> contenido, lados izquierdo/derecho (a ojo)
+export const LIMITE_MARGIN_DERECHA_EXTRA = 20 // margen extra del lado derecho del recuadro (a ojo)
+
+export const MISSING_SYMBOL_W = 4         // ancho del placeholder de un símbolo sin bloque real
+export const DERIVACION_TIERRA_OFFSET = 5 // circuito -> su bajada de tierra (a ojo)
+export const SIMBOLO_TEXTO_OFFSET_X = 4   // texto de un símbolo -> cuánto se corre a su derecha
+                                           // (bloque de datos del circuito, texto de PE)
+export const GRUPO_TEXTO_OFFSET_X = 2     // texto del grupo diferencial, además de medio ancho del ID
+
+export const CARTEL_ANCHO = 27.82 // ancho de CARTEL_RIESGO_ELECTRICO, ver _symbols.ts
+export const CARTEL_MARGIN = 0    // cartel -> resto del contenido, separación horizontal
+
+// Placeholder para cualquier símbolo del que todavía no tenemos el bloque real
+// digitalizado (ver _symbols.ts) — un rectángulo celeste simple, para no bloquear el
+// dibujo mientras se consigue el SVG real (ej. el seccionador de entrada, o una
+// cantidad de polos sin marca de cable todavía en CABLE_MARK_BY_POLES).
+export function missingSymbolRect(cx: number, cy: number): ModelRect {
+  return { x: cx - MISSING_SYMBOL_W / 2, y: cy - MISSING_SYMBOL_H / 2, w: MISSING_SYMBOL_W, h: MISSING_SYMBOL_H }
+}
 
 type Formacion = NonNullable<Circuito['formacion']>
 
 // Mismo mapeo que INTERRUPTOR_ABBR de _planilla.ts, duplicado acá (no se importa de
 // ahí) porque _planilla.ts ya importa tipos de este archivo — importar en el otro
-// sentido formaría un ciclo.
-const INTERRUPTOR_ABBR: Record<string, string> = {
+// sentido formaría un ciclo. Sí se exporta para el resto del módulo (ej.
+// DiferencialesModal.tsx, que lo usa para el tagueo automático por tipo de protección).
+export const INTERRUPTOR_ABBR: Record<string, string> = {
   termomagnetico: 'ITM',
   caja_moldeada:  'ITM',
   diferencial:    'ID',
@@ -141,8 +177,10 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
   // Dos barras separadas, igual que en el plano real: la de potencia (arriba, de
   // donde cuelgan las protecciones de los circuitos) y la de tierra (más abajo, a la
   // que se conecta el PE de cada circuito) — no son la misma línea.
-  const O = BUS_Y + LINEA_PRINCIPAL // tope de la protección, igual para todos los circuitos terminales
+  const hayGrupos = circuitos.some(c => c.grupo_diferencial_id != null)
+  const O = BUS_Y + LINEA_PRINCIPAL + (hayGrupos ? EXTRA_LINEA_CON_GRUPO : 0) // tope de la protección, igual para todos los circuitos terminales
   const yBarraTierra = O + DIST_BARRA_TIERRA
+  const yPeine = BUS_Y + DIST_PEINE_GRUPO
 
   lines.push({ x1: busX1, y1: BUS_Y, x2: busX2, y2: BUS_Y, weight: LINE_WEIGHT_UNIFILAR })
   lines.push({ x1: busX1+DERIVACION_TIERRA_OFFSET, y1: yBarraTierra, x2: busX2+DERIVACION_TIERRA_OFFSET, y2: yBarraTierra, weight: LINE_WEIGHT_UNIFILAR, role: 'tierra' })
@@ -160,17 +198,17 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
       // MISSING_SYMBOL_W/H arriba) — placeholder celeste en vez de la caja+diagonal
       // dibujada a mano de antes.
       rects.push(missingSymbolRect(entryX, ENTRY_BREAKER_CENTER_Y))
-      texts.push({ x: entryX + 14, y: ENTRY_BREAKER_CENTER_Y - 6, text: proteccionRating(entradaProteccion), size: TEXT_SIZE_UNIFILAR })
+      texts.push({ x: entryX + ENTRY_PROTECCION_TEXTO_OFFSET_X, y: ENTRY_BREAKER_CENTER_Y + ENTRY_PROTECCION_TEXTO_OFFSET_Y, text: proteccionRating(entradaProteccion), size: TEXT_SIZE_UNIFILAR })
     }
 
     if (entradaFormacion) {
       const def = CABLE_MARK_BY_POLES[poleCount(entradaFormacion)]
       if (def) symbols.push({ x: entryX, y: ENTRY_TICK_Y, def })
       else rects.push(missingSymbolRect(entryX, ENTRY_TICK_Y))
-      texts.push({ x: entryX + 10, y: ENTRY_TICK_Y - 6, text: formacionResumen(entradaFormacion), size: TEXT_SIZE_UNIFILAR })
+      texts.push({ x: entryX + ENTRY_FORMACION_TEXTO_OFFSET_X, y: ENTRY_TICK_Y + ENTRY_FORMACION_TEXTO_OFFSET_Y, text: formacionResumen(entradaFormacion), size: TEXT_SIZE_UNIFILAR })
     }
 
-    texts.push({ x: entryX - 96, y: ENTRY_TOP_Y - 1, width: 88, align: 'right', text: entrada.circuito, size: TEXT_SIZE_UNIFILAR, bold: true })
+    texts.push({ x: entryX - ENTRY_TITULO_OFFSET_X, y: ENTRY_TOP_Y + ENTRY_TITULO_OFFSET_Y, width: ENTRY_TITULO_W, align: 'right', text: entrada.circuito, size: TEXT_SIZE_UNIFILAR, bold: true })
   }
 
   const yMarcaCable = O + DIST_MARCA_CABLE
@@ -178,14 +216,55 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
   const yBornera = O + DIST_BORNERA
   const yFinTramo = O + LARGO_TRAMO
 
+  // Tramos contiguos de circuitos que comparten un mismo grupo diferencial (se asume
+  // que los circuitos de un grupo son contiguos en el orden de columnas, igual que en
+  // el ejemplo real: 1-5 bajo un ID, 8-15 bajo otro). Cada tramo cuelga de un ID propio
+  // sobre un peine — el ID todavía no tiene bloque real digitalizado, mismo placeholder
+  // celeste que el seccionador de entrada (missingSymbolRect).
+  for (let gi = 0; gi < circuitos.length; gi++) {
+    const grupoId = circuitos[gi].grupo_diferencial_id
+    if (grupoId == null) continue
+    let gj = gi
+    while (gj + 1 < circuitos.length && circuitos[gj + 1].grupo_diferencial_id === grupoId) gj++
+
+    const grupo = circuitos[gi].grupo_diferencial!
+    const xIni = columnX(gi, layout)
+    const xFin = columnX(gj, layout)
+    const xCenter = (xIni + xFin) / 2
+    const yIdCentro = (BUS_Y + yPeine) / 2
+
+    if (gj > gi) lines.push({ x1: xIni, y1: yPeine, x2: xFin, y2: yPeine, weight: LINE_WEIGHT_UNIFILAR })
+    lines.push({ x1: xCenter, y1: BUS_Y, x2: xCenter, y2: yPeine, weight: LINE_WEIGHT_UNIFILAR })
+    rects.push(missingSymbolRect(xCenter, yIdCentro))
+
+    // 4 líneas de datos a la derecha del ID, mismo criterio que el bloque de datos de
+    // cada ITM (ver más abajo): tag, polos+In, sensibilidad+clase, norma — la primera
+    // línea es el tag (grupo.nombre, ej. "ID-01") igual que en los ITM la primera línea
+    // es su propio tag (abbr + circuito).
+    const gp = grupo.proteccion
+    const lineasGrupo = [
+      grupo.nombre ?? '',
+      gp ? [gp.polos != null ? `${gp.polos}P` : null, gp.In != null ? `${gp.In}A` : null].filter(Boolean).join(' ') : '',
+      gp ? [gp.sensibilidad_mA != null ? `${gp.sensibilidad_mA}mA` : null, gp.clase_diferencial ?? null].filter(Boolean).join(' ') : '',
+      gp?.familia?.norma ?? '',
+    ]
+    const idBoxTop = yIdCentro - MISSING_SYMBOL_H / 2
+    lineasGrupo.forEach((texto, li) => {
+      if (texto) texts.push({ x: xCenter + MISSING_SYMBOL_W / 2 + GRUPO_TEXTO_OFFSET_X, y: idBoxTop + DATOS_CIRCUITO_OFFSET_Y + li * DATOS_CIRCUITO_LINE_H, text: texto, size: TEXT_SIZE_UNIFILAR })
+    })
+
+    gi = gj
+  }
+
   circuitos.forEach((c, i) => {
     const x = columnX(i, layout)
     const cableTierra = c.formacion?.cable_tierra ?? null
 
-    // Línea principal: de la barra de potencia al fin del tramo, siempre derecho —
-    // el conductor de tierra es un conductor aparte, no una continuación de esta línea.
+    // Línea principal: de la barra de potencia (o del peine de su grupo diferencial,
+    // si tiene uno) al fin del tramo, siempre derecho — el conductor de tierra es un
+    // conductor aparte, no una continuación de esta línea.
     //dots.push({ x, y: BUS_Y, r: 3 })
-    lines.push({ x1: x, y1: BUS_Y, x2: x, y2: O, weight: LINE_WEIGHT_UNIFILAR })
+    lines.push({ x1: x, y1: c.grupo_diferencial_id != null ? yPeine : BUS_Y, x2: x, y2: O, weight: LINE_WEIGHT_UNIFILAR })
     // ITM: bloque real, se inserta por su extremo superior (ver insertX/insertY en
     // _symbols.ts) — por eso va en y=O, no en el centro de la caja como antes. Celeste
     // (no esConductor): es una marca informativa del dispositivo, no el conductor.
@@ -203,7 +282,7 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
       p?.familia?.norma ?? '',
     ]
     lineas.forEach((texto, li) => {
-      if (texto) texts.push({ x: x + 4, y: O + 1 + li * 2.2, text: texto, size: TEXT_SIZE_UNIFILAR })
+      if (texto) texts.push({ x: x + SIMBOLO_TEXTO_OFFSET_X, y: O + DATOS_CIRCUITO_OFFSET_Y + li * DATOS_CIRCUITO_LINE_H, text: texto, size: TEXT_SIZE_UNIFILAR })
     })
 
     if (c.formacion) {
@@ -227,7 +306,7 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
       symbols.push({ x: xTierra, y: yCableTierra, def: CABLE_GND, role: 'tierra' })
       // El centro del texto alineado con el centro del símbolo (y == yCableTierra sería
       // el borde superior del texto, no el centro — se corrige restando medio alto de línea).
-      texts.push({ x: xTierra + 4, y: yCableTierra - TEXT_SIZE_UNIFILAR / 2, text: `PE ${cableTierra.nombre}`, size: TEXT_SIZE_UNIFILAR, role: 'tierra' })
+      texts.push({ x: xTierra + SIMBOLO_TEXTO_OFFSET_X, y: yCableTierra - TEXT_SIZE_UNIFILAR / 2, text: `PE ${cableTierra.nombre}`, size: TEXT_SIZE_UNIFILAR, role: 'tierra' })
       // Bornera de tierra — verde, misma marca que la de potencia, sobre la barra de
       // tierra (misma altura que esa línea horizontal, no la de la bornera de potencia).
       symbols.push({ x: xTierra, y: yBarraTierra, def: BORNE, role: 'tierra', esConductor: true })
@@ -238,7 +317,6 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
   // el contenido dibujado (entrada + circuitos) con un margen fijo. No es lo mismo que
   // missingSymbolRect: ese es un placeholder de bloque faltante, este es un elemento
   // real y permanente del plano.
-  const LIMITE_MARGIN = 8
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
   const consider = (px: number, py: number) => {
     minX = Math.min(minX, px); maxX = Math.max(maxX, px)
@@ -249,21 +327,26 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
   for (const d of dots) consider(d.x, d.y)
   for (const r of rects) { consider(r.x, r.y); consider(r.x + r.w, r.y + r.h) }
   // El título de la entrada se extiende a la izquierda del resto del contenido.
-  if (entrada) consider(entryX - 96, ENTRY_TOP_Y)
+  if (entrada) consider(entryX - ENTRY_TITULO_OFFSET_X, ENTRY_TOP_Y)
 
-  const limX1 = minX - LIMITE_MARGIN, limY1 = minY + 5
-  const limX2 = maxX + LIMITE_MARGIN, limY2 = maxY - 5
+  // Cartel de riesgo eléctrico: columna propia a la IZQUIERDA de todo el contenido
+  // eléctrico, nunca abajo — un cartel de seguridad va al costado del tablero, no
+  // debajo de la planilla. Alineado por abajo con el fin del contenido (yFinTramo).
+  // Tiene que calcularse y considerarse en el bounding box ANTES de trazar el recuadro
+  // límite — si no, el recuadro se dibuja con el bounding box viejo (sin el cartel) y
+  // el cartel queda afuera.
+  const cartelX = minX - CARTEL_MARGIN - CARTEL_ANCHO
+  const cartelY = maxY - CARTEL_OFFSET_Y
+  symbols.push({ x: cartelX, y: cartelY, def: CARTEL_RIESGO_ELECTRICO, role: 'peligro' })
+  consider(cartelX, cartelY - CARTEL_ALTURA)
+  consider(cartelX + CARTEL_ANCHO, cartelY)
+
+  const limX1 = minX - LIMITE_MARGIN, limY1 = minY + LIMITE_INSET_TOP
+  const limX2 = maxX + LIMITE_MARGIN + LIMITE_MARGIN_DERECHA_EXTRA, limY2 = maxY - LIMITE_INSET_BOTTOM
   lines.push({ x1: limX1, y1: limY1, x2: limX2, y2: limY1, weight: LINE_WEIGHT_UNIFILAR, role: 'limite' })
   lines.push({ x1: limX2, y1: limY1, x2: limX2, y2: limY2, weight: LINE_WEIGHT_UNIFILAR, role: 'limite' })
   lines.push({ x1: limX2, y1: limY2, x2: limX1, y2: limY2, weight: LINE_WEIGHT_UNIFILAR, role: 'limite' })
   lines.push({ x1: limX1, y1: limY2, x2: limX1, y2: limY1, weight: LINE_WEIGHT_UNIFILAR, role: 'limite' })
-
-  // Cartel de riesgo eléctrico, esquina inferior izquierda del tablero — se ancla por
-  // su propia esquina inferior izquierda (insertX/insertY, ver _symbols.ts) directo
-  // contra la esquina del recuadro límite, con el mismo margen.
-  const cartelX = limX1 + LIMITE_MARGIN
-  const cartelY = limY2 - LIMITE_MARGIN
-  symbols.push({ x: cartelX, y: cartelY, def: CARTEL_RIESGO_ELECTRICO, role: 'peligro' })
 
   // Texto dentro del recuadro inferior de la placa (ver inner box en
   // CARTEL_RIESGO_ELECTRICO, local x:1.27-26.69 y:25.65-36.89 dentro del símbolo) — se
@@ -277,5 +360,7 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
 
   // Alto real del contenido (no CANVAS_H, que es mucho más alto que yFinTramo y dejaba
   // un colchón de ~57mm de aire antes de la tabla, además del GAP_UNIFILAR_PLANILLA).
+  // El cartel ya no entra acá: está al costado (ver arriba), no debajo, así que nunca
+  // empuja este valor hacia abajo.
   return { width, height: yFinTramo, lines, rects, dots, texts, symbols }
 }

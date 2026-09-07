@@ -3,6 +3,7 @@ import * as ruteoApi from '@/services/ruteo'
 import type { Segmento, SegmentoCircuito, SegmentoLazo, SegmentoPuertoRed, Conjunto, CreateSegmentoInput, Pared, CreateParedInput, Arquitectura, Canio, Bandeja } from '@/services/ruteo'
 import type { ProyectoMeta, SegPatch } from './types'
 import { nextTempId } from './helpers'
+import { useToast } from './ToastContext'
 
 type SetState<T> = Dispatch<SetStateAction<T>>
 
@@ -23,6 +24,8 @@ export function useRuteoActions(
   pendingSegmentos:       MutableRefObject<Map<number, Promise<Segmento>>>,
   editVer:                MutableRefObject<Map<number, number>>,
 ) {
+  const { showError } = useToast()
+
   // Aplica un patch a un segmento resolviendo las referencias de canio/bandeja.
   function resolveSegPatch(patch: SegPatch, prev: Segmento): Segmento {
     const next: Segmento = { ...prev, ...patch }
@@ -33,7 +36,7 @@ export function useRuteoActions(
 
   function firePendingSeg(id: number, fn: (realId: number) => void) {
     if (id < 0 && pendingSegmentos.current.has(id))
-      pendingSegmentos.current.get(id)!.then(real => fn(real.id)).catch(console.error)
+      pendingSegmentos.current.get(id)!.then(real => fn(real.id)).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     else fn(id)
   }
 
@@ -93,27 +96,27 @@ export function useRuteoActions(
           editVer.current.delete(realId)
           setSegmentos(prev => prev.map(s => s.id === realId ? real : s))
         }
-      }).catch(console.error)
+      }).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     }
     firePendingSeg(id, fire)
   }
 
   function removeSegmento(id: number) {
     setSegmentos(prev => prev.filter(s => s.id !== id))
-    firePendingSeg(id, realId => ruteoApi.deleteSegmento(realId).catch(console.error))
+    firePendingSeg(id, realId => ruteoApi.deleteSegmento(realId).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function removeSegmentos(ids: number[]) {
     const idSet = new Set(ids)
     setSegmentos(prev => prev.filter(s => !idSet.has(s.id)))
     const realIds = ids.filter(id => id > 0)
-    if (realIds.length > 0) ruteoApi.deleteSegmentosBulk(realIds).catch(console.error)
+    if (realIds.length > 0) ruteoApi.deleteSegmentosBulk(realIds).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function editSegmentosZ(ids: number[], z: number) {
     const idSet = new Set(ids)
     setSegmentos(prev => prev.map(s => idSet.has(s.id) ? { ...s, z1: z, z2: z } : s))
-    ruteoApi.updateSegmentosZBulk(ids, z).catch(console.error)
+    ruteoApi.updateSegmentosZBulk(ids, z).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   // Divide un segmento en el punto (x,y,z) optimistamente:
@@ -161,7 +164,7 @@ export function useRuteoActions(
     firePendingSeg(segId, realId =>
       ruteoApi.addCircuitoToSegmento(realId, circId)
         .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
-        .catch(console.error)
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     )
   }
 
@@ -172,7 +175,7 @@ export function useRuteoActions(
     firePendingSeg(segId, realId =>
       ruteoApi.removeCircuitoFromSegmento(realId, circId)
         .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
-        .catch(console.error)
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     )
   }
 
@@ -184,7 +187,7 @@ export function useRuteoActions(
     firePendingSeg(segId, realId =>
       ruteoApi.addLazoToSegmento(realId, lazoId)
         .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
-        .catch(console.error)
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     )
   }
 
@@ -195,7 +198,7 @@ export function useRuteoActions(
     firePendingSeg(segId, realId =>
       ruteoApi.removeLazoFromSegmento(realId, lazoId)
         .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
-        .catch(console.error)
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     )
   }
 
@@ -207,7 +210,7 @@ export function useRuteoActions(
     firePendingSeg(segId, realId =>
       ruteoApi.addPuertoRedToSegmento(realId, puertoId)
         .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
-        .catch(console.error)
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     )
   }
 
@@ -218,7 +221,7 @@ export function useRuteoActions(
     firePendingSeg(segId, realId =>
       ruteoApi.removePuertoRedFromSegmento(realId, puertoId)
         .then(real => setSegmentos(prev => prev.map(s => s.id === realId ? real : s)))
-        .catch(console.error)
+        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
     )
   }
 
@@ -250,7 +253,7 @@ export function useRuteoActions(
       ...s,
       conjuntos: s.conjuntos.map(c => c.id === id ? { ...c, nombre } : c),
     })))
-    ruteoApi.updateConjunto(id, nombre).catch(console.error)
+    ruteoApi.updateConjunto(id, nombre).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function deleteConjunto(id: number) {
@@ -262,7 +265,7 @@ export function useRuteoActions(
       const nextId = remaining[0]?.id
       if (nextId !== undefined) setActiveConjuntoId(nextId as number)
     }
-    ruteoApi.deleteConjunto(id).catch(console.error)
+    ruteoApi.deleteConjunto(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function addSegmentoToConjunto(segId: number, conjuntoId: number) {
@@ -272,14 +275,14 @@ export function useRuteoActions(
       s.id === segId && !s.conjuntos.find(c => c.id === conjuntoId)
         ? { ...s, conjuntos: [...s.conjuntos, conjunto] } : s
     ))
-    firePendingSeg(segId, realId => ruteoApi.addSegmentoToConjunto(realId, conjuntoId).catch(console.error))
+    firePendingSeg(segId, realId => ruteoApi.addSegmentoToConjunto(realId, conjuntoId).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function removeSegmentoFromConjunto(segId: number, conjuntoId: number) {
     setSegmentos(prev => prev.map(s =>
       s.id === segId ? { ...s, conjuntos: s.conjuntos.filter(c => c.id !== conjuntoId) } : s
     ))
-    firePendingSeg(segId, realId => ruteoApi.removeSegmentoFromConjunto(realId, conjuntoId).catch(console.error))
+    firePendingSeg(segId, realId => ruteoApi.removeSegmentoFromConjunto(realId, conjuntoId).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
   }
 
   function addTableroToConjunto(conjuntoId: number, tableroId: number) {
@@ -290,14 +293,14 @@ export function useRuteoActions(
     ))
     ruteoApi.addTableroToConjunto(conjuntoId, tableroId)
       .then(updated => setConjuntos(prev => prev.map(c => c.id === conjuntoId ? updated : c)))
-      .catch(console.error)
+      .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function removeTableroFromConjunto(conjuntoId: number, tableroId: number) {
     setConjuntos(prev => prev.map(c =>
       c.id === conjuntoId ? { ...c, tableros: c.tableros.filter(t => t.id !== tableroId) } : c
     ))
-    ruteoApi.removeTableroFromConjunto(conjuntoId, tableroId).catch(console.error)
+    ruteoApi.removeTableroFromConjunto(conjuntoId, tableroId).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   // ── Paredes ───────────────────────────────────────────────────
@@ -329,13 +332,13 @@ export function useRuteoActions(
           setParedes(prev => prev.map(p => p.id === id ? real : p))
         }
       })
-      .catch(console.error)
+      .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function removePared(id: number) {
     setParedes(prev => prev.filter(p => p.id !== id))
     setArquitecturaes(prev => prev.map(tp => ({ ...tp, paredes: tp.paredes.filter(p => p.id !== id) })))
-    ruteoApi.deletePared(id).catch(console.error)
+    ruteoApi.deletePared(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function appendParedes(nuevasParedes: Pared[]) {
@@ -358,7 +361,7 @@ export function useRuteoActions(
 
   function renameArquitectura(id: number, nombre: string) {
     setArquitecturaes(prev => prev.map(tp => tp.id === id ? { ...tp, nombre } : tp))
-    ruteoApi.updateArquitectura(id, nombre).catch(console.error)
+    ruteoApi.updateArquitectura(id, nombre).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function deleteArquitectura(id: number) {
@@ -372,7 +375,7 @@ export function useRuteoActions(
       const remaining = tablaParedes.filter(tp => tp.id !== id)
       setActivaArquitecturaId(remaining[0]?.id ?? null)
     }
-    ruteoApi.deleteArquitectura(id).catch(console.error)
+    ruteoApi.deleteArquitectura(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function addArquitecturaToConjunto(tablaParedId: number, conjuntoId: number) {
@@ -386,7 +389,7 @@ export function useRuteoActions(
         ? { ...c, arquitecturas: [...c.arquitecturas, { id: tablaParedId }] }
         : c
     ))
-    ruteoApi.addArquitecturaToConjunto(tablaParedId, conjuntoId).catch(console.error)
+    ruteoApi.addArquitecturaToConjunto(tablaParedId, conjuntoId).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   function removeArquitecturaFromConjunto(tablaParedId: number, conjuntoId: number) {
@@ -400,7 +403,7 @@ export function useRuteoActions(
         ? { ...c, arquitecturas: c.arquitecturas.filter(tp => tp.id !== tablaParedId) }
         : c
     ))
-    ruteoApi.removeArquitecturaFromConjunto(tablaParedId, conjuntoId).catch(console.error)
+    ruteoApi.removeArquitecturaFromConjunto(tablaParedId, conjuntoId).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   return {

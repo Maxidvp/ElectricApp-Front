@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useToast } from '@/context/ToastContext'
 import { useProyectos } from '@/context/ProyectosContext'
 import { renombrarCircuitosBulk, actualizarFasesBulk } from '@/services/circuitos'
 import { updateTablero } from '@/services/tableros'
@@ -119,6 +120,7 @@ function circuitAtPos(layout: PlacedCircuit[], pos: number): PlacedCircuit | nul
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function NecPanelTagPage() {
+  const { showError } = useToast()
   const { tableros, proyectoActivo } = useProyectos()
   const faseLabels: [string, string, string] = FASE_LABELS[proyectoActivo?.nomenclatura_fases ?? 'RST'] ?? FASE_LABELS.RST
 
@@ -256,7 +258,7 @@ export default function NecPanelTagPage() {
             onChange={e => {
               const n = Number(e.target.value)
               setTotalSlots(n)
-              if (tablero) updateTablero(tablero.id, { ...tablero, modulos: n }).catch(console.error)
+              if (tablero) updateTablero(tablero.id, { ...tablero, modulos: n }).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
             }}
             className="px-2 py-1 bg-surface-tonal-a10 border border-surface-tonal-a20 rounded-md text-font-a0 text-[13px] cursor-pointer outline-none focus:border-primary-a20"
           >
@@ -413,8 +415,8 @@ function PanelCell({
     </td>
   )
 
-  const faseChanged   = !!pc && pc.originalFase !== null && pc.originalFase !== computedFase(pc.startPos, pc.poles)
-  const oldFaseLabel  = faseChanged && pc?.originalFase ? faseToDisplay(pc.originalFase, faseLabels) : null
+  const faseChanged   = !!pc && pc.originalFase !== computedFase(pc.startPos, pc.poles)
+  const oldFaseLabel  = faseChanged ? (pc?.originalFase ? faseToDisplay(pc.originalFase, faseLabels) : '?') : null
   const phaseColor    = phaseIdx === 0 ? '#E87C3A' : phaseIdx === 1 ? '#378ADD' : '#9B5DE5'
 
   const phaseCell = (

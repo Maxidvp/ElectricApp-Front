@@ -1,9 +1,12 @@
 'use client'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { useToast } from '@/context/ToastContext'
 import * as ruteoApi    from '@/services/ruteo'
 import * as tablerosApi from '@/services/tableros'
 import * as proyectosApi from '@/services/proyectos'
 import * as fuentesApi  from '@/services/fuentesAlimentacion'
+import * as gruposDiferencialesApi from '@/services/gruposDiferenciales'
+import * as circuitosApi from '@/services/circuitos'
 import * as lazosApi    from '@/services/lazosInstrumentacion'
 import * as puertosRedApi from '@/services/puertosRed'
 import { apiFetch } from '@/services/apiFetch'
@@ -13,14 +16,14 @@ import { prefetchCablesFamilias } from '@/context/CablesContext'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 import { useAuth } from '@/context/AuthContext'
 
-import type { Tablero, Circuito, FuenteAlimentacion, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta } from './types'
-import { deriveSegmentos, nextTempId, DESCRIPCION_CREANDO } from './helpers'
+import type { Tablero, Circuito, FuenteAlimentacion, GrupoDiferencial, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta } from './types'
+import { deriveSegmentos, nextTempId, DESCRIPCION_CREANDO, mapCirc } from './helpers'
 import { useCircuitosActions } from './useCircuitosActions'
 import { useRuteoActions } from './useRuteoActions'
 
 export type { ProyectoMeta }
 export type { Pared, Arquitectura }
-export type { FuenteAlimentacion }
+export type { FuenteAlimentacion, GrupoDiferencial }
 export type { LazoInstrumentacion, PuertoRed }
 
 // ── Context ───────────────────────────────────────────────────────
@@ -28,6 +31,7 @@ const ProyectosContext = createContext<ProyectosContextType | null>(null)
 
 // ── Provider ──────────────────────────────────────────────────────
 export function ProyectosProvider({ children }: { children: React.ReactNode }) {
+  const { showError } = useToast()
   const [proyectos,           setProyectos]           = useState<ProyectoMeta[]>([])
   const [proyectoActivo,      setProyectoActivoState] = useState<ProyectoMeta | null>(null)
   const [tableros,            setTableros]            = useState<Tablero[]>([])
@@ -236,12 +240,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
 
   async function actualizarTablero(id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) {
     setTableros(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
-    await tablerosApi.updateTablero(id, data).catch(console.error)
+    await tablerosApi.updateTablero(id, data).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   async function eliminarTablero(id: number) {
     setTableros(prev => prev.filter(t => t.id !== id))
-    await tablerosApi.deleteTablero(id).catch(console.error)
+    await tablerosApi.deleteTablero(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   // ── Fuentes de alimentación CRUD ───────────────────────────────
@@ -255,12 +259,61 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       ...t,
       fuentes: t.fuentes.map(f => f.id === id ? { ...f, ...data } : f),
     })))
-    await fuentesApi.updateFuenteAlimentacion(id, data).catch(console.error)
+    await fuentesApi.updateFuenteAlimentacion(id, data).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   async function eliminarFuente(id: number) {
     setTableros(prev => prev.map(t => ({ ...t, fuentes: t.fuentes.filter(f => f.id !== id) })))
-    await fuentesApi.deleteFuenteAlimentacion(id).catch(console.error)
+    await fuentesApi.deleteFuenteAlimentacion(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+  }
+
+  // ── Grupos diferenciales ────────────────────────────────────────
+  // Reemplazo total en vez de diff campo a campo: DiferencialesModal ya calculó los
+  // tramos finales (propagación + splits), así que es más simple borrar todos los
+  // grupos viejos del tablero y recrear uno por tramo que tratar de reconciliar altas/
+  // bajas/ediciones circuito por circuito.
+  async function guardarGruposDiferenciales(tableroId: number, runs: { nombre: string; proteccionId: number | null; circuitoIds: number[] }[]) {
+    const tablero = tableros.find(t => t.id === tableroId)
+    if (!tablero) return
+    const viejos = tablero.grupos_diferenciales
+
+    // Orden importante: se crean los grupos nuevos y se reasignan los circuitos ANTES
+    // de borrar los viejos. Si algo falla en el medio (red, 401, validación del back),
+    // el throw sale sin tocar los grupos viejos — nada se pierde y el modal puede
+    // reintentar. Antes se borraba primero, así que un fallo a mitad de la creación
+    // dejaba el tablero sin ningún diferencial asignado.
+    const nuevos: { grupo: GrupoDiferencial; circuitoIds: number[] }[] = await Promise.all(
+      runs.map(async run => ({
+        grupo: await gruposDiferencialesApi.createGrupoDiferencial({
+          tablero_id: tableroId, nombre: run.nombre, proteccion_id: run.proteccionId,
+        }),
+        circuitoIds: run.circuitoIds,
+      }))
+    )
+
+    await Promise.all(
+      nuevos.flatMap(n => n.circuitoIds.map(cid => circuitosApi.updateGrupoDiferencialCircuito(cid, n.grupo.id)))
+    )
+
+    await Promise.all(viejos.map(g => gruposDiferencialesApi.deleteGrupoDiferencial(g.id)))
+
+    setTableros(prev => {
+      const viejosIds = new Set(viejos.map(g => g.id))
+      const idsAsignados = new Set(nuevos.flatMap(n => n.circuitoIds))
+
+      let next = prev
+      for (const n of nuevos)
+        for (const cid of n.circuitoIds)
+          next = mapCirc(next, cid, c => ({ ...c, grupo_diferencial_id: n.grupo.id, grupo_diferencial: n.grupo }))
+      // Circuitos que estaban en un grupo viejo pero se destildaron (no entraron en
+      // ningún tramo nuevo) — el back ya los desvinculó vía onDelete: SetNull al borrar
+      // el grupo viejo, esto solo sincroniza el estado local para no mostrar datos stale.
+      for (const c of tablero.circuitos)
+        if (c.grupo_diferencial_id != null && viejosIds.has(c.grupo_diferencial_id) && !idsAsignados.has(c.id))
+          next = mapCirc(next, c.id, cc => ({ ...cc, grupo_diferencial_id: null, grupo_diferencial: null }))
+
+      return next.map(t => t.id !== tableroId ? t : { ...t, grupos_diferenciales: nuevos.map(n => n.grupo) })
+    })
   }
 
   // ── Lazos de instrumentación CRUD ──────────────────────────────
@@ -274,12 +327,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       ...t,
       lazos: t.lazos.map(l => l.id === id ? { ...l, ...data } : l),
     })))
-    await lazosApi.updateLazoInstrumentacion(id, data).catch(console.error)
+    await lazosApi.updateLazoInstrumentacion(id, data).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   async function eliminarLazo(id: number) {
     setTableros(prev => prev.map(t => ({ ...t, lazos: t.lazos.filter(l => l.id !== id) })))
-    await lazosApi.deleteLazoInstrumentacion(id).catch(console.error)
+    await lazosApi.deleteLazoInstrumentacion(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   async function agregarLazoVacio(tableroId: number) {
@@ -315,7 +368,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       const byId = new Map(t.lazos.map(l => [l.id, l]))
       return { ...t, lazos: orderedIds.map((id, i) => ({ ...byId.get(id)!, orden: i })) }
     }))
-    lazosApi.reordenarLazos(orderedIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
+    lazosApi.reordenarLazos(orderedIds.map((id, i) => ({ id, orden: i }))).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   // ── Puertos de red CRUD ─────────────────────────────────────────
@@ -329,12 +382,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       ...t,
       puertos_red: t.puertos_red.map(p => p.id === id ? { ...p, ...data } : p),
     })))
-    await puertosRedApi.updatePuertoRed(id, data).catch(console.error)
+    await puertosRedApi.updatePuertoRed(id, data).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   async function eliminarPuertoRed(id: number) {
     setTableros(prev => prev.map(t => ({ ...t, puertos_red: t.puertos_red.filter(p => p.id !== id) })))
-    await puertosRedApi.deletePuertoRed(id).catch(console.error)
+    await puertosRedApi.deletePuertoRed(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   async function agregarPuertoRedVacio(tableroId: number) {
@@ -370,7 +423,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       const byId = new Map(t.puertos_red.map(p => [p.id, p]))
       return { ...t, puertos_red: orderedIds.map((id, i) => ({ ...byId.get(id)!, orden: i })) }
     }))
-    puertosRedApi.reordenarPuertosRed(orderedIds.map((id, i) => ({ id, orden: i }))).catch(console.error)
+    puertosRedApi.reordenarPuertosRed(orderedIds.map((id, i) => ({ id, orden: i }))).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   // ── Domain action hooks ───────────────────────────────────────
@@ -395,6 +448,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       getTablero, getCircuito,
       agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
       agregarFuente, actualizarFuente, eliminarFuente,
+      guardarGruposDiferenciales,
       agregarLazo, actualizarLazo, eliminarLazo,
       agregarLazoVacio, duplicarLazo, reordenarLazos,
       agregarPuertoRed, actualizarPuertoRed, eliminarPuertoRed,

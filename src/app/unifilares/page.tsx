@@ -9,9 +9,10 @@ import { mergeElementosManuales } from './_elementos'
 import { exportUnifilarLisp } from './_export'
 import UnifilarCanvas from './UnifilarCanvas'
 import LspInfoModal from './LspInfoModal'
+import DiferencialesModal from './DiferencialesModal'
 
 export default function UnifilaresPage() {
-  const { tableros, getTablero, loading, error } = useProyectos()
+  const { tableros, getTablero, loading, error, guardarGruposDiferenciales } = useProyectos()
 
   const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
@@ -66,6 +67,7 @@ export default function UnifilaresPage() {
   )
 
   const [mostrarInfoLsp, setMostrarInfoLsp] = useState(false)
+  const [mostrarDiferenciales, setMostrarDiferenciales] = useState(false)
 
   const exportarLisp = () => {
     if (!tablero) return
@@ -111,6 +113,13 @@ export default function UnifilaresPage() {
             </div>
             <div className="flex items-center gap-1.5">
               <button
+                onClick={() => setMostrarDiferenciales(true)}
+                disabled={circuitos.length === 0}
+                className="h-[28px] px-3 rounded-md text-xs cursor-pointer border border-surface-tonal-a30 bg-transparent text-font-a0 hover:bg-surface-tonal-a10 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Diferenciales
+              </button>
+              <button
                 onClick={exportarLisp}
                 disabled={circuitos.length === 0}
                 className="h-[28px] px-3 rounded-md text-xs cursor-pointer border border-info-a10 bg-info-a0 text-font-a0 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -137,6 +146,14 @@ export default function UnifilaresPage() {
       )}
 
       {mostrarInfoLsp && <LspInfoModal onCerrar={() => setMostrarInfoLsp(false)} />}
+      {mostrarDiferenciales && tablero && (
+        <DiferencialesModal
+          tablero={tablero}
+          circuitos={circuitos}
+          onGuardar={guardarGruposDiferenciales}
+          onCerrar={() => setMostrarDiferenciales(false)}
+        />
+      )}
     </div>
   )
 }

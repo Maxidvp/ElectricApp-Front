@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
+import { useToast } from '@/context/ToastContext'
 import { getFamiliasCables, createFamiliaCable, updateFamiliaCable, type FamiliaCablePatch } from '@/services/familiasCables'
 import { getCablesPorFamilia, createCable, createCablesBulk, updateCable, deleteCable, type CablePatch } from '@/services/cables'
 import { invalidarCacheCables } from '@/context/CablesContext'
@@ -386,6 +387,7 @@ function ImportarCablesForm({ familiaId, onImportados }: { familiaId: number; on
 // ── Página ────────────────────────────────────────────────────────
 
 export default function CablesPage() {
+  const { showError } = useToast()
   const [familias, setFamilias] = useState<Familia[]>([])
   const [familiaId, setFamiliaId] = useState<number | null>(null)
   const [creandoFamilia, setCreandoFamilia] = useState(false)
@@ -417,7 +419,7 @@ export default function CablesPage() {
     setCables(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
     updateCable(id, patch)
       .then(() => { if (familiaId != null) invalidarCacheCables(familiaId) })
-      .catch(console.error)
+      .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
   if (loading) return <p className="p-6">Cargando...</p>

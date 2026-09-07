@@ -46,6 +46,15 @@ export async function getUsuarios(): Promise<Usuario[]> {
   return res.json()
 }
 
+export async function changePassword(passwordActual: string, passwordNuevo: string): Promise<void> {
+  const res = await apiFetch('/auth/password', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passwordActual, passwordNuevo }),
+  })
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Error al cambiar la contraseña')
+}
+
 export async function updateUsuarioRole(id: number, role: string): Promise<Usuario> {
   const res = await apiFetch(`/auth/usuarios/${id}/role`, {
     method: 'PATCH',

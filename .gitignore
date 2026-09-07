@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# WASM de replicad-opencascadejs, copiado por postinstall (scripts/copy-replicad-wasm.mjs)
+/public/wasm/
+
 # production
 /build
 
