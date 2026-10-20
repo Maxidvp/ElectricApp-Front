@@ -33,16 +33,6 @@ export function distPointSegment(p: Vec3, a: Vec3, b: Vec3): number {
   return v.dist(p, proj);
 }
 
-/** Distancia de un punto p a una polilínea (lista de vértices). */
-export function distPointPolyline(p: Vec3, pts: Vec3[]): number {
-  if (pts.length === 0) return Infinity;
-  if (pts.length === 1) return v.dist(p, pts[0]);
-  let d = Infinity;
-  for (let i = 0; i < pts.length - 1; i++) {
-    d = Math.min(d, distPointSegment(p, pts[i], pts[i + 1]));
-  }
-  return d;
-}
 
 // ---------------------------------------------------------------------------
 // Elementos del Sistema Externo de Protección (captación) + entorno

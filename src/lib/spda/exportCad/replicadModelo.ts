@@ -142,10 +142,21 @@ function bolasDeContacto(construccion: ConstruccionExport): Shape3D[] {
 function menosBolas(pieza: Shape3D, bolas: Shape3D[]): Shape3D {
   let acc = pieza;
   for (const bola of bolas) {
+    // Descarte barato por caja envolvente. Antes acá había un `try/catch` vacío
+    // que trataba CUALQUIER excepción de `cut` como "la bola no toca": si el
+    // booleano fallaba por un problema numérico real, la pieza se quedaba con
+    // volumen que debería haberse restado y el STEP salía con MÁS volumen
+    // protegido del real, en silencio. Con el descarte por bbox ya no hay
+    // motivo legítimo para que `cut` falle, así que un fallo ahora se propaga.
+    if (acc.boundingBox.isOut(bola.boundingBox)) continue;
     try {
       acc = acc.cut(bola);
-    } catch {
-      // la bola no toca esta pieza: nada que restar
+    } catch (err) {
+      throw new Error(
+        `No se pudo restar una esfera de apoyo del volumen exportado (${
+          err instanceof Error ? err.message : String(err)
+        }). Se aborta la exportación: seguir dejaría el STEP mostrando más protección de la real.`,
+      );
     }
   }
   return acc;

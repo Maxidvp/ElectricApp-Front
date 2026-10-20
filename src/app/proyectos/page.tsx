@@ -22,7 +22,7 @@ type Seccion = 'general' | 'cables' | 'expresiones' | 'participantes' | 'elimina
 const FORMATOS: { id: FormatoFormacion; label: string; desc: string }[] = [
   { id: 'ingles',    label: 'Sistema inglés',      desc: 'Ej: 4C#10 AWG (3P-N)+1C#10 AWG (G)' },
   { id: 'extendida', label: 'Expresión extendida', desc: 'A IMPLEMENTAR' },
-  { id: 'copaipa',   label: 'Expresión COPAIPA',   desc: 'A IMPLEMENTAR' },
+  { id: 'copaipa',   label: 'Expresión COPAIPA',   desc: 'Ej: 2x2,5 Cu/PVC + PE 1x2,5 Cu/PVC' },
   { id: 'resumida',  label: 'Expresión resumida',  desc: 'A IMPLEMENTAR' },
 ]
 
@@ -65,7 +65,7 @@ export default function ProyectoPage() {
 
   if (!proyectoActivo) {
     return (
-      <div className="min-h-dvh bg-surface-a10 flex items-center justify-center p-8">
+      <div className="h-[calc(100dvh-3rem)] bg-surface-a10 flex items-center justify-center p-8">
         <p className="text-[13px] text-surface-tonal-a40">No hay ningún proyecto activo — activá uno desde el inicio.</p>
       </div>
     )
@@ -117,7 +117,7 @@ export default function ProyectoPage() {
   const nomenclaturaActiva: NomenclaturaFases = (proyecto.nomenclatura_fases ?? 'RST') as NomenclaturaFases
 
   return (
-    <div className="min-h-dvh bg-surface-a10 flex flex-col">
+    <div className="h-[calc(100dvh-3rem)] bg-surface-a10 flex flex-col overflow-hidden">
 
       {/* Header */}
       <div className="bg-surface-tonal-a0 border-b border-surface-tonal-a20 px-5 py-3">

@@ -42,11 +42,18 @@ export const CONFIG_POR_DEFECTO: Omit<ConfigCalculo, "radio" | "cotaTierra"> = {
 
 export interface ResultadoPunto {
   punto: Vec3;
-  /** r − scoreExposicion. >0 protegido, <=0 expuesto. */
+  /** r − scoreExposicion. >0 protegido, <=0 expuesto. Solo tiene sentido si `evaluable`. */
   margen: number;
   protegido: boolean;
   /** Elemento captador que "domina" la protección de este punto, si aplica. */
   elementoDominante: string | null;
+  /**
+   * `false` si NINGUNA posición de la esfera resultó válida: pasa cuando el
+   * punto queda más de un radio por debajo de `cotaTierra`, o sea que ninguna
+   * esfera puede tocarlo sin meter su centro bajo tierra. No es "protegido":
+   * es "no evaluable", y hay que contarlo aparte (ver `evaluarModelo`).
+   */
+  evaluable: boolean;
 }
 
 /**
@@ -93,12 +100,22 @@ function scoreParaDireccion(
   return { score: dist, elementoId };
 }
 
-/** Evalúa un único punto contra el sistema de captación. */
-export function evaluarPunto(
+/**
+ * Peor caso de exposición de un punto: el mayor `scoreParaDireccion` sobre las
+ * direcciones muestreadas, afinado después con un descenso de coordenadas local
+ * sobre la mejor dirección. `-Infinity` si ninguna posición de esfera fue válida.
+ *
+ * Lo usan TANTO `evaluarPunto` (resumen numérico) como `campoEscalar`
+ * (envolvente 3D). Antes el campo hacía solo el barrido, sin refinar: subestimaba
+ * el score, sobreestimaba el margen y la envolvente terminaba dibujando más
+ * protección que la que el resumen admitía — dos respuestas distintas a la misma
+ * pregunta, y la optimista era la que se veía.
+ */
+function scoreExposicion(
   p: Vec3,
   segs: SegmentoCaptador[],
   cfg: ConfigCalculo,
-): ResultadoPunto {
+): { mejor: number; elementoDominante: string | null } {
   const dirs = dirsFor(cfg.direcciones);
   let mejor = -Infinity;
   let mejorDir: Vec3 = [0, 0, 1];
@@ -136,53 +153,93 @@ export function evaluarPunto(
     if (!mejoró) paso *= 0.5;
   }
 
+  return { mejor, elementoDominante };
+}
+
+/** Evalúa un único punto contra el sistema de captación. */
+export function evaluarPunto(
+  p: Vec3,
+  segs: SegmentoCaptador[],
+  cfg: ConfigCalculo,
+): ResultadoPunto {
+  const { mejor, elementoDominante } = scoreExposicion(p, segs, cfg);
+
+  // Ninguna dirección dio una posición válida de la esfera. Antes esto caía en
+  // `margen = radio - (-Infinity) = +Infinity` → `protegido: true`: un punto se
+  // reportaba protegido POR NADA (`elementoDominante` null), en silencio. El
+  // caso más peligroso no es un sótano real sino una `cotaTierra` equivocada
+  // (p. ej. por unidad mal elegida, que en este proyecto ya pasó con un factor
+  // de 1000): toda la estructura quedaría "bajo tierra" y daría 100% de
+  // cobertura. Se marca no evaluable y se cuenta aparte.
+  if (mejor === -Infinity) {
+    return { punto: p, margen: Infinity, protegido: false, elementoDominante: null, evaluable: false };
+  }
+
   const margen = cfg.radio - mejor;
   return {
     punto: p,
     margen,
     protegido: margen > 0,
     elementoDominante: margen > 0 ? elementoDominante : null,
+    evaluable: true,
   };
 }
 
 export interface ResultadoModelo {
-  puntos: ResultadoPunto[];
+  /** Vértices recibidos. */
   total: number;
+  /** Puntos que ninguna esfera puede tocar (ver `ResultadoPunto.evaluable`). No cuentan como protegidos. */
+  noEvaluados: number;
   expuestos: number;
-  cobertura: number; // fracción protegida 0..1
+  /** Fracción protegida 0..1, sobre los puntos EVALUABLES (no sobre `total`). */
+  cobertura: number;
   margenMinimo: number;
   radio: number;
 }
 
-/** Evalúa una nube de puntos (vértices del modelo cargado). */
+/**
+ * Evalúa los vértices del modelo cargado.
+ *
+ * Recibe las posiciones como `Float32Array` plano ([x,y,z, x,y,z, …], el mismo
+ * layout que `MallaRender.positions`) y no como `Vec3[]`: con mallas reales son
+ * cientos de miles de vértices, y armar un array de tuplas para pasarlo por
+ * structured clone al worker costaba más que el propio cálculo. Tampoco
+ * devuelve el detalle por punto: nadie lo consumía y eran otros N objetos
+ * clonados de vuelta para descartarlos.
+ */
 export function evaluarModelo(
-  puntos: Vec3[],
+  posiciones: Float32Array,
   sistema: SistemaCaptacion,
   cfg: ConfigCalculo,
   onProgress?: (frac: number) => void,
 ): ResultadoModelo {
   const segs = segmentosDeCaptacion(sistema);
-  const res: ResultadoPunto[] = [];
+  const total = Math.floor(posiciones.length / 3);
   let expuestos = 0;
+  let noEvaluados = 0;
   let margenMinimo = Infinity;
 
-  for (let i = 0; i < puntos.length; i++) {
-    const r = evaluarPunto(puntos[i], segs, cfg);
-    res.push(r);
-    if (!r.protegido) expuestos++;
-    if (r.margen < margenMinimo) margenMinimo = r.margen;
-    if (onProgress && (i % 64 === 0 || i === puntos.length - 1)) {
-      onProgress((i + 1) / puntos.length);
+  for (let i = 0; i < total; i++) {
+    const p: Vec3 = [posiciones[i * 3], posiciones[i * 3 + 1], posiciones[i * 3 + 2]];
+    const r = evaluarPunto(p, segs, cfg);
+    if (!r.evaluable) {
+      noEvaluados++;
+    } else {
+      if (!r.protegido) expuestos++;
+      if (r.margen < margenMinimo) margenMinimo = r.margen;
     }
+    if (onProgress && (i % 64 === 0 || i === total - 1)) onProgress((i + 1) / total);
   }
 
+  const evaluados = total - noEvaluados;
   return {
-    puntos: res,
-    total: puntos.length,
+    total,
+    noEvaluados,
     expuestos,
-    cobertura: puntos.length ? 1 - expuestos / puntos.length : 1,
+    // Sobre los evaluables: si no quedó ninguno, 0 (y `noEvaluados === total`
+    // deja a la vista que el problema es la cota, no la protección).
+    cobertura: evaluados ? 1 - expuestos / evaluados : 0,
     margenMinimo: margenMinimo === Infinity ? 0 : margenMinimo + 0, // normaliza -0
-
     radio: cfg.radio,
   };
 }
@@ -204,7 +261,6 @@ export function campoEscalar(
   const sx = (bounds.max[0] - bounds.min[0]) / (nx - 1);
   const sy = (bounds.max[1] - bounds.min[1]) / (ny - 1);
   const sz = (bounds.max[2] - bounds.min[2]) / (nz - 1);
-  const dirs = dirsFor(cfg.direcciones);
 
   let idx = 0;
   for (let k = 0; k < nz; k++) {
@@ -215,12 +271,8 @@ export function campoEscalar(
           bounds.min[1] + j * sy,
           bounds.min[2] + k * sz,
         ];
-        let mejor = -Infinity;
-        for (const d of dirs) {
-          const { score } = scoreParaDireccion(p, d, cfg.radio, segs, cfg.cotaTierra);
-          if (score > mejor) mejor = score;
-        }
-        field[idx++] = cfg.radio - mejor;
+        // Misma evaluación que el resumen numérico, refinamiento incluido.
+        field[idx++] = cfg.radio - scoreExposicion(p, segs, cfg).mejor;
       }
     }
     if (onProgress) onProgress((k + 1) / nz);
@@ -263,7 +315,15 @@ export function arcoZonaPunta(radio: number, altura: number) {
   const hEff = Math.max(1e-3, Math.min(altura, radio));
   const rp = radioProteccionSuelo(radio, altura);
   const cz = radio; // altura del centro de la esfera apoyada en el suelo
-  const aPunta = Math.atan2(hEff - cz, -rp);
+  // La punta siempre queda a la izquierda del centro y a su altura o por
+  // debajo, así que el ángulo vive en [−π, −π/2] y el arco baja hasta el suelo
+  // por el cuadrante inferior izquierdo. Con `altura >= radio` la punta efectiva
+  // queda EXACTAMENTE a la altura del centro: `hEff - cz` da +0 y
+  // `Math.atan2(+0, -rp)` devuelve +π en vez de −π, con lo que el arco se
+  // interpolaba por arriba del círculo y la zona protegida salía de casi el
+  // doble de radio (R=20/h=20 daba un perfil de 39.97 m, por encima de la
+  // propia punta). Es un falso "protegido", así que el caso se fija explícito.
+  const aPunta = hEff >= cz ? -Math.PI : Math.atan2(hEff - cz, -rp);
   const aSuelo = -Math.PI / 2;
   const aMedio = (aPunta + aSuelo) / 2;
   return {

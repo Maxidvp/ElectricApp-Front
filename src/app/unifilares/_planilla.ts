@@ -2,7 +2,7 @@
 // mismas unidades que el unifilar) de cómo se dibuja — lo consumen tanto
 // PlanillaLayer (Konva) como _export.ts (AutoLISP).
 import type { Circuito, Tablero } from '@/context/types'
-import { calcCorriente } from '@/utils/electricidad'
+import { calcCorriente, generarFormacionCopaipa, type FormatoFormacion } from '@/utils/electricidad'
 import { COL_W, diagramWidth, type ColumnLayout } from './_layout'
 import { textWidth, wrappedLines } from './_measure'
 import type { ModelLine, ModelText } from './_model'
@@ -79,6 +79,21 @@ export const ROWS: Row[] = [
   { label: 'DESTINO DEL CIRCUITO', get: c => c.descripcion ?? '—' },
 ]
 
+// Formato COPAIPA: norma + sección + PE van juntos en una sola fila, completos (con
+// norma) — en las tablas del resto de la app el mismo formato va sin norma.
+const ROW_COPAIPA: Row = {
+  label: 'SECCIÓN [mm²] TIPO NORMA',
+  get: c => c.formacion ? generarFormacionCopaipa(c.formacion, true) : '—',
+}
+const ROWS_CABLE_SEPARADO = ['NORMA CONDUCTOR', 'SECC. CABLE (mm²)', 'SECC. CABLE PE (mm²)']
+
+export function planillaRows(formato: FormatoFormacion): Row[] {
+  if (formato !== 'copaipa') return ROWS
+  const i = ROWS.findIndex(r => r.label === ROWS_CABLE_SEPARADO[0])
+  const resto = ROWS.filter(r => !ROWS_CABLE_SEPARADO.includes(r.label))
+  return [...resto.slice(0, i), ROW_COPAIPA, ...resto.slice(i)]
+}
+
 // Todo lo que sigue son mínimos — crecen si el contenido no entra (ver
 // computeColumnLayout y el cálculo de alto de fila en buildPlanillaModel).
 export const ROW_H_MIN = 8
@@ -101,8 +116,8 @@ const PAD_Y = 2          // padding vertical de una celda (cada lado)
 // tag del tablero o alguna etiqueta de fila no entran. Se calcula una sola vez por
 // tablero (no depende de los circuitos) y se comparte entre la planilla y el
 // unifilar (columnX/diagramWidth en _layout.ts) para que las columnas sigan alineadas.
-export function computeColumnLayout(tablero: Tablero): ColumnLayout {
-  const maxLabelW = ROWS.reduce((max, r) => Math.max(max, textWidth(r.label, TEXT_SIZE_TITULO, true)), 0)
+export function computeColumnLayout(tablero: Tablero, formato: FormatoFormacion = 'ingles'): ColumnLayout {
+  const maxLabelW = planillaRows(formato).reduce((max, r) => Math.max(max, textWidth(r.label, TEXT_SIZE_TITULO, true)), 0)
   const labelColW = Math.max(LABEL_COL_W_MIN, maxLabelW + PAD_X_LABEL * 2)
 
   // El tag va rotado — lo que tiene que entrar en el ancho de la columna es el alto
@@ -127,7 +142,8 @@ export interface PlanillaModel {
   texts: ModelText[]
 }
 
-export function buildPlanillaModel(circuitos: Circuito[], tablero: Tablero, layout: ColumnLayout): PlanillaModel {
+export function buildPlanillaModel(circuitos: Circuito[], tablero: Tablero, layout: ColumnLayout, formato: FormatoFormacion = 'ingles'): PlanillaModel {
+  const ROWS = planillaRows(formato)
   const n = circuitos.length
   const { groupColW, labelColW } = layout
   const width = diagramWidth(n, layout)

@@ -32,24 +32,12 @@ export const NIVELES_PROTECCION: Record<NPR, NivelProteccion> = {
 export const NPR_ORDEN: NPR[] = ["I", "II", "III", "IV"];
 
 /**
- * Modelo electrogeométrico: relación entre la corriente de pico I (kA) y la
- * distancia de cebado (striking distance) r (m), r = 10 · I^0.65 (IEC 62305-1 A.1).
- * Útil para mostrar el radio equivalente a una corriente dada.
+ * Modelo electrogeométrico (IEC 62305-1 A.1): la distancia de cebado y la
+ * corriente de pico se relacionan por r = 10 · I^0.65. Acá solo se usa la
+ * inversa (de radio de esfera a corriente), para mostrar a qué corriente
+ * mínima equivale el NPR elegido.
  */
-export function distanciaCebado(corrienteKA: number): number {
-  return 10 * Math.pow(corrienteKA, 0.65);
-}
-
-/** Inversa: corriente de pico (kA) para un radio de esfera dado. */
 export function corrienteDesdeRadio(radioM: number): number {
   return Math.pow(radioM / 10, 1 / 0.65);
 }
 
-/**
- * Altura máxima de un mástil captador cuya punta toca la esfera apoyada en el
- * suelo, para una distancia horizontal d al punto a proteger (referencia rápida).
- */
-export function alturaProtegidaRod(radioEsfera: number, distanciaHorizontal: number): number {
-  const d = Math.min(distanciaHorizontal, radioEsfera);
-  return radioEsfera - Math.sqrt(radioEsfera * radioEsfera - d * d);
-}

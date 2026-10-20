@@ -111,7 +111,6 @@ export function campoSeccion(
     for (const b of bolas) {
       const d = Math.hypot(x - b.c[0], y - b.c[1], zAbs - b.c[2]) - b.r;
       if (d < fueraBolas) fueraBolas = d;
-      if (fueraBolas <= -Infinity) break;
     }
 
     return Math.min(dentro, fueraBolas);

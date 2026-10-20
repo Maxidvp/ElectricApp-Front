@@ -4,6 +4,10 @@ export interface CableInfo {
   nombre: string
   diametro: number | null
   Nfases?: number  // Nfases propio del CABLE (no de la formación) — >1 si el cable es multipolar
+  // Solo los usa el formato COPAIPA (sección + material/aislamiento + norma)
+  seccion_f?:    string
+  calibre_tipo?: string
+  familia?:      { material: string | null; aislamiento: string | null; norma?: string | null } | null
 }
 
 export interface FormacionInfo {
@@ -72,11 +76,58 @@ function generarFormacionIngles(f: FormacionInfo): string {
   return partes.join('+')
 }
 
+const MATERIAL_ABBR: Record<string, string> = { cobre: 'Cu', aluminio: 'Al' }
+
+// "2,50" — sección con coma decimal; si no es mm² se agrega la unidad (AWG/kcmil)
+// porque la columna/encabezado COPAIPA asume mm².
+function seccionCopaipa(c: CableInfo): string {
+  const s = (c.seccion_f ?? c.nombre.replace(/^\d+x/, '').replace(/\s*mm²$/, '')).replace('.', ',')
+  return c.calibre_tipo && c.calibre_tipo !== 'mm²' ? `${s} ${c.calibre_tipo}` : s
+}
+
+// "Cu/PVC" (+ norma si conNorma)
+function tipoCopaipa(c: CableInfo, conNorma: boolean): string {
+  const mat = c.familia?.material ?? ''
+  const tipo = [MATERIAL_ABBR[mat.toLowerCase()] ?? mat, c.familia?.aislamiento ?? ''].filter(Boolean).join('/')
+  return [tipo, conNorma ? c.familia?.norma : null].filter(Boolean).join(' ')
+}
+
+function bloqueCopaipa(n: number, c: CableInfo, conNorma: boolean): string {
+  // Multipolar: el nombre ya trae la composición (ej. "3x25+PE6"); n es cantidad de cables
+  const base = (c.Nfases ?? 1) > 1
+    ? `${n > 1 ? `${n}x` : ''}(${c.nombre})`
+    : `${n}x${seccionCopaipa(c)}`
+  return [base, tipoCopaipa(c, conNorma)].filter(Boolean).join(' ')
+}
+
+// Formato COPAIPA: 2x2,50 Cu/PVC + PE 1x2,5 Cu/PVC
+// Con conNorma (planilla del unifilar): 2x2,50 Cu/PVC IRAM NM 247-3 PE 1x2,5 Cu/PVC IRAM NM 247-3
+export function generarFormacionCopaipa(f: FormacionInfo, conNorma = false): string {
+  const sep = conNorma ? ' ' : ' + '
+  const multipolar = (f.cable.Nfases ?? 1) > 1
+  const mismoCable = f.cable_neutro?.nombre === f.cable.nombre
+  const partes: string[] = []
+
+  if (multipolar) {
+    partes.push(bloqueCopaipa(f.cond_por_fase, f.cable, conNorma))
+  } else {
+    const nFase = f.Nfases * f.cond_por_fase
+    const nNeutro = f.Nneutro > 0 && (mismoCable || !f.cable_neutro) ? f.Nneutro : 0
+    partes.push(bloqueCopaipa(nFase + nNeutro, f.cable, conNorma))
+    if (f.cable_neutro && f.Nneutro > 0 && !mismoCable) {
+      partes.push(`N ${bloqueCopaipa(f.Nneutro, f.cable_neutro, conNorma)}`)
+    }
+  }
+  if (f.cable_tierra) partes.push(`PE ${bloqueCopaipa(1, f.cable_tierra, conNorma)}`)
+
+  return partes.join(sep)
+}
+
 export function generarFormacion(f: FormacionInfo, formato: FormatoFormacion = 'ingles'): string {
   switch (formato) {
     case 'ingles':    return generarFormacionIngles(f)
     case 'extendida': return 'A IMPLEMENTAR'
-    case 'copaipa':   return 'A IMPLEMENTAR'
+    case 'copaipa':   return generarFormacionCopaipa(f)
     case 'resumida':  return 'A IMPLEMENTAR'
   }
 }

@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import type { Circuito } from '@/context/types'
+import type { FormatoFormacion } from '@/utils/electricidad'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 import { buildUnifilarModel } from './_model'
 import { buildPlanillaModel, computeColumnLayout, GROUP_COL_W_MIN, LABEL_COL_W_MIN } from './_planilla'
@@ -12,7 +13,8 @@ import LspInfoModal from './LspInfoModal'
 import DiferencialesModal from './DiferencialesModal'
 
 export default function UnifilaresPage() {
-  const { tableros, getTablero, loading, error, guardarGruposDiferenciales } = useProyectos()
+  const { tableros, getTablero, loading, error, guardarGruposDiferenciales, proyectoActivo } = useProyectos()
+  const formato = (proyectoActivo?.formato_formacion ?? 'ingles') as FormatoFormacion
 
   const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
@@ -50,8 +52,8 @@ export default function UnifilaresPage() {
   // de fila (ver computeColumnLayout en _planilla.ts). Se calcula una sola vez y se
   // comparte entre el unifilar y la planilla para que las columnas queden alineadas.
   const columnLayout = useMemo(
-    () => tablero ? computeColumnLayout(tablero) : { groupColW: GROUP_COL_W_MIN, labelColW: LABEL_COL_W_MIN },
-    [tablero],
+    () => tablero ? computeColumnLayout(tablero, formato) : { groupColW: GROUP_COL_W_MIN, labelColW: LABEL_COL_W_MIN },
+    [tablero, formato],
   )
 
   // Modelo automático (derivado de Circuito/Formacion/Proteccion) + lo que el
@@ -62,8 +64,8 @@ export default function UnifilaresPage() {
     [modelAuto, tablero, circuitos, entrada, columnLayout],
   )
   const planillaModel = useMemo(
-    () => (tablero && circuitos.length > 0 ? buildPlanillaModel(circuitos, tablero, columnLayout) : null),
-    [circuitos, tablero, columnLayout],
+    () => (tablero && circuitos.length > 0 ? buildPlanillaModel(circuitos, tablero, columnLayout, formato) : null),
+    [circuitos, tablero, columnLayout, formato],
   )
 
   const [mostrarInfoLsp, setMostrarInfoLsp] = useState(false)

@@ -32,9 +32,18 @@ const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let ocListo: Promise<void> | null = null;
 function asegurarOC(): Promise<void> {
   if (!ocListo) {
-    ocListo = initOC({ locateFile: () => wasmUrl }).then((oc) => {
-      replicad.setOC(oc);
-    });
+    ocListo = initOC({ locateFile: () => wasmUrl })
+      .then((oc) => {
+        replicad.setOC(oc);
+      })
+      // Si la carga del WASM falla (red caída, archivo no servido), la promesa
+      // rechazada se quedaba cacheada: TODO export posterior fallaba con el
+      // mismo error sin volver a intentarlo nunca, aunque la causa ya no
+      // existiera. Se limpia para que el próximo intento arranque de cero.
+      .catch((err) => {
+        ocListo = null;
+        throw err;
+      });
   }
   return ocListo;
 }

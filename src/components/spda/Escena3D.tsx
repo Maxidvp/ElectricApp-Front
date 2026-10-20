@@ -1,8 +1,8 @@
 /**
  * Visor 3D (react-three-fiber). Dibuja, sobre el plano XY como suelo: la
  * estructura y los captadores importados, los conos por punta, las esferas de
- * apoyo entre puntas, la nube de puntos coloreada por resultado, la envolvente
- * numérica y el contorno de la sección a altura de circulación.
+ * apoyo entre puntas, las mallas guardadas del proyecto, la envolvente numérica
+ * y el contorno de la sección a altura de circulación.
  *
  * Dos cosas a tener en cuenta:
  *
@@ -19,7 +19,11 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, GizmoHelper, GizmoViewport, Grid, Line, Html } from "@react-three/drei";
 import * as THREE from "three";
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
 import { useSpdaStore } from "@/state/spda/store";
+import { useHerramientasStore } from "@/state/spda/herramientasStore";
+import { useEdificiosStore, planosConPiso } from "@/state/spda/edificiosStore";
+import { DIAMETRO_MARCADOR, volumenDeClicks } from "@/lib/spda/edificios/arreglo";
 import { useSeccion } from "@/state/spda/useSeccion";
 import type { Vec3 } from "@/lib/spda/geometry";
 import { perfilZonaPunta, radioProteccionSuelo } from "@/lib/spda/rollingSphere";
@@ -31,6 +35,19 @@ import {
 } from "@/lib/spda/construccionEsfera";
 
 /** Convierte un plano de recorte {punto,normal} (matemática pura) a THREE.Plane. */
+// three-mesh-bvh se instala como extensión de los prototipos de three: agrega
+// `computeBoundsTree`/`disposeBoundsTree` a las geometrías y reemplaza el
+// raycast de `Mesh` por uno que usa el BVH cuando existe. Las mallas que no lo
+// construyen siguen usando el recorrido lineal de siempre.
+// El cast es por un desajuste de tipos de three-mesh-bvh 0.9.14: la
+// augmentation de `three` declara `computeBoundsTree` devolviendo `MeshBVH`
+// mientras que la función exportada devuelve su clase base `GeometryBVH`. En
+// runtime es la misma función.
+THREE.BufferGeometry.prototype.computeBoundsTree =
+  computeBoundsTree as unknown as THREE.BufferGeometry["computeBoundsTree"];
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
 function aPlanoThree(p: PlanoRecorte): THREE.Plane {
   const n = new THREE.Vector3(...p.normal);
   return new THREE.Plane(n, -n.dot(new THREE.Vector3(...p.punto)));
@@ -166,39 +183,305 @@ function polylinesToGeometry(lines: Vec3[][]): THREE.BufferGeometry {
   return g;
 }
 
-function PuntosResultado() {
-  const modelo = useSpdaStore((s) => s.modelo);
-  const resultado = useSpdaStore((s) => s.resultado);
-
-  const geom = useMemo(() => {
-    if (!modelo) return null;
-    const pts = modelo.puntosEstructura;
-    const g = new THREE.BufferGeometry();
-    const pos = new Float32Array(pts.length * 3);
-    const col = new Float32Array(pts.length * 3);
-    const cOk = new THREE.Color("#37c978");
-    const cBad = new THREE.Color("#ff5a5a");
-    const cNeutral = new THREE.Color("#5b6b7d");
-    for (let i = 0; i < pts.length; i++) {
-      pos[i * 3] = pts[i][0];
-      pos[i * 3 + 1] = pts[i][1];
-      pos[i * 3 + 2] = pts[i][2];
-      let c = cNeutral;
-      if (resultado && resultado.puntos[i]) c = resultado.puntos[i].protegido ? cOk : cBad;
-      col[i * 3] = c.r;
-      col[i * 3 + 1] = c.g;
-      col[i * 3 + 2] = c.b;
-    }
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    return g;
-  }, [modelo, resultado]);
-
-  if (!geom) return null;
+/**
+ * Sólido real importado (OBJ/STL) — un color fijo, sin heatmap por vértice.
+ *
+ * Protegido/expuesto ya no se calcula por vértice: se lee por TRANSPARENCIA,
+ * comparando este sólido opaco contra las superficies de protección
+ * translúcidas (`ZonasProtegidas`/`ConstruccionEsfera`, ya en la escena) —
+ * donde la estructura queda cubierta por una superficie de protección, el
+ * color se mezcla con el de esa superficie (se ve un tercer color, la mezcla);
+ * donde la estructura asoma sin nada translúcido encima, se ve su color liso
+ * — expuesta. Se sacó el cálculo por vértice (`resultadoMallas`) porque exigía
+ * evaluar la esfera rodante en cada vértice de la malla real solo para
+ * pintarla; este enfoque da la misma lectura gratis, con la geometría que ya
+ * se dibuja para el cálculo analítico (ver memoria del proyecto).
+ */
+function ModeloSolido() {
+  const mallas = useSpdaStore((s) => s.modelo?.mallas);
+  const visible = useSpdaStore((s) => s.mostrarMalla);
+  const delimitando = useEdificiosStore((s) => s.delimitando);
+  const modo = useEdificiosStore((s) => s.modo);
+  const agregarPlano = useEdificiosStore((s) => s.agregarPlano);
+  const seleccionarCara = useEdificiosStore((s) => s.seleccionarCara);
+  // Las `pesada` se saltean acá y solo acá: entran igual al cálculo (ver
+  // `mallaRenderDeGrupo`), lo que no vale la pena es dibujarlas como sólido.
+  const geoms = useMemo(
+    () =>
+      (mallas ?? [])
+        .filter((m) => !m.pesada)
+        // Esta es LA malla que se clickea para delimitar: va con BVH.
+        .map((m, i) => ({ key: `${m.nombre}-${i}`, malla: m, g: geometriaDeMalla(m, true) })),
+    [mallas],
+  );
+  useDisposeGeometrias(geoms.map((x) => x.g));
+  if (!visible) return null;
   return (
-    <points geometry={geom}>
-      <pointsMaterial size={0.4} vertexColors sizeAttenuation />
-    </points>
+    <>
+      {geoms.map(({ key, malla, g }) => (
+        <mesh
+          key={key}
+          geometry={g}
+          onClick={(e) => {
+            // "Delimitar edificios" reusa este mismo modelo — el `<mesh>` no
+            // tiene transform propio, así que local == mundo y todo lo que da
+            // three.js en el evento sirve directo.
+            if (!delimitando) return;
+            e.stopPropagation();
+            if (modo === "conectividad") {
+              // `faceIndex` es el índice de triángulo en ESTA geometría, que se
+              // arma 1:1 desde la MallaRender (indexada o soup), así que sirve
+              // como punto de partida del flood fill sin traducción.
+              if (e.faceIndex != null) seleccionarCara(malla, e.faceIndex);
+              return;
+            }
+            // Solo se toma el PLANO de la cara clickeada: normal geométrica del
+            // triángulo (three.js la calcula del triángulo real, no de la normal
+            // suavizada) y el punto del click como ancla. No se recorre la malla:
+            // toda la forma sale de intersectar este plano con los ya marcados.
+            if (!e.face) return;
+            const n = e.face.normal;
+            agregarPlano({ punto: [e.point.x, e.point.y, e.point.z], normal: [n.x, n.y, n.z] });
+          }}
+        >
+          <meshStandardMaterial
+            color="#e8b34d"
+            transparent={delimitando}
+            opacity={delimitando ? 0.35 : 1}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Libera las geometrías que dejaron de usarse. three.js no lo hace solo: cada
+ * `BufferGeometry` reserva buffers en la GPU que viven hasta su `dispose()`, y
+ * acá se recrean seguido (reimportar, mover el slider de decimación, activar y
+ * desactivar mallas guardadas). Sin esto, una sesión larga las va acumulando.
+ *
+ * Compara contra el set anterior en vez de confiar en la identidad del array,
+ * así da igual si el llamador memoiza o arma uno nuevo en cada render: solo se
+ * libera lo que efectivamente ya no está en uso.
+ */
+function useDisposeGeometrias(geoms: THREE.BufferGeometry[]) {
+  const previas = useRef<THREE.BufferGeometry[]>([]);
+  // `dispose()` libera los buffers de la GPU pero no el BVH, que es memoria JS
+  // colgada de la geometría: se suelta aparte.
+  const soltar = (g: THREE.BufferGeometry) => {
+    g.disposeBoundsTree?.();
+    g.dispose();
+  };
+  useEffect(() => {
+    for (const g of previas.current) if (!geoms.includes(g)) soltar(g);
+    previas.current = geoms;
+  });
+  useEffect(() => () => previas.current.forEach(soltar), []);
+}
+
+/**
+ * Construye una BufferGeometry (no reactiva) a partir de una `MallaRender`/`MallaDecimada`.
+ *
+ * `paraClicks` arma además el BVH. Solo tiene sentido en la malla que se
+ * clickea: sin él, cada evento del puntero recorre TODOS los triángulos uno por
+ * uno, y react-three-fiber lanza un rayo en cada `pointermove`, no solo al
+ * hacer click. Con 325.000 triángulos eso es lo que hace que delimitar se
+ * sienta pesado, bastante más que el dibujado en sí.
+ */
+function geometriaDeMalla(
+  m: { positions: Float32Array; indices: Uint32Array | null },
+  paraClicks = false,
+): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(m.positions, 3));
+  if (m.indices) g.setIndex(new THREE.BufferAttribute(m.indices, 1));
+  g.computeVertexNormals();
+  if (paraClicks) g.computeBoundsTree();
+  return g;
+}
+
+/**
+ * Malla original importada por "Importar objetos" — wireframe celeste, para
+ * comparar contra la decimada sin que una tape a la otra.
+ */
+function TerrenoOriginal() {
+  const mallas = useHerramientasStore((s) => s.terreno);
+  const visible = useHerramientasStore((s) => s.mostrarOriginal);
+  const geoms = useMemo(
+    () => (mallas ?? []).map((m, i) => ({ key: `${m.nombre}-${i}`, g: geometriaDeMalla(m) })),
+    [mallas],
+  );
+  useDisposeGeometrias(geoms.map((x) => x.g));
+  if (!visible) return null;
+  return (
+    <>
+      {geoms.map(({ key, g }) => (
+        <mesh key={key} geometry={g}>
+          <meshBasicMaterial color="#5aa9ff" wireframe />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+/** Malla decimada por "Importar objetos" — sólido naranja translúcido. */
+function TerrenoDecimado() {
+  const mallas = useHerramientasStore((s) => s.terrenoDecimado);
+  const visible = useHerramientasStore((s) => s.mostrarDecimado);
+  const conAristas = useHerramientasStore((s) => s.mostrarAristasDecimado);
+  const geoms = useMemo(
+    () => (mallas ?? []).map((m, i) => ({ key: `${m.nombre}-${i}`, g: geometriaDeMalla(m) })),
+    [mallas],
+  );
+  // Aristas reales de la triangulación (no solo las "de forma"): con la malla
+  // ya bien decimada, cada triángulo importa para ver qué tan gruesa quedó.
+  const aristas = useMemo(
+    () => geoms.map(({ key, g }) => ({ key, eg: new THREE.WireframeGeometry(g) })),
+    [geoms],
+  );
+  useDisposeGeometrias([...geoms.map((x) => x.g), ...aristas.map((x) => x.eg)]);
+  if (!visible) return null;
+  return (
+    <>
+      {geoms.map(({ key, g }) => (
+        <mesh key={key} geometry={g}>
+          <meshStandardMaterial color="#ffb648" transparent opacity={0.75} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      {conAristas &&
+        aristas.map(({ key, eg }) => (
+          <lineSegments key={`${key}-aristas`} geometry={eg}>
+            <lineBasicMaterial color="#2a1a05" transparent opacity={0.6} />
+          </lineSegments>
+        ))}
+    </>
+  );
+}
+
+/**
+ * Modelos guardados (`SpdaMalla`, ver `services/spdaMallas.ts`) activados por el
+ * usuario en el panel — geometría bajada bajo demanda al tildar el check, cacheada
+ * en el store (`mallasCargadas`) para no volver a pedirla al destildar/tildar de nuevo.
+ * Color por `tipo`: suelo en el mismo naranja que "Importar suelo", edificio en el
+ * mismo ámbar que `ModeloSolido` — para reconocer de un vistazo qué es cada uno.
+ */
+function MallasGuardadas() {
+  const activasIds = useSpdaStore((s) => s.mallasActivasIds);
+  const cargadas = useSpdaStore((s) => s.mallasCargadas);
+  const metas = useSpdaStore((s) => s.mallasGuardadas);
+  const items = useMemo(
+    () =>
+      activasIds
+        .filter((id) => cargadas[id])
+        .map((id) => ({
+          id,
+          tipo: metas.find((m) => m.id === id)?.tipo ?? "edificio",
+          g: geometriaDeMalla(cargadas[id]),
+        })),
+    [activasIds, cargadas, metas],
+  );
+  useDisposeGeometrias(items.map((x) => x.g));
+  return (
+    <>
+      {items.map(({ id, tipo, g }) => (
+        <mesh key={id} geometry={g}>
+          <meshStandardMaterial
+            color={tipo === "suelo" ? "#ffb648" : "#e8b34d"}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Caras picadas: el volumen que se está definiendo a click limpio.
+ *
+ * Lo que se dibuja es la MISMA reconstrucción que se guarda (`volumenDeClicks`
+ * en `arreglo.ts`): los planos parten el espacio en celdas, las celdas que algún
+ * click marca como interiores son el edificio, y la superficie es el borde entre
+ * adentro y afuera — cerrada por construcción, y no convexa si hace falta.
+ *
+ * Mientras los clicks todavía no encierran nada solo se ven los marcadores de
+ * cada cara picada. El sólido aparece recién cuando cierra, y esa aparición ES
+ * la señal de que ya está: antes se dibujaba la celda de cada plano por
+ * separado, que se veía "casi bien" aunque la figura estuviera abierta.
+ */
+function CarasPicadas() {
+  const activo = useEdificiosStore((s) => s.delimitando);
+  const modo = useEdificiosStore((s) => s.modo);
+  const caras = useEdificiosStore((s) => s.piezaActual);
+  const bbox = useEdificiosStore((s) => s.bboxDelimitacion);
+
+  const datos = useMemo(() => {
+    if (!activo || modo !== "region" || !bbox || caras.length === 0) return null;
+    const v = volumenDeClicks(planosConPiso(caras), bbox);
+    if (!v) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(v.positions, 3));
+    g.setIndex(new THREE.BufferAttribute(v.indices, 1));
+    g.computeVertexNormals();
+    return { g, volumen: v.volumen };
+  }, [activo, modo, caras, bbox]);
+
+  useDisposeGeometrias(useMemo(() => (datos ? [datos.g] : []), [datos]));
+  if (!activo || modo !== "region") return null;
+
+  return (
+    <>
+      {datos && (
+        <mesh geometry={datos.g} renderOrder={3}>
+          <meshStandardMaterial
+            color="#c084fc"
+            transparent
+            opacity={0.45}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+
+      {/* Marcador del punto clickeado en cada cara. */}
+      {caras.map((c, i) => (
+        <MarcadorCara key={`marca-${i}`} plano={c} />
+      ))}
+    </>
+  );
+}
+
+/** Círculo de `DIAMETRO_MARCADOR` sobre el punto donde se clickeó una cara. */
+function MarcadorCara({ plano }: { plano: { punto: Vec3; normal: Vec3 } }) {
+  const { quaternion, posicion } = useMemo(() => {
+    const n = new THREE.Vector3(...plano.normal).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    // Despegado un poco de la superficie para que no pelee con la malla real.
+    const p = new THREE.Vector3(...plano.punto).addScaledVector(n, 0.02);
+    return { quaternion: q, posicion: p };
+  }, [plano]);
+  return (
+    <mesh position={posicion} quaternion={quaternion} renderOrder={4}>
+      <circleGeometry args={[DIAMETRO_MARCADOR / 2, 24]} />
+      <meshBasicMaterial color="#f5d0fe" transparent opacity={0.9} side={THREE.DoubleSide} depthTest={false} />
+    </mesh>
+  );
+}
+
+/** Piezas ya cerradas del edificio en construcción, todavía sin guardar. */
+function PiezasEdificioTerminadas() {
+  const piezas = useEdificiosStore((s) => s.piezasTerminadas);
+  const geoms = useMemo(() => piezas.map((p, i) => ({ key: i, g: geometriaDeMalla(p) })), [piezas]);
+  useDisposeGeometrias(geoms.map((x) => x.g));
+  return (
+    <>
+      {geoms.map(({ key, g }) => (
+        <mesh key={key} geometry={g}>
+          <meshStandardMaterial color="#a855f7" transparent opacity={0.55} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+    </>
   );
 }
 
@@ -208,6 +491,7 @@ function Estructura() {
     () => (modelo ? polylinesToGeometry(modelo.lineasEstructura) : null),
     [modelo],
   );
+  useDisposeGeometrias(useMemo(() => (geom ? [geom] : []), [geom]));
   if (!geom) return null;
   return (
     <lineSegments geometry={geom}>
@@ -222,6 +506,7 @@ function Conductores() {
     () => polylinesToGeometry(conductores.map((c) => c.puntos)),
     [conductores],
   );
+  useDisposeGeometrias(useMemo(() => [geom], [geom]));
   return (
     <lineSegments geometry={geom}>
       <lineBasicMaterial color="#4da3ff" linewidth={2} />
@@ -397,7 +682,7 @@ function ZonasProtegidas() {
           <meshBasicMaterial
             color="#5aa9ff"
             transparent
-            opacity={0.12}
+            opacity={0.4}
             side={THREE.DoubleSide}
             depthWrite={false}
           />
@@ -440,7 +725,7 @@ function ConstruccionEsfera() {
           <meshBasicMaterial
             color={e.tipo === "3p" ? "#a5b4fc" : "#7cc4ff"}
             transparent
-            opacity={0.22}
+            opacity={0.42}
             side={THREE.DoubleSide}
             depthWrite={false}
             clippingPlanes={separadoresDeEsfera(e).map(aPlanoThree)}
@@ -487,13 +772,14 @@ function Envolvente() {
     g.computeVertexNormals();
     return g;
   }, [malla]);
+  useDisposeGeometrias(useMemo(() => (geom ? [geom] : []), [geom]));
   if (!geom || !visible) return null;
   return (
     <mesh geometry={geom}>
       <meshStandardMaterial
         color="#37c978"
         transparent
-        opacity={0.16}
+        opacity={0.4}
         side={THREE.DoubleSide}
         depthWrite={false}
       />
@@ -566,15 +852,45 @@ export default function Escena3D() {
   const modelo = useSpdaStore((s) => s.modelo);
   const cota = useSpdaStore((s) => s.cotaTierra) ?? 0;
   const R = useSpdaStore((s) => s.radioEfectivo());
+  const mallasActivasIds = useSpdaStore((s) => s.mallasActivasIds);
+  const mallasCargadas = useSpdaStore((s) => s.mallasCargadas);
+  const terreno = useHerramientasStore((s) => s.terreno);
+  const terrenoDecimado = useHerramientasStore((s) => s.terrenoDecimado);
 
   const { center, dist } = useMemo(() => {
-    if (!modelo) return { center: [0, 0, 0] as Vec3, dist: 80 };
-    const { min, max } = modelo.bounds;
+    // El encuadre mira TODA la geometría visible, no solo el modelo importado:
+    // una malla guardada o un terreno del banco de pruebas pueden estar lejos
+    // del origen (un terreno a 40 m de altura, p. ej.) y con el encuadre viejo
+    // la cámara quedaba adentro de la geometría, como si se hubiera roto algo.
+    const min: [number, number, number] = [Infinity, Infinity, Infinity];
+    const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+    const sumar = (m: { positions: Float32Array }) => {
+      for (let i = 0; i < m.positions.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          const v = m.positions[i + k];
+          if (v < min[k]) min[k] = v;
+          if (v > max[k]) max[k] = v;
+        }
+      }
+    };
+    if (modelo) {
+      for (let k = 0; k < 3; k++) {
+        min[k] = Math.min(min[k], modelo.bounds.min[k]);
+        max[k] = Math.max(max[k], modelo.bounds.max[k]);
+      }
+    }
+    for (const id of mallasActivasIds) {
+      const m = mallasCargadas[id];
+      if (m) sumar(m);
+    }
+    for (const m of terrenoDecimado ?? terreno ?? []) sumar(m);
+
+    if (!isFinite(min[0])) return { center: [0, 0, 0] as Vec3, dist: 80 };
     const c: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
     const size = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2], 10);
     // Encuadra la estructura dejando algo de aire para los conos (radio ~ r).
     return { center: c, dist: size * 1.3 + R * 0.45 };
-  }, [modelo, R]);
+  }, [modelo, R, mallasActivasIds, mallasCargadas, terreno, terrenoDecimado]);
 
   return (
     <Canvas
@@ -596,7 +912,12 @@ export default function Escena3D() {
       <ZonasProtegidas />
       <ConstruccionEsfera />
       <SeccionPeatonal />
-      <PuntosResultado />
+      <ModeloSolido />
+      <MallasGuardadas />
+      <TerrenoOriginal />
+      <TerrenoDecimado />
+      <CarasPicadas />
+      <PiezasEdificioTerminadas />
       <Envolvente />
       <EsferaRodante />
       <OrbitControls target={[center[0], center[1], center[2]]} makeDefault />

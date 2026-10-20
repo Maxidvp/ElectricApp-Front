@@ -8,11 +8,12 @@
  * (CSS plano propio → Tailwind con los tokens de Front) para no convivir con
  * dos sistemas de diseño en el mismo repo.
  */
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSpdaStore } from "@/state/spda/store";
+import type { SpdaMallaMeta } from "@/services/spdaMallas";
 import { useSeccion } from "@/state/spda/useSeccion";
 import { NIVELES_PROTECCION, NPR_ORDEN, corrienteDesdeRadio } from "@/lib/spda/iec62305";
-import { UNIDADES } from "@/lib/spda/import";
+import { useProyectos } from "@/context/ProyectosContext";
 
 const cls = {
   input:
@@ -28,22 +29,91 @@ const cls = {
   errbox: "bg-danger-a0/15 border border-danger-a0 text-danger-a10 rounded-md p-2 text-[11px] mt-2",
 };
 
-function Badge({ tono, children }: { tono: "ok" | "warn"; children: React.ReactNode }) {
-  const color =
-    tono === "ok" ? "bg-success-a0/20 text-success-a10" : "bg-warning-a0/20 text-warning-a10";
-  return <span className={`inline-block px-1.5 py-0.5 rounded-full text-[11px] ml-1.5 ${color}`}>{children}</span>;
+/**
+ * Fila de "Modelos guardados": activar/desactivar, renombrar en el lugar y
+ * borrar. El borrado pide confirmación en dos pasos en vez de `window.confirm`
+ * (bloquea el hilo y corta el visor 3D), y el nombre es un input no controlado
+ * que confirma con Enter o al salir del campo.
+ */
+function FilaMallaGuardada({ malla }: { malla: SpdaMallaMeta }) {
+  const activa = useSpdaStore((s) => s.mallasActivasIds.includes(malla.id));
+  const cargando = useSpdaStore((s) => s.cargandoMallaId === malla.id);
+  const toggleMallaGuardada = useSpdaStore((s) => s.toggleMallaGuardada);
+  const borrarMallaGuardada = useSpdaStore((s) => s.borrarMallaGuardada);
+  const renombrarMallaGuardada = useSpdaStore((s) => s.renombrarMallaGuardada);
+  const [confirmando, setConfirmando] = useState(false);
+
+  return (
+    <div className="flex gap-1.5 items-center bg-surface-a10 border border-surface-tonal-a30 rounded-md px-1.5 py-1 text-xs text-font-a10">
+      <input
+        type="checkbox"
+        title={activa ? "Ocultar en el visor" : "Mostrar en el visor"}
+        checked={activa}
+        disabled={cargando}
+        onChange={() => toggleMallaGuardada(malla.id)}
+      />
+      <span className="uppercase text-[10px] text-surface-tonal-a40 shrink-0">{malla.tipo}</span>
+      <input
+        className="flex-1 min-w-0 bg-transparent border border-transparent rounded px-1 py-0.5 text-xs text-font-a10 hover:border-surface-tonal-a30 focus:border-info-a10 outline-none"
+        defaultValue={malla.nombre}
+        title="Renombrar"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            e.currentTarget.value = malla.nombre;
+            e.currentTarget.blur();
+          }
+        }}
+        onBlur={(e) => {
+          const nuevo = e.target.value.trim();
+          if (!nuevo) {
+            e.target.value = malla.nombre;
+            return;
+          }
+          if (nuevo !== malla.nombre) renombrarMallaGuardada(malla.id, nuevo);
+        }}
+      />
+      <span className="text-surface-tonal-a40 text-[10px] shrink-0">
+        {cargando ? "Cargando…" : `${malla.vertices.toLocaleString("es-AR")} v.`}
+      </span>
+      {confirmando ? (
+        <>
+          <button
+            className="text-danger-a10 text-[10px] shrink-0 hover:underline"
+            onClick={() => borrarMallaGuardada(malla.id)}
+          >
+            Borrar
+          </button>
+          <button
+            className="text-surface-tonal-a40 text-[10px] shrink-0 hover:text-font-a0"
+            onClick={() => setConfirmando(false)}
+          >
+            No
+          </button>
+        </>
+      ) : (
+        <button
+          className="text-surface-tonal-a40 hover:text-danger-a10 shrink-0"
+          title="Borrar del proyecto"
+          onClick={() => setConfirmando(true)}
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
 }
 
-export default function Panel() {
+export default function Panel({ onIrAImportar }: { onIrAImportar: () => void }) {
   const s = useSpdaStore();
   const seccion = useSeccion();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [drag, setDrag] = useState(false);
   const R = s.radioEfectivo();
+  const { proyectoActivo } = useProyectos();
 
-  async function abrir(file: File) {
-    await s.cargarArchivo(file);
-  }
+  useEffect(() => {
+    if (proyectoActivo) s.cargarMallasGuardadas(proyectoActivo.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proyectoActivo?.id]);
 
   return (
     <div>
@@ -113,117 +183,20 @@ export default function Panel() {
         + Añadir mástil
       </button>
       
-      <h2 className={cls.h2}>Modelo (DXF · OBJ · STL)</h2>
-      <div
-        className={`border border-dashed rounded-lg p-4 text-center cursor-pointer ${
-          drag ? "border-primary-a0 text-font-a0" : "border-surface-tonal-a30 text-surface-tonal-a40"
-        }`}
-        onClick={() => fileRef.current?.click()}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDrag(true);
-        }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDrag(false);
-          const f = e.dataTransfer.files[0];
-          if (f) abrir(f);
-        }}
-      >
-        {s.importando
-          ? "Importando…"
-          : s.modelo
-            ? `Reemplazar (${s.modelo.formato.toUpperCase()}) — clic o arrastrar`
-            : "Arrastrá un .dxf / .obj / .stl o hacé clic"}
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".dxf,.obj,.stl"
-          hidden
-          onChange={(e) => e.target.files?.[0] && abrir(e.target.files[0])}
-        />
-      </div>
+      <button className={cls.btnSecondary} onClick={onIrAImportar}>
+        Importar modelo →
+      </button>
 
-      <div className="flex gap-2 mt-2">
-        <div className={`${cls.field} flex-1`}>
-          <label className={cls.label}>
-            Unidad del archivo
-            {s.modelo &&
-              (s.modelo.unidadDetectada ? (
-                <Badge tono="ok">detectada</Badge>
-              ) : (
-                <Badge tono="warn">asumida</Badge>
-              ))}
-          </label>
-          <select
-            className={cls.input}
-            value={s.opcionesImport.unidad}
-            onChange={(e) =>
-              s.setOpcionesImport({ unidad: e.target.value as (typeof UNIDADES)[number]["valor"] })
-            }
-          >
-            {UNIDADES.map((u) => (
-              <option key={u.valor} value={u.valor}>
-                {u.etiqueta} ({u.valor})
-              </option>
+      {s.mallasGuardadas.length > 0 && (
+        <>
+          <h2 className={cls.h2}>Modelos guardados</h2>
+          <div className="flex flex-col gap-1">
+            {s.mallasGuardadas.map((m) => (
+              <FilaMallaGuardada key={m.id} malla={m} />
             ))}
-          </select>
-        </div>
-        <div className={`${cls.field} flex-1`}>
-          <label className={cls.label}>Paso muestreo (m)</label>
-          <input
-            className={cls.input}
-            type="number"
-            min={0.25}
-            step={0.25}
-            value={s.opcionesImport.pasoMuestreo}
-            onChange={(e) => s.setOpcionesImport({ pasoMuestreo: Number(e.target.value) })}
-          />
-        </div>
-      </div>
-      {s.modelo && !s.modelo.unidadDetectada && (
-        <p className={`${cls.sub} m-0 mb-2`}>
-          El formato no declara unidades. Elegí la correcta y usá <b>Reimportar</b>.
-        </p>
-      )}
-
-      <div className="flex gap-2 items-end">
-        <div className={`${cls.field} flex-1`}>
-          <label className={cls.label}>Eje vertical del archivo</label>
-          <select
-            className={cls.input}
-            value={s.opcionesImport.ejeVertical}
-            onChange={(e) => s.setOpcionesImport({ ejeVertical: e.target.value as "Y" | "Z" })}
-          >
-            <option value="Z">Z arriba (CAD)</option>
-            <option value="Y">Y arriba (mallas)</option>
-          </select>
-        </div>
-        <div className="flex-1 mb-2.5">
-          <button
-            className={cls.btnSecondary + " mt-0"}
-            disabled={!s.ultimoArchivo || s.importando}
-            onClick={() => s.reimportar()}
-          >
-            Reimportar con estos valores
-          </button>
-        </div>
-      </div>
-
-      {s.errorImport && <div className={cls.errbox}>{s.errorImport}</div>}
-      {s.modelo?.advertencias.map((a, i) => (
-        <div className={cls.warnbox} key={i}>
-          {a}
-        </div>
-      ))}
-      {s.modelo && (
-        <p className={`${cls.sub} mt-2`}>
-          {s.modelo.formato.toUpperCase()} · capas/grupos: {s.modelo.capasDetectadas.join(", ") || "—"}
-          <br />
-          {s.modelo.puntosEstructura.length} puntos de estructura · {s.mastiles.length} mástiles ·{" "}
-          {s.conductores.length} conductores
-        </p>
+          </div>
+          {s.errorMallasGuardadas && <div className={cls.errbox}>{s.errorMallasGuardadas}</div>}
+        </>
       )}
 
       <h2 className={cls.h2}>Nivel de protección (NPR)</h2>
@@ -279,12 +252,12 @@ export default function Panel() {
           }
         />
       </div>
-      <button className={cls.btn} disabled={!s.modelo || s.calculando} onClick={() => s.calcular()}>
+      <button className={cls.btn} disabled={!s.hayGeometria() || s.calculando} onClick={() => s.calcular()}>
         Contrastar modelo
       </button>
       <button
         className={cls.btnSecondary}
-        disabled={!s.modelo || s.calculando}
+        disabled={!s.hayGeometria() || s.calculando}
         onClick={() => s.calcularEnvolvente()}
       >
         Extraer envolvente de protección
@@ -332,9 +305,19 @@ export default function Panel() {
           Sección a altura
         </label>
       </div>
+      {s.modelo && (
+        <div className="flex gap-2 flex-wrap mt-2 pt-2 border-t border-surface-tonal-a20">
+          <label className="flex-1 flex items-center gap-1.5 text-xs text-font-a10">
+            <input type="checkbox" checked={s.mostrarMalla} onChange={() => s.toggle("mostrarMalla")} />
+            Malla real
+          </label>
+        </div>
+      )}
       <p className={`${cls.sub} mt-1.5`}>
         Conos = puntas aisladas; entre puntas cercanas la esfera se apoya en 2–3 puntas y la
-        protección sube. El caso completo es la envolvente.
+        protección sube. El caso completo es la envolvente. La malla real (ámbar) se ve protegida
+        donde queda cubierta por estas superficies translúcidas — la mezcla de color marca la zona
+        protegida, sin necesidad de calcular margen por vértice.
       </p>
 
       <h2 className={cls.h2}>Altura de circulación</h2>

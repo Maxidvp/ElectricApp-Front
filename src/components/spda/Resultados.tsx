@@ -29,16 +29,26 @@ export default function Resultados() {
       />
       {!r ? (
         <span className="text-[11px] text-surface-tonal-a40">
-          Importá un DXF y pulsá “Contrastar modelo”.
+          Importá un modelo o activá un edificio guardado, y pulsá “Contrastar modelo”.
         </span>
       ) : (
         <>
-          <Stat value={String(r.total)} label="puntos evaluados" />
+          <Stat value={String(r.total - r.noEvaluados)} label="puntos evaluados" />
           <Stat
             value={String(r.expuestos)}
             label="puntos expuestos"
             tono={r.expuestos ? "bad" : "ok"}
           />
+          {/* Si aparece, casi siempre es la cota de tierra mal puesta (unidad
+              equivocada, capa de terreno mal detectada): esos puntos quedarían
+              más de un radio bajo tierra, donde ninguna esfera los alcanza. */}
+          {r.noEvaluados > 0 && (
+            <Stat
+              value={String(r.noEvaluados)}
+              label="sin evaluar (bajo la cota de tierra)"
+              tono="bad"
+            />
+          )}
           <Stat
             value={`${(r.cobertura * 100).toFixed(1)}%`}
             label="cobertura de protección"

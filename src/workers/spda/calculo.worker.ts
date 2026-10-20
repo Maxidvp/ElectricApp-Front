@@ -1,8 +1,15 @@
 /// <reference lib="webworker" />
 /**
- * Worker de cálculo: mantiene la UI fluida mientras corre el método de la esfera
- * rodante sobre la nube de puntos del modelo y (opcionalmente) extrae la
- * envolvente de protección por marching cubes.
+ * Worker de cálculo: mantiene la UI fluida mientras corre el método de la
+ * esfera rodante sobre los vértices reales de la malla importada y
+ * (opcionalmente) extrae la envolvente de protección por marching cubes.
+ *
+ * "evaluar" corre sobre `modelo.mallas` (vértices reales) — antes corría sobre
+ * una nube de puntos muestreada aparte; se sacó esa nube por completo (ver
+ * memoria del proyecto) a favor de mostrar protegido/expuesto como un truco
+ * visual de transparencia en `Escena3D` en vez de colorear por margen —
+ * `evaluar` ahora solo alimenta el resumen numérico (`Resultados.tsx`), no
+ * ningún color.
  */
 
 import type { SistemaCaptacion, Vec3 } from "@/lib/spda/geometry";
@@ -18,7 +25,8 @@ export type PeticionWorker =
   | {
       tipo: "evaluar";
       id: number;
-      puntos: Vec3[];
+      /** [x,y,z, x,y,z, …] — se manda TRANSFERIDO, el emisor pierde el buffer. */
+      posiciones: Float32Array;
       sistema: SistemaCaptacion;
       cfg: ConfigCalculo;
     }
@@ -39,22 +47,41 @@ export type RespuestaWorker =
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
+/**
+ * Reporta progreso solo cuando cambia el ENTERO de porcentaje. `evaluarModelo`
+ * llama cada 64 puntos, que con una malla real (200k vértices) son ~3000
+ * mensajes: cada uno escribe en el store y re-renderiza el panel entero
+ * mientras el canvas 3D está corriendo al lado. Con el filtro quedan ~100, que
+ * es todo lo que una barra de progreso puede mostrar igual.
+ */
+function progresoPorcentual(id: number, fase: string): (frac: number) => void {
+  let ultimo = -1;
+  return (frac) => {
+    const pct = Math.round(frac * 100);
+    if (pct === ultimo) return;
+    ultimo = pct;
+    ctx.postMessage({ tipo: "progreso", id, fase, frac } as RespuestaWorker);
+  };
+}
+
 ctx.onmessage = (ev: MessageEvent<PeticionWorker>) => {
   const msg = ev.data;
   try {
     if (msg.tipo === "evaluar") {
-      const resultado = evaluarModelo(msg.puntos, msg.sistema, msg.cfg, (frac) =>
-        ctx.postMessage({ tipo: "progreso", id: msg.id, fase: "evaluar", frac } as RespuestaWorker),
+      const resultado = evaluarModelo(
+        msg.posiciones,
+        msg.sistema,
+        msg.cfg,
+        progresoPorcentual(msg.id, "evaluar"),
       );
       ctx.postMessage({ tipo: "evaluar:ok", id: msg.id, resultado } as RespuestaWorker);
     } else if (msg.tipo === "envolvente") {
-      const field = campoEscalar(msg.bounds, msg.dims, msg.sistema, msg.cfg, (frac) =>
-        ctx.postMessage({
-          tipo: "progreso",
-          id: msg.id,
-          fase: "envolvente",
-          frac,
-        } as RespuestaWorker),
+      const field = campoEscalar(
+        msg.bounds,
+        msg.dims,
+        msg.sistema,
+        msg.cfg,
+        progresoPorcentual(msg.id, "envolvente"),
       );
       const malla = marchingCubes(field, msg.dims, msg.bounds, 0);
       ctx.postMessage({ tipo: "envolvente:ok", id: msg.id, malla } as RespuestaWorker, [
