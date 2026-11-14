@@ -1,10 +1,12 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables } from '@/context/CablesContext'
 import { useAuth } from '@/context/AuthContext'
 import type { FormatoFormacion, NomenclaturaFases } from '@/services/proyectos'
+import * as checkpointsApi from '@/services/checkpoints'
+import type { Checkpoint } from '@/services/checkpoints'
 
 // ── Estilos compartidos ────────────────────────────────────────────
 
@@ -17,7 +19,14 @@ const cx = {
   grid:    'p-3 grid gap-[10px] bg-surface-a10',
 }
 
-type Seccion = 'general' | 'cables' | 'expresiones' | 'participantes' | 'eliminar'
+type Seccion = 'general' | 'cables' | 'expresiones' | 'participantes' | 'versiones' | 'eliminar'
+
+// Restaurar un checkpoint recarga el proyecto entero y LoadingGate desmonta esta
+// página en el medio — sin esto volvería a 'general' en vez de quedarse en 'versiones'.
+const SS_SECCION = 'proyecto-seccion'
+
+const fechaCorta = (iso: string) =>
+  new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })
 
 const FORMATOS: { id: FormatoFormacion; label: string; desc: string }[] = [
   { id: 'ingles',    label: 'Sistema inglés',      desc: 'Ej: 4C#10 AWG (3P-N)+1C#10 AWG (G)' },
@@ -38,6 +47,7 @@ const secciones: { id: Seccion; label: string }[] = [
   { id: 'cables',       label: 'Cables' },
   { id: 'expresiones',  label: 'Expresiones' },
   { id: 'participantes', label: 'Participantes' },
+  { id: 'versiones',    label: 'Versiones' },
   { id: 'eliminar',     label: 'Eliminar' },
 ]
 
@@ -46,7 +56,7 @@ export default function ProyectoPage() {
   const {
     proyectoActivo, actualizarProyecto, eliminarProyecto,
     agregarFamiliaProyecto, quitarFamiliaProyecto,
-    agregarParticipante, quitarParticipante,
+    agregarParticipante, quitarParticipante, restaurarCheckpoint,
   } = useProyectos()
   const { familias: todasLasFamilias } = useCables()
   const { usuario } = useAuth()
@@ -62,6 +72,32 @@ export default function ProyectoPage() {
   const [emailNuevo, setEmailNuevo] = useState('')
   const [errorParticipante, setErrorParticipante] = useState<string | null>(null)
   const [agregandoParticipante, setAgregandoParticipante] = useState(false)
+  const [checkpoints,     setCheckpoints]     = useState<Checkpoint[] | null>(null)
+  const [nombreCp,        setNombreCp]        = useState('')
+  const [creandoCp,       setCreandoCp]       = useState(false)
+  const [confirmandoCpId, setConfirmandoCpId] = useState<number | null>(null)
+  const [ocupadoCpId,     setOcupadoCpId]     = useState<number | null>(null)
+  const [errorCp,         setErrorCp]         = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      const s = sessionStorage.getItem(SS_SECCION) as Seccion | null
+      if (s && secciones.some(x => x.id === s)) setSeccion(s)
+    } catch {}
+  }, [])
+
+  const proyectoId = proyectoActivo?.id
+  useEffect(() => {
+    if (seccion !== 'versiones' || !proyectoId) return
+    checkpointsApi.getCheckpoints(proyectoId)
+      .then(setCheckpoints)
+      .catch(err => setErrorCp((err as Error).message))
+  }, [seccion, proyectoId])
+
+  const cambiarSeccion = (s: Seccion) => {
+    setSeccion(s)
+    try { sessionStorage.setItem(SS_SECCION, s) } catch {}
+  }
 
   if (!proyectoActivo) {
     return (
@@ -112,6 +148,48 @@ export default function ProyectoPage() {
     }
   }
 
+  const handleCrearCheckpoint = async () => {
+    if (!nombreCp.trim() || creandoCp) return
+    setCreandoCp(true)
+    try {
+      const nuevo = await checkpointsApi.createCheckpoint(proyecto.id, nombreCp.trim())
+      setCheckpoints(prev => [nuevo, ...(prev ?? [])])
+      setNombreCp('')
+      setErrorCp(null)
+    } catch (err) {
+      setErrorCp((err as Error).message)
+    } finally {
+      setCreandoCp(false)
+    }
+  }
+
+  // Si sale bien, el contexto recarga el proyecto y esta página se desmonta —
+  // el `finally` solo importa en el caso de error.
+  const handleRestaurar = async (id: number) => {
+    setOcupadoCpId(id)
+    try {
+      await restaurarCheckpoint(id)
+    } catch (err) {
+      setErrorCp((err as Error).message)
+    } finally {
+      setOcupadoCpId(null)
+      setConfirmandoCpId(null)
+    }
+  }
+
+  const handleBorrarCheckpoint = async (id: number) => {
+    setOcupadoCpId(id)
+    try {
+      await checkpointsApi.deleteCheckpoint(id)
+      setCheckpoints(prev => (prev ?? []).filter(c => c.id !== id))
+      setErrorCp(null)
+    } catch (err) {
+      setErrorCp((err as Error).message)
+    } finally {
+      setOcupadoCpId(null)
+    }
+  }
+
   const familiaIds = proyecto.familia_ids ?? []
   const formatoActivo: FormatoFormacion = (proyecto.formato_formacion ?? 'ingles') as FormatoFormacion
   const nomenclaturaActiva: NomenclaturaFases = (proyecto.nomenclatura_fases ?? 'RST') as NomenclaturaFases
@@ -135,7 +213,7 @@ export default function ProyectoPage() {
             return (
               <button
                 key={s.id}
-                onClick={() => setSeccion(s.id)}
+                onClick={() => cambiarSeccion(s.id)}
                 className={`w-full text-left px-3 py-2 rounded-[7px] text-[13px] cursor-pointer border-none transition-colors ${
                   activo
                     ? esEliminar ? 'bg-danger-a0/15 text-danger-a10 font-medium' : 'bg-info-a0/20 text-info-a10 font-medium'
@@ -317,6 +395,115 @@ export default function ProyectoPage() {
                 </div>
               </div>
             )}
+
+            {seccion === 'versiones' && (<>
+              <div className={cx.section}>
+                <div className={cx.hdr}>Guardar checkpoint</div>
+                <div className="p-3 flex flex-col gap-2 bg-surface-a10">
+                  <p className="text-xs text-surface-tonal-a40 leading-relaxed">
+                    Guarda una copia completa del estado actual del proyecto (tableros, circuitos, ruteo, cañeros,
+                    arquitectura, SPDA) a la que se puede volver más adelante.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      className={cx.input}
+                      value={nombreCp}
+                      onChange={e => setNombreCp(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleCrearCheckpoint() }}
+                      placeholder="Ej: antes de cambiar el trafo"
+                      maxLength={200}
+                      autoComplete="off"
+                    />
+                    <button
+                      onClick={handleCrearCheckpoint}
+                      disabled={!nombreCp.trim() || creandoCp}
+                      className="h-[34px] px-4 rounded-[7px] text-[13px] font-medium cursor-pointer border-none transition-colors bg-info-a0/15 text-info-a10 hover:bg-info-a0/25 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {creandoCp ? 'Guardando…' : '+ Guardar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className={cx.section}>
+                <div className={cx.hdr}>Checkpoints</div>
+                <div className="p-3 flex flex-col gap-2 bg-surface-a10">
+                  {checkpoints === null && !errorCp && (
+                    <p className="text-xs text-surface-tonal-a40 py-2">Cargando…</p>
+                  )}
+                  {checkpoints?.length === 0 && (
+                    <p className="text-xs text-surface-tonal-a40 py-2">Todavía no hay checkpoints guardados.</p>
+                  )}
+                  {checkpoints?.map(c => {
+                    const confirmando = confirmandoCpId === c.id
+                    const ocupado = ocupadoCpId === c.id
+                    const bloqueado = ocupadoCpId != null
+                    return (
+                      <div key={c.id} className={`flex flex-col gap-2 px-3 py-2 rounded-[7px] border bg-surface-tonal-a0 ${confirmando ? 'border-danger-a10' : 'border-surface-tonal-a20'}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <span className="text-[13px] text-font-a0 truncate">
+                              {c.nombre}
+                              {c.automatico && (
+                                <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-[4px] bg-surface-tonal-a20 text-font-a20 align-middle">automático</span>
+                              )}
+                            </span>
+                            <span className="text-[11px] text-surface-tonal-a40">
+                              {fechaCorta(c.created_at)}{c.usuario ? ` · ${c.usuario.email}` : ''}
+                            </span>
+                          </div>
+                          {!confirmando && (
+                            <div className="flex gap-1.5 shrink-0">
+                              <button
+                                onClick={() => setConfirmandoCpId(c.id)}
+                                disabled={bloqueado}
+                                className="h-[28px] px-3 rounded-[6px] text-[12px] font-medium cursor-pointer border-none transition-colors bg-info-a0/15 text-info-a10 hover:bg-info-a0/25 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                Restaurar
+                              </button>
+                              {esDueño && (
+                                <button
+                                  onClick={() => handleBorrarCheckpoint(c.id)}
+                                  disabled={bloqueado}
+                                  className="h-[28px] px-3 rounded-[6px] text-[12px] font-medium cursor-pointer border-none transition-colors bg-danger-a0/15 text-danger-a10 hover:bg-danger-a0/25 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  {ocupado ? 'Borrando…' : 'Borrar'}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {confirmando && (
+                          <div className="flex flex-col gap-2">
+                            <p className="text-[12px] text-font-a0 leading-relaxed">
+                              Esto reemplaza todo el contenido actual del proyecto por el de este checkpoint.
+                              Antes se guarda automáticamente un checkpoint del estado actual, así que se puede deshacer.
+                            </p>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => handleRestaurar(c.id)}
+                                disabled={bloqueado}
+                                className="h-[28px] px-3 rounded-[6px] text-[12px] font-medium cursor-pointer border-none bg-danger-a0 text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                {ocupado ? 'Restaurando…' : 'Sí, restaurar'}
+                              </button>
+                              <button
+                                onClick={() => setConfirmandoCpId(null)}
+                                disabled={bloqueado}
+                                className="h-[28px] px-3 rounded-[6px] text-[12px] font-medium cursor-pointer border-none transition-colors bg-transparent text-font-a20 hover:bg-surface-tonal-a10 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {errorCp && <p className="text-xs text-danger-a10">{errorCp}</p>}
+                </div>
+              </div>
+            </>)}
 
             {seccion === 'eliminar' && (
               <div className={cx.section} style={{ borderColor: 'var(--clr-danger-a10)' }}>

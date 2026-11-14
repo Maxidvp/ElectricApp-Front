@@ -9,6 +9,7 @@ import * as gruposDiferencialesApi from '@/services/gruposDiferenciales'
 import * as circuitosApi from '@/services/circuitos'
 import * as lazosApi    from '@/services/lazosInstrumentacion'
 import * as puertosRedApi from '@/services/puertosRed'
+import * as checkpointsApi from '@/services/checkpoints'
 import { apiFetch } from '@/services/apiFetch'
 import type { Canio, Bandeja, Segmento, Conjunto, Arquitectura, Pared } from '@/services/ruteo'
 import type { Caniero } from '@/services/canieros'
@@ -17,7 +18,7 @@ import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 import { useAuth } from '@/context/AuthContext'
 
 import type { Tablero, Circuito, FuenteAlimentacion, GrupoDiferencial, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta } from './types'
-import { deriveSegmentos, nextTempId, DESCRIPCION_CREANDO, mapCirc } from './helpers'
+import { nextTempId, DESCRIPCION_CREANDO, mapCirc } from './helpers'
 import { useCircuitosActions } from './useCircuitosActions'
 import { useRuteoActions } from './useRuteoActions'
 
@@ -31,7 +32,7 @@ const ProyectosContext = createContext<ProyectosContextType | null>(null)
 
 // ── Provider ──────────────────────────────────────────────────────
 export function ProyectosProvider({ children }: { children: React.ReactNode }) {
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
   const [proyectos,           setProyectos]           = useState<ProyectoMeta[]>([])
   const [proyectoActivo,      setProyectoActivoState] = useState<ProyectoMeta | null>(null)
   const [tableros,            setTableros]            = useState<Tablero[]>([])
@@ -134,7 +135,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
           id: c.id, nombre: c.nombre, tableros: c.tableros ?? [], arquitecturas: c.arquitecturas ?? [],
         }))
         setConjuntos(conjs)
-        setSegmentos(deriveSegmentos(data.conjuntos ?? []))
+        setSegmentos(data.segmentos ?? [])
 
         const tablas: Arquitectura[] = data.arquitecturas ?? []
         setArquitecturaes(tablas)
@@ -208,6 +209,20 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     const actualizado = await proyectosApi.quitarParticipante(proyectoActivo.id, usuarioId)
     setProyectos(prev => prev.map(p => p.id === actualizado.id ? actualizado : p))
     setProyectoActivoState(actualizado)
+  }
+
+  // Restaurar pisa TODO el contenido del proyecto con IDs nuevos (y puede cambiarle
+  // nombre/descripción/formatos): se recarga la meta desde la lista y después el
+  // contenido entero vía setProyectoActivo. Los avisos van por toast porque la
+  // recarga pasa por LoadingGate, que desmonta la página que llamó a esto.
+  async function restaurarCheckpoint(checkpointId: number) {
+    if (!proyectoActivo) return
+    const { avisos } = await checkpointsApi.restaurarCheckpoint(checkpointId)
+    const projs = await proyectosApi.getProyectos()
+    setProyectos(projs)
+    setProyectoActivo(projs.find(p => p.id === proyectoActivo.id) ?? null)
+    showSuccess('Checkpoint restaurado')
+    if (avisos.length) showError(`Restaurado con avisos: ${avisos.join('; ')}`)
   }
 
   // ── Tableros CRUD ─────────────────────────────────────────────
@@ -443,7 +458,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       proyectos, proyectoActivo, setProyectoActivo,
       crearProyecto, actualizarProyecto, eliminarProyecto,
       agregarFamiliaProyecto, quitarFamiliaProyecto,
-      agregarParticipante, quitarParticipante,
+      agregarParticipante, quitarParticipante, restaurarCheckpoint,
       tableros, loading, error, recargar,
       getTablero, getCircuito,
       agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,

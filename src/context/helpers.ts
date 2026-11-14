@@ -1,5 +1,4 @@
 import type { Tablero, Circuito } from './types'
-import type { Segmento, Conjunto } from '@/services/ruteo'
 
 // ── Temp ID generator ─────────────────────────────────────────────
 // IDs negativos decrecientes para diferenciar circuitos/segmentos pendientes de confirmación del back.
@@ -47,18 +46,4 @@ export function mergeWithTemp(real: Circuito, temp: Circuito | undefined): Circu
     tipo_tension: temp.tipo_tension !== null ? temp.tipo_tension : real.tipo_tension,
     fase:         temp.fase         !== null ? temp.fase         : real.fase,
   }
-}
-
-// Extrae un Map deduplicado de segmentos a partir de los conjuntos cargados desde el back.
-// Un segmento puede pertenecer a más de un conjunto; el back lo devuelve anidado en
-// cada conjunto al que pertenece, por eso hay que deduplicar por id antes de exponer
-// la lista plana de segmentos al resto de la app.
-export function deriveSegmentos(conjuntos: (Conjunto & { segmentos?: Segmento[] })[]): Segmento[] {
-  const map = new Map<number, Segmento>()
-  for (const c of conjuntos) {
-    for (const s of (c as any).segmentos ?? []) {
-      if (!map.has(s.id)) map.set(s.id, s)
-    }
-  }
-  return Array.from(map.values())
 }

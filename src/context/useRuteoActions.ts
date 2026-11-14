@@ -48,6 +48,8 @@ export function useRuteoActions(
   // ── Segmentos ─────────────────────────────────────────────────
 
   function addSegmento(data: CreateSegmentoInput) {
+    if (!proyectoActivo) return
+    const proyectoId = proyectoActivo.id
     const tempId = nextTempId()
     const conjOptimistic = (data.conjunto_ids ?? [])
       .map(id => conjuntos.find(c => c.id === id))
@@ -62,7 +64,7 @@ export function useRuteoActions(
       conjuntos: conjOptimistic,
     }
     setSegmentos(prev => [...prev, optimistic])
-    const promise = ruteoApi.createSegmento(data)
+    const promise = ruteoApi.createSegmento(data, proyectoId)
       .then(real => {
         setSegmentos(prev => prev.map(s => s.id === tempId ? real : s))
         pendingSegmentos.current.delete(tempId)
@@ -260,7 +262,11 @@ export function useRuteoActions(
     if (conjuntos.length <= 1) return
     const remaining = conjuntos.filter(c => c.id !== id)
     setConjuntos(remaining)
-    setSegmentos(prev => prev.map(s => ({ ...s, conjuntos: s.conjuntos.filter(c => c.id !== id) })))
+    // Mismo criterio que el back: los segmentos que solo estaban en este conjunto
+    // se borran con él; los compartidos con otro conjunto sobreviven.
+    setSegmentos(prev => prev
+      .filter(s => !(s.conjuntos.length > 0 && s.conjuntos.every(c => c.id === id)))
+      .map(s => ({ ...s, conjuntos: s.conjuntos.filter(c => c.id !== id) })))
     if (activeConjuntoId === id) {
       const nextId = remaining[0]?.id
       if (nextId !== undefined) setActiveConjuntoId(nextId as number)

@@ -360,7 +360,7 @@ export default function ImportadorPage() {
   }
 
   const handleImportar = async () => {
-    if (!canImport || status === 'importing') return
+    if (!canImport || status === 'importing' || !proyectoActivo) return
     setStatus('importing')
     let count = 0
     try {
@@ -384,7 +384,8 @@ export default function ImportadorPage() {
             canio_id: s.canio_id,
             bandeja_id: s.bandeja_id,
           })),
-          conjuntoId !== null ? [conjuntoId] : []
+          conjuntoId !== null ? [conjuntoId] : [],
+          proyectoActivo.id
         )
         appendSegmentos(created)
         count = created.length

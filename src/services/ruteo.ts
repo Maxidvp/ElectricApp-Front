@@ -97,8 +97,8 @@ export async function createBandeja(data: Omit<Bandeja, 'id'>): Promise<Bandeja>
 }
 
 // Segmentos
-export async function getSegmentos(): Promise<Segmento[]> {
-  const res = await apiFetch(`/segmentos`)
+export async function getSegmentos(proyectoId: number): Promise<Segmento[]> {
+  const res = await apiFetch(`/segmentos?proyecto_id=${proyectoId}`)
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || `Error ${res.status} al traer segmentos`)
@@ -106,11 +106,11 @@ export async function getSegmentos(): Promise<Segmento[]> {
   return res.json()
 }
 
-export async function createSegmento(data: CreateSegmentoInput): Promise<Segmento> {
+export async function createSegmento(data: CreateSegmentoInput, proyectoId: number): Promise<Segmento> {
   const res = await apiFetch(`/segmentos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
+    body: JSON.stringify({ ...data, proyecto_id: proyectoId })
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -121,12 +121,13 @@ export async function createSegmento(data: CreateSegmentoInput): Promise<Segment
 
 export async function createSegmentosBulk(
   items: Omit<CreateSegmentoInput, 'conjunto_ids'>[],
-  conjunto_ids: number[]
+  conjunto_ids: number[],
+  proyectoId: number
 ): Promise<Segmento[]> {
   const res = await apiFetch(`/segmentos/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items, conjunto_ids }),
+    body: JSON.stringify({ items, conjunto_ids, proyecto_id: proyectoId }),
   })
   if (!res.ok) throw new Error('Error al importar segmentos en masa')
   return res.json()
