@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import type { Circuito } from '@/context/types'
 import type { FormatoFormacion } from '@/utils/electricidad'
-import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import { useTableroSeleccionado } from '@/hooks/useTableroSeleccionado'
 import { buildUnifilarModel } from './_model'
 import { buildPlanillaModel, computeColumnLayout, GROUP_COL_W_MIN, LABEL_COL_W_MIN } from './_planilla'
 import { mergeElementosManuales } from './_elementos'
@@ -16,21 +16,16 @@ export default function UnifilaresPage() {
   const { tableros, getTablero, loading, error, guardarGruposDiferenciales, proyectoActivo } = useProyectos()
   const formato = (proyectoActivo?.formato_formacion ?? 'ingles') as FormatoFormacion
 
-  const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
   // Los unifilares por ahora solo modelan la parte de potencia (barra + interruptores
   // termomagnéticos de los circuitos terminales) — CONTROL/DATOS quedan afuera, igual
   // criterio que Cortocircuitos.
   const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
 
-  const idEfectivo = tableroId != null && tablerosPotencia.some(t => t.id === tableroId)
-    ? tableroId
-    : tablerosPotencia[0]?.id ?? null
-  const tablero = idEfectivo !== null ? getTablero(idEfectivo) : undefined
+  const { tablero, idEfectivo, seleccionarTablero } = useTableroSeleccionado(tablerosPotencia)
 
   const cambiarTablero = (id: number) => {
-    setLastTableroId(id)
-    setTableroId(id)
+    seleccionarTablero(id)
   }
 
   // Circuitos principales del tablero (sin subcircuitos de retorno/combinación),

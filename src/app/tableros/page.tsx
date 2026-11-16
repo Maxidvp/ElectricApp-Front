@@ -3,14 +3,14 @@ import { useState, useEffect, useMemo } from 'react'
 import { useProyectos } from '@/context/ProyectosContext'
 import { calcCorriente } from '@/utils/electricidad'
 import FuentesSection from './FuentesSection'
-import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import { useTableroSeleccionado } from '@/hooks/useTableroSeleccionado'
 
 // ── Tipos ─────────────────────────────────────────────────────────
 
 type Form = {
   tag: string; nombre: string; ubicacion: string; tipo: string; categoria: string; sistema_montaje: string
   tension_mono: string; tension_bi: string; tension_tri: string; frecuencia: string
-  corriente_nom: string; corriente_cc_max: string; corriente_cc_min: string
+  corriente_nom: string
   potencia_inst: string; potencia_dem: string; factor_potencia: string
   fabricante: string; modelo: string; norma: string; grado_proteccion: string
 }
@@ -35,7 +35,7 @@ const SISTEMAS_MONTAJE = [
 const EMPTY: Form = {
   tag: '', nombre: '', ubicacion: '', tipo: '', categoria: '', sistema_montaje: '',
   tension_mono: '', tension_bi: '', tension_tri: '', frecuencia: '',
-  corriente_nom: '', corriente_cc_max: '', corriente_cc_min: '',
+  corriente_nom: '',
   potencia_inst: '', potencia_dem: '', factor_potencia: '',
   fabricante: '', modelo: '', norma: '', grado_proteccion: '',
 }
@@ -54,8 +54,6 @@ function toForm(t: any): Form {
     tension_tri:      n(t.tension_tri),
     frecuencia:       n(t.frecuencia),
     corriente_nom:    n(t.corriente_nom),
-    corriente_cc_max: n(t.corriente_cc_max),
-    corriente_cc_min: n(t.corriente_cc_min),
     potencia_inst:    n(t.potencia_inst),
     potencia_dem:     n(t.potencia_dem),
     factor_potencia:  n(t.factor_potencia),
@@ -81,8 +79,6 @@ function fromForm(form: Form) {
     tension_tri:      num(form.tension_tri),
     frecuencia:       num(form.frecuencia),
     corriente_nom:    num(form.corriente_nom),
-    corriente_cc_max: num(form.corriente_cc_max),
-    corriente_cc_min: num(form.corriente_cc_min),
     potencia_inst:    num(form.potencia_inst),
     potencia_dem:     form.categoria === 'POTENCIA' ? num(form.potencia_dem) : null,
     factor_potencia:  form.categoria === 'CONTROL' || form.categoria === 'DATOS' ? num(form.factor_potencia) : null,
@@ -160,7 +156,6 @@ export default function TablaTableros() {
     agregarFuente, actualizarFuente, eliminarFuente,
   } = useProyectos()
 
-  const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
   const [form,        setForm]       = useState<Form>(EMPTY)
   const [dirty,       setDirty]      = useState(false)
   const [guardando,   setGuardando]  = useState(false)
@@ -168,8 +163,7 @@ export default function TablaTableros() {
   const [confirm,     setConfirm]    = useState(false)
   const [creandoNuevo, setCreandoNuevo] = useState(false)
 
-  const idEfectivo = tableroId ?? tableros[0]?.id ?? null
-  const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
+  const { tablero, idEfectivo, seleccionarTablero } = useTableroSeleccionado(tableros)
 
   useEffect(() => {
     if (creandoNuevo) { setForm(EMPTY); setDirty(false) }
@@ -177,8 +171,7 @@ export default function TablaTableros() {
   }, [tablero?.id, creandoNuevo])
 
   const cambiarTablero = (id: number) => {
-    setLastTableroId(id)
-    setTableroId(id)
+    seleccionarTablero(id)
     setCreandoNuevo(false)
   }
 
@@ -385,11 +378,9 @@ export default function TablaTableros() {
             </div>
             <div className={`${cx.grid} grid-cols-3`}>
               <CampoAuto label="Corriente nominal (A)" name="corriente_nom" value={form.corriente_nom} onChange={v => handleChange('corriente_nom', v)} autoValue={autoValues?.corriente_nom ?? null} />
-              <Campo label="Icc máxima (kA)" name="corriente_cc_max" type="number" value={form.corriente_cc_max} onChange={v => handleChange('corriente_cc_max', v)} placeholder="ej. 25" />
-              <Campo label="Icc mínima (kA)" name="corriente_cc_min" type="number" value={form.corriente_cc_min} onChange={v => handleChange('corriente_cc_min', v)} placeholder="ej. 18" />
             </div>
             <p className="px-3 pb-2.5 -mt-1.5 text-[11px] text-surface-tonal-a40 bg-surface-a10">
-              Máxima dimensiona equipos (poder de corte, esfuerzos electrodinámicos); mínima ajusta protecciones.
+              La Icc de barra no se carga acá: se calcula en Cortocircuitos desde la fuente o el alimentador del tablero.
             </p>
           </div>
 

@@ -11,7 +11,7 @@ import type { PuertoRed } from '@/context/ProyectosContext'
 import SortableRow from './SortableRow'
 import { useColumnas } from './useColumnas'
 import type { ColMeta } from './types'
-import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import { useTableroSeleccionado } from '@/hooks/useTableroSeleccionado'
 
 export default function TablaRack() {
   const {
@@ -23,7 +23,6 @@ export default function TablaRack() {
 
   const tablerosDatos = tableros.filter(t => t.categoria === 'DATOS')
 
-  const [tableroId,       setTableroId]       = useState<number | null>(getLastTableroId)
   const [rowSeleccionada, setRowSeleccionada] = useState<number | null>(null)
   const [draggingId,      setDraggingId]      = useState<string | null>(null)
   const [confirmEliminar, setConfirmEliminar] = useState(false)
@@ -32,14 +31,10 @@ export default function TablaRack() {
   const [puertoCableModal, setPuertoCableModal] = useState<PuertoRed | null>(null)
   const prevIdsRef = useRef<Set<number>>(new Set())
 
-  const idEfectivo = tableroId != null && tablerosDatos.some(t => t.id === tableroId)
-    ? tableroId
-    : tablerosDatos[0]?.id ?? null
-  const tablero = idEfectivo !== null ? getTablero(idEfectivo) : undefined
+  const { tablero, idEfectivo, seleccionarTablero } = useTableroSeleccionado(tablerosDatos)
 
   const cambiarTablero = (id: number) => {
-    setLastTableroId(id)
-    setTableroId(id)
+    seleccionarTablero(id)
     setRowSeleccionada(null)
   }
 

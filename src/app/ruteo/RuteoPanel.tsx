@@ -6,7 +6,6 @@ import type { ToolType, ActiveItem } from './_constants'
 import { DeferredInput } from './DeferredInput'
 import { SubcircuitosModal } from './SubcircuitosModal'
 import { calcOcupacionCanio, calcOcupacionBandeja, colorOcupacion } from '@/utils/electricidad'
-import { getLastTableroId } from '@/utils/cookies'
 
 interface Props {
   tool: ToolType
@@ -47,6 +46,7 @@ export function RuteoPanel({
     previewSegmento, editSegmento, quitarCircuito, quitarLazo, quitarPuertoRed,
     addSegmentoToConjunto, removeSegmentoFromConjunto,
     getCircuito, actualizarLargo, crearCircuitoAuxiliar,
+    tableroSeleccionadoId,
   } = useProyectos()
 
   const TIPOS_ILUMINACION = ['IUG', 'IUE']
@@ -73,7 +73,7 @@ export function RuteoPanel({
   useEffect(() => {
     if (conjuntoTableros.length === 0) { setAsignarTableroId(null); return }
     if (!conjuntoTableros.some(t => t.id === asignarTableroId)) {
-      const lastId = getLastTableroId()
+      const lastId = tableroSeleccionadoId
       const preferido = lastId != null && conjuntoTableros.some(t => t.id === lastId) ? lastId : conjuntoTableros[0].id
       setAsignarTableroId(preferido)
     }

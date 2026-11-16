@@ -1,6 +1,5 @@
 // Deriva la Icc de barra de un tablero recorriendo su red aguas arriba, en vez de
-// depender de un dato cargado a mano en el propio Tablero (Tablero.corriente_cc_max/min
-// queda como campo legado, ya no se usa acá — ver nota en cortocircuitos/page.tsx).
+// depender de un dato cargado a mano en el propio Tablero (ese campo legado se quitó).
 //
 // Reglas de conexión (una por tablero, evaluadas como caminos independientes — no se
 // combinan en paralelo entre sí, se toma el peor caso entre todos):
@@ -12,10 +11,14 @@
 //     (recursivamente) y se le agrega en serie el cable del propio circuito ALIMENTADOR.
 //   - Nada de lo anterior: sin datos, no se puede derivar (el llamador debe mostrar "—").
 //
-// Limitaciones conocidas: UPS/PANEL_SOLAR no tienen fórmula de impedancia en el motor de
-// cálculo (fuentes limitadas electrónicamente, no están en la spec IEC 60909-0 que
-// implementa `utils/cortocircuito`) y se ignoran. Si hay más de una red cargada en un
-// mismo tablero junto con transformadores, todos los trafos se emparejan con la primera.
+// Limitaciones conocidas — cada una se devuelve como aviso en `avisos`, nunca en silencio:
+//   - UPS/PANEL_SOLAR no tienen fórmula de impedancia en el motor (fuentes limitadas
+//     electrónicamente, fuera de IEC 60909-0) y se ignoran.
+//   - Con más de una red y transformadores en un tablero, todos los trafos se emparejan
+//     con la primera red.
+//   - Varias fuentes se calculan por separado y NO se suman en paralelo: si operan a la
+//     vez, la Icc máxima real es mayor que la informada.
+//   - No se modela el estado de interruptores ni enclavamientos.
 import type { Tablero, Circuito, FuenteAlimentacion } from '@/context/types'
 import {
   calcularProyecto, type EntradaProyecto, type NetworkFeeder, type Transformer, type SyncGenerator, type Conductor,
@@ -29,7 +32,7 @@ type Candidato = {
   conductores: Conductor[]
 }
 
-export type IccTablero = { Icc_max_kA: number | null; Icc_min_kA: number | null }
+export type IccTablero = { Icc_max_kA: number | null; Icc_min_kA: number | null; avisos: string[] }
 
 const nodoTablero = (id: number) => `T${id}`
 const nivelTension = (t: Tablero) => t.tension_tri ?? t.tension_bi ?? t.tension_mono ?? null
@@ -41,13 +44,15 @@ export function conductorDeCircuito(c: Circuito, nodoA: string, nodoB: string): 
   if (!cable || !c.Largo) return null
   const S = seccionEnMm2(cable.seccion_f, cable.calibre_tipo)
   if (!S || isNaN(S)) return null
-  const familia = (cable as any).familia
-  const material: 'COBRE' | 'ALUMINIO' = (familia?.material ?? '').toLowerCase().includes('alu') ? 'ALUMINIO' : 'COBRE'
+  const material: 'COBRE' | 'ALUMINIO' = (cable.familia?.material ?? '').toLowerCase().includes('alu') ? 'ALUMINIO' : 'COBRE'
   const xUnit = calcReactancia(cable.diametro, cable.seccion_f, cable.calibre_tipo, c.formacion?.disposicion ?? null, cable.Nfases)
   return {
     id: String(c.id), longitud: c.Largo, seccion: S,
     n_conductores_por_fase: c.formacion?.cond_por_fase ?? 1, material,
     reactancia_unitaria: xUnit != null ? xUnit / 1000 : undefined,
+    // Para Icc mínima el motor corrige R a la temperatura máxima de servicio del cable;
+    // sin este dato la calculaba a 20 °C y la Icc mínima salía sobrestimada.
+    temperatura_servicio: cable.familia?.temperatura ?? undefined,
     nodo_a: nodoA, nodo_b: nodoB,
   }
 }
@@ -94,23 +99,31 @@ function generadorDeFuente(f: FuenteAlimentacion, nodo: string): SyncGenerator |
   }
 }
 
-function candidatosPropios(tablero: Tablero): Candidato[] {
+function candidatosPropios(tablero: Tablero, avisar: (msg: string) => void): Candidato[] {
   const nodo = nodoTablero(tablero.id)
+  const tag = tablero.tag
+  const ignoradas = tablero.fuentes.filter(f => f.tipo === 'UPS' || f.tipo === 'PANEL_SOLAR')
+  if (ignoradas.length)
+    avisar(`${tag}: ${ignoradas.map(f => f.tipo === 'UPS' ? 'UPS' : 'panel solar').join(', ')} no entra en el cálculo (fuente limitada electrónicamente, fuera de IEC 60909-0).`)
   const redes = tablero.fuentes.filter(f => f.tipo === 'RED')
   const trafos = tablero.fuentes.filter(f => f.tipo === 'TRANSFORMADOR')
   const generadores = tablero.fuentes.filter(f => f.tipo === 'GENERADOR')
   const candidatos: Candidato[] = []
 
   if (trafos.length > 0 && redes.length > 0) {
+    if (redes.length > 1 && trafos.length > 1)
+      avisar(`${tag}: hay ${redes.length} redes y ${trafos.length} transformadores; todos los transformadores se calcularon colgando de la primera red.`)
     for (const t of trafos) {
       const trafo = trafoDeFuente(t, `${nodo}_MT`, nodo)
-      if (!trafo) continue
+      if (!trafo) { avisar(`${tag}: un transformador con datos incompletos quedó afuera del cálculo.`); continue }
       candidatos.push({
         red_alimentacion: redDeFuente(redes[0], `${nodo}_MT`),
         transformadores: [trafo], generadores: [], conductores: [],
       })
     }
   } else {
+    if (trafos.length > 0)
+      avisar(`${tag}: hay transformador pero ninguna red cargada aguas arriba; el transformador no entra en el cálculo.`)
     for (const r of redes) {
       candidatos.push({ red_alimentacion: redDeFuente(r, nodo), transformadores: [], generadores: [], conductores: [] })
     }
@@ -118,7 +131,7 @@ function candidatosPropios(tablero: Tablero): Candidato[] {
 
   for (const g of generadores) {
     const gen = generadorDeFuente(g, nodo)
-    if (!gen) continue
+    if (!gen) { avisar(`${tag}: un generador con datos incompletos quedó afuera del cálculo.`); continue }
     // La red_alimentacion es obligatoria en el modelo del motor incluso sin red real —
     // se la ubica en un nodo sin aristas para que quede fuera del grafo alcanzable desde
     // la barra, y el generador queda como única fuente efectiva de este candidato.
@@ -131,11 +144,11 @@ function candidatosPropios(tablero: Tablero): Candidato[] {
   return candidatos
 }
 
-function candidatosDe(tablero: Tablero, todos: Tablero[], visitados: Set<number>): Candidato[] {
+function candidatosDe(tablero: Tablero, todos: Tablero[], visitados: Set<number>, avisar: (msg: string) => void): Candidato[] {
   if (visitados.has(tablero.id)) return []
   visitados.add(tablero.id)
 
-  const candidatos = candidatosPropios(tablero)
+  const candidatos = candidatosPropios(tablero, avisar)
 
   // El front no trae la relación inversa (circuito_entrante) en el propio tablero —
   // se busca entre todos los circuitos del proyecto el ALIMENTADOR que apunta acá.
@@ -145,9 +158,11 @@ function candidatosDe(tablero: Tablero, todos: Tablero[], visitados: Set<number>
     if (origen) {
       const conductor = conductorDeCircuito(entrante, nodoTablero(origen.id), nodoTablero(tablero.id))
       if (conductor) {
-        for (const c of candidatosDe(origen, todos, visitados)) {
+        for (const c of candidatosDe(origen, todos, visitados, avisar)) {
           candidatos.push({ ...c, conductores: [...c.conductores, conductor] })
         }
+      } else {
+        avisar(`${tablero.tag}: el alimentador desde ${origen.tag} no tiene cable o largo cargado; lo que viene de ${origen.tag} no entra en el cálculo.`)
       }
     }
   }
@@ -156,11 +171,16 @@ function candidatosDe(tablero: Tablero, todos: Tablero[], visitados: Set<number>
 }
 
 export function calcularIccTablero(tablero: Tablero, todosTableros: Tablero[]): IccTablero {
-  const nivel = nivelTension(tablero)
-  if (!nivel) return { Icc_max_kA: null, Icc_min_kA: null }
+  const avisos: string[] = []
+  const avisar = (msg: string) => { if (!avisos.includes(msg)) avisos.push(msg) }
 
-  const candidatos = candidatosDe(tablero, todosTableros, new Set())
-  if (candidatos.length === 0) return { Icc_max_kA: null, Icc_min_kA: null }
+  const nivel = nivelTension(tablero)
+  if (!nivel) return { Icc_max_kA: null, Icc_min_kA: null, avisos: ['El tablero no tiene tensión cargada.'] }
+
+  const candidatos = candidatosDe(tablero, todosTableros, new Set(), avisar)
+  if (candidatos.length === 0) return { Icc_max_kA: null, Icc_min_kA: null, avisos }
+  if (candidatos.length > 1)
+    avisar(`Hay ${candidatos.length} fuentes posibles; se calculó cada una por separado, sin sumarlas en paralelo ni considerar el estado de los interruptores. Si operan a la vez, la Icc máxima real es mayor que la informada.`)
 
   let max: number | null = null, min: number | null = null
   for (const cand of candidatos) {
@@ -178,13 +198,15 @@ export function calcularIccTablero(tablero: Tablero, todosTableros: Tablero[]): 
         ],
       }
       const [rMax, rMin] = calcularProyecto(entrada)
+      for (const a of [...rMax.advertencias, ...rMin.advertencias]) avisar(a)
       const ikMax = rMax.corrientes.Ik_inicial_A / 1000
       const ikMin = rMin.corrientes.Ik_inicial_A / 1000
       max = max == null ? ikMax : Math.max(max, ikMax)
       min = min == null ? ikMin : Math.min(min, ikMin)
-    } catch {
-      // Candidato con datos insuficientes o inconsistentes — se ignora, no rompe a los demás.
+    } catch (e) {
+      // Candidato con datos insuficientes o inconsistentes — no rompe a los demás, pero se avisa.
+      avisar(`Una fuente quedó afuera por datos inconsistentes: ${(e as Error).message}`)
     }
   }
-  return { Icc_max_kA: max, Icc_min_kA: min }
+  return { Icc_max_kA: max, Icc_min_kA: min, avisos }
 }

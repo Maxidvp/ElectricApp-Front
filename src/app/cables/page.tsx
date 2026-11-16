@@ -155,12 +155,14 @@ type CableForm = {
   seccion_f: string; seccion_n: string; seccion_t: string
   Nfases: string; Nneutro: string; Ntierra: string
   diametro: string; peso: string; Iadm: string
+  Iadm_canio: string; Iadm_aire: string; Iadm_enterrado: string
 }
 const EMPTY_CABLE: CableForm = {
   nombre: '', calibre_tipo: 'mm²',
   seccion_f: '', seccion_n: '', seccion_t: '',
   Nfases: '', Nneutro: '', Ntierra: '',
   diametro: '', peso: '', Iadm: '',
+  Iadm_canio: '', Iadm_aire: '', Iadm_enterrado: '',
 }
 
 function cableFormToPatch(form: CableForm): CablePatch {
@@ -170,6 +172,7 @@ function cableFormToPatch(form: CableForm): CablePatch {
     seccion_f: form.seccion_f.trim(), seccion_n: form.seccion_n.trim() || '0', seccion_t: form.seccion_t.trim() || '0',
     Nfases: Number(form.Nfases) || 0, Nneutro: Number(form.Nneutro) || 0, Ntierra: Number(form.Ntierra) || 0,
     diametro: num(form.diametro), peso: num(form.peso), Iadm: Number(form.Iadm) || 0,
+    Iadm_canio: num(form.Iadm_canio), Iadm_aire: num(form.Iadm_aire), Iadm_enterrado: num(form.Iadm_enterrado),
   }
 }
 
@@ -210,6 +213,9 @@ function NuevoCableForm({ familiaId, onCreado }: { familiaId: number; onCreado: 
         <Campo label="Diámetro ext. (mm)" type="number" value={form.diametro} onChange={v => set('diametro', v)} placeholder="opcional" />
         <Campo label="Peso (kg/km)" type="number" value={form.peso} onChange={v => set('peso', v)} placeholder="opcional" />
         <Campo label="Corriente admisible (A)" type="number" value={form.Iadm} onChange={v => set('Iadm', v)} placeholder="ej. 117" required />
+        <Campo label="Iadm en cañería (A)" type="number" value={form.Iadm_canio} onChange={v => set('Iadm_canio', v)} placeholder="opcional" />
+        <Campo label="Iadm al aire / bandeja (A)" type="number" value={form.Iadm_aire} onChange={v => set('Iadm_aire', v)} placeholder="opcional" />
+        <Campo label="Iadm enterrado (A)" type="number" value={form.Iadm_enterrado} onChange={v => set('Iadm_enterrado', v)} placeholder="opcional" />
       </div>
       {error && <p className="text-[13px] text-danger-a10 px-3.5 pb-3">{error}</p>}
       <div className="flex justify-end px-3.5 pb-3.5">
@@ -237,6 +243,9 @@ const COL_MAP: Record<string, keyof CablePatch> = {
   'diametro': 'diametro', 'diámetro': 'diametro', 'diametro (mm)': 'diametro', 'diámetro (mm)': 'diametro',
   'peso': 'peso', 'peso (kg/km)': 'peso',
   'iadm': 'Iadm', 'iadm (a)': 'Iadm', 'corriente admisible': 'Iadm', 'i adm': 'Iadm',
+  'iadm_canio': 'Iadm_canio', 'iadm caño': 'Iadm_canio', 'iadm cañería': 'Iadm_canio', 'iadm canio': 'Iadm_canio',
+  'iadm_aire': 'Iadm_aire', 'iadm aire': 'Iadm_aire', 'iadm bandeja': 'Iadm_aire',
+  'iadm_enterrado': 'Iadm_enterrado', 'iadm enterrado': 'Iadm_enterrado',
 }
 
 type FilaImport = CablePatch & { _fila: number; _valida: boolean; _errores: string[] }
@@ -273,6 +282,11 @@ function parseCablesCsv(texto: string): FilaImport[] {
     const diametroStr = get('diametro')
     const pesoStr = get('peso')
     const Iadm = parseFlt(get('Iadm') || '0') || 0
+    // Iadm por forma de instalación: columnas opcionales, vacío = sin dato
+    const opcional = (campo: keyof CablePatch): number | null => {
+      const n = parseFlt(get(campo))
+      return isNaN(n) || n <= 0 ? null : n
+    }
 
     const errores: string[] = []
     if (!nombre) errores.push('nombre')
@@ -286,6 +300,7 @@ function parseCablesCsv(texto: string): FilaImport[] {
       diametro: diametroStr ? parseFlt(diametroStr) : null,
       peso: pesoStr ? parseFlt(pesoStr) : null,
       Iadm,
+      Iadm_canio: opcional('Iadm_canio'), Iadm_aire: opcional('Iadm_aire'), Iadm_enterrado: opcional('Iadm_enterrado'),
     }
   })
 }
@@ -330,6 +345,10 @@ function ImportarCablesForm({ familiaId, onImportados }: { familiaId: number; on
       <div className="p-3 flex flex-col gap-2 bg-surface-a10">
         <p className="text-[11px] font-mono text-surface-tonal-a40">
           nombre;calibre_tipo;seccion_f;seccion_n;seccion_t;Nfases;Nneutro;Ntierra;diametro;peso;Iadm
+        </p>
+        <p className="text-[11px] text-surface-tonal-a40">
+          Columnas opcionales, corriente admisible por forma de instalación:{' '}
+          <span className="font-mono">Iadm_canio;Iadm_aire;Iadm_enterrado</span>
         </p>
         <textarea
           value={texto}
@@ -493,6 +512,9 @@ export default function CablesPage() {
                         <th style={thStyle}>Sección F</th><th style={thStyle}>Sección N</th><th style={thStyle}>Sección T</th>
                         <th style={thStyle}>N fases</th><th style={thStyle}>N neutros</th><th style={thStyle}>N tierras</th>
                         <th style={thStyle}>Ø (mm)</th><th style={thStyle}>Peso (kg/km)</th><th style={thStyle}>Iadm (A)</th>
+                        <th style={thStyle} title="Corriente admisible en cañería">Iadm caño</th>
+                        <th style={thStyle} title="Corriente admisible al aire o en bandeja">Iadm aire</th>
+                        <th style={thStyle} title="Corriente admisible enterrado">Iadm enterr.</th>
                         <th style={{ width: 70 }} />
                       </tr>
                     </thead>
@@ -521,6 +543,9 @@ export default function CablesPage() {
                           <td style={{ background: EDITABLE_BG, textAlign: 'center' }}><CeldaEditable valor={c.diametro != null ? String(c.diametro) : ''} onGuardar={v => actualizarCampo(c.id, { diametro: v.trim() ? Number(v) : null })} /></td>
                           <td style={{ background: EDITABLE_BG, textAlign: 'center' }}><CeldaEditable valor={c.peso != null ? String(c.peso) : ''} onGuardar={v => actualizarCampo(c.id, { peso: v.trim() ? Number(v) : null })} /></td>
                           <td style={{ background: EDITABLE_BG, textAlign: 'center' }}><CeldaEditable valor={String(c.Iadm)} onGuardar={v => actualizarCampo(c.id, { Iadm: Number(v) || 0 })} /></td>
+                          <td style={{ background: EDITABLE_BG, textAlign: 'center' }}><CeldaEditable valor={c.Iadm_canio != null ? String(c.Iadm_canio) : ''} onGuardar={v => actualizarCampo(c.id, { Iadm_canio: v.trim() ? Number(v) : null })} /></td>
+                          <td style={{ background: EDITABLE_BG, textAlign: 'center' }}><CeldaEditable valor={c.Iadm_aire != null ? String(c.Iadm_aire) : ''} onGuardar={v => actualizarCampo(c.id, { Iadm_aire: v.trim() ? Number(v) : null })} /></td>
+                          <td style={{ background: EDITABLE_BG, textAlign: 'center' }}><CeldaEditable valor={c.Iadm_enterrado != null ? String(c.Iadm_enterrado) : ''} onGuardar={v => actualizarCampo(c.id, { Iadm_enterrado: v.trim() ? Number(v) : null })} /></td>
                           <td style={{ textAlign: 'center' }}>
                             <button
                               onClick={async () => {

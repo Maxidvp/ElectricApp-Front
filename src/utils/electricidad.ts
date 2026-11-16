@@ -228,11 +228,12 @@ export function calcIccExtremo(
  *
  *   S_mín = I_cc × √t / k
  *
- * Factores k:
+ * Factores k (IEC 60364-4-43 Tabla 43A, conductores activos; los mismos que
+ * K_MATERIAL en cortocircuito/constantes.ts):
  *   Cu / PVC (70 °C)  → 115
  *   Cu / XLPE (90 °C) → 143
- *   Al / PVC          → 74
- *   Al / XLPE         → 87
+ *   Al / PVC          → 76
+ *   Al / XLPE         → 94
  */
 export function calcSminCable(
   Icc_A:       number,         // A — corriente de CC
@@ -245,7 +246,7 @@ export function calcSminCable(
   const ais  = (aislamiento ?? '').toLowerCase()
   const isAlu  = mat.includes('alum') || mat === 'al'
   const isXLPE = ais.includes('xlpe') || ais.includes('epr')
-  const k = isAlu ? (isXLPE ? 87 : 74) : (isXLPE ? 143 : 115)
+  const k = isAlu ? (isXLPE ? 94 : 76) : (isXLPE ? 143 : 115)
   return (Icc_A * Math.sqrt(t_s)) / k
 }
 
@@ -280,15 +281,29 @@ export function seccionEnMm2(seccionF: string | null, calibre: string | null): n
   return null
 }
 
+// IEC 60228 Tabla 2 — resistencia máxima a 20 °C de conductores clase 2 [Ω/km]:
+// [cobre recocido, aluminio]. Con ρ/A constante no se reproducen algunas
+// secciones (Cu 50 mm² da −5 %, Cu 70 mm² −2 %), porque la sección real de esos
+// conductores es menor que la nominal; por eso se usa la tabla cuando la hay.
+const R20_IEC60228: Record<string, [number, number | null]> = {
+  '0.5': [36.0, null], '0.75': [24.5, null], '1': [18.1, null], '1.5': [12.1, null],
+  '2.5': [7.41, null], '4': [4.61, null], '6': [3.08, null], '10': [1.83, 3.08],
+  '16': [1.15, 1.91], '25': [0.727, 1.20], '35': [0.524, 0.868], '50': [0.387, 0.641],
+  '70': [0.268, 0.443], '95': [0.193, 0.320], '120': [0.153, 0.253], '150': [0.124, 0.206],
+  '185': [0.0991, 0.164], '240': [0.0754, 0.125], '300': [0.0601, 0.100],
+  '400': [0.0470, 0.0778], '500': [0.0366, 0.0605], '630': [0.0283, 0.0469],
+}
+
 /**
  * Calcula la resistencia del conductor a la temperatura de servicio [Ω/km].
  * Soporta mm² (IEC 60228 clase 2), AWG y kcmil.
  *
- * Resistividades base a 20 °C:
+ * A 20 °C: secciones mm² normalizadas → tabla R20_IEC60228; el resto (AWG,
+ * kcmil, secciones fuera de tabla) → ρ₂₀ / A con
  *   Cobre    → ρ₂₀ = 18.34 Ω·mm²/km   α = 0.00393 /°C
  *   Aluminio → ρ₂₀ = 30.40 Ω·mm²/km   α = 0.00403 /°C
  *
- * Corrección: R(T) = (ρ₂₀ / A) × (1 + α × (T − 20))
+ * Corrección: R(T) = R₂₀ × (1 + α × (T − 20))
  */
 export function calcResistencia(
   seccionF:    string | null,
@@ -322,8 +337,11 @@ export function calcResistencia(
   const rho20 = isAlu ? 30.40 : 18.34
   const alpha = isAlu ? 0.00403 : 0.00393
 
+  const tabla = cal === 'mm2' ? R20_IEC60228[String(A)]?.[isAlu ? 1 : 0] : null
+  const R20 = tabla ?? rho20 / A
+
   const T = temperatura ?? 90
-  return (rho20 / A) * (1 + alpha * (T - 20))
+  return R20 * (1 + alpha * (T - 20))
 }
 
 // ── Corriente ─────────────────────────────────────────────────────────────
@@ -555,6 +573,25 @@ export function calcFT(
   return Math.sqrt(numer / denom)
 }
 
+/**
+ * Factor de corrección por altitud.
+ *
+ *   FH = min(1, 1.02 − 0.00002 · h)      h en m.s.n.m.
+ *
+ * A mayor altitud el aire es menos denso → peor disipación → menor Iadm. La recta
+ * vale exactamente 1 a 1000 m; por debajo se satura en 1 (antes daba 1.02 a nivel
+ * del mar, es decir, AUMENTABA la corriente admisible un 2 %: un factor de
+ * reducción nunca puede ser mayor que 1).
+ *
+ * Fuente: criterio lineal de proyecto. No sale de AEA 90364-7-771 ni de
+ * IEC 60364-5-52 (antes se citaba IEC 62271-200, que es de celdas de media tensión,
+ * no de cables). Pendiente de confirmar contra una fuente normativa o del
+ * fabricante — no cambiar la pendiente sin esa fuente.
+ */
+export function calcFH(altitud: number): number {
+  return Math.min(1, 1.02 - 0.00002 * altitud)
+}
+
 // Factor de corrección por agrupamiento (IEC 60364-5-52 Tabla B.52.17 —
 // circuitos al aire/canalizados — y Tabla B.52.20 — circuitos enterrados).
 // A diferencia de FT, acá no hay fórmula: son valores empíricos de interacción
@@ -568,8 +605,12 @@ export function calcFT(
 // norma no define más reducción más allá de ese punto, o el dato no está
 // tabulado y este es el valor más conservador disponible).
 const FC_BUNCHED: [number, number][] =    [[1, 1.00], [2, 0.80], [3, 0.70], [4, 0.65], [5, 0.60], [6, 0.57], [7, 0.54], [8, 0.52], [9, 0.50], [12, 0.45], [16, 0.41], [20, 0.38]]
-const FC_BANDEJA_PERF: [number, number][] = [[1, 1.00], [2, 0.85], [3, 0.79], [4, 0.75], [5, 0.73], [6, 0.72], [7, 0.72], [8, 0.71], [9, 0.70]]
-const FC_BANDEJA_ESC: [number, number][] =  [[1, 1.00], [2, 0.94], [3, 0.89], [4, 0.88], [5, 0.87], [6, 0.87], [7, 0.86], [8, 0.86], [9, 0.85]]
+// Bandejas: AEA 90364-7-771 (agrupamiento en aire, una sola capa), que coincide con
+// IEC 60364-5-52 B.52.17 ítems 4 (perforada) y 5 (escalera). Antes la perforada usaba
+// la fila de bandeja NO perforada y la escalera tenía valores sin fuente (0.94…0.85,
+// más altos que la norma: sobrestimaba la corriente admisible).
+const FC_BANDEJA_PERF: [number, number][] = [[1, 1.00], [2, 0.88], [3, 0.82], [4, 0.77], [5, 0.75], [6, 0.73], [7, 0.73], [8, 0.72], [9, 0.72]]
+const FC_BANDEJA_ESC: [number, number][] =  [[1, 1.00], [2, 0.87], [3, 0.82], [4, 0.80], [5, 0.80], [6, 0.79], [7, 0.79], [8, 0.78], [9, 0.78]]
 const FC_ENTERRADO: [number, number][] =    [[1, 1.00], [2, 0.75], [3, 0.65], [4, 0.60], [5, 0.55], [6, 0.50]]
 
 function lookupFC(tabla: [number, number][], n: number): number {

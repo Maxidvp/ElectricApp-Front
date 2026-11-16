@@ -13,7 +13,7 @@ import SortableRow  from './SortableRow'
 import { useColumnas } from './useColumnas'
 import { mapearCircuitos } from './utils'
 import type { CircuitoRow, ColMeta, FormacionData, Tensiones } from './types'
-import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import { useTableroSeleccionado } from '@/hooks/useTableroSeleccionado'
 
 export default function TablaCargas() {
   const {
@@ -27,7 +27,6 @@ export default function TablaCargas() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  const [tableroId,             setTableroId]             = useState<number | null>(getLastTableroId)
   const [modalAbierto,          setModalAbierto]          = useState(false)
   const [circuitoEditando,      setCircuitoEditando]      = useState<number | null>(null)
   const [formacionSeleccionada, setFormacionSeleccionada] = useState<FormacionData | null>(null)
@@ -44,10 +43,7 @@ export default function TablaCargas() {
   // (legado, previo a la migración) se consideran POTENCIA por defecto.
   const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
 
-  const idEfectivo = tableroId != null && tablerosPotencia.some(t => t.id === tableroId)
-    ? tableroId
-    : tablerosPotencia[0]?.id ?? null
-  const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
+  const { tablero, idEfectivo, seleccionarTablero } = useTableroSeleccionado(tablerosPotencia)
 
   const tensionesDisponibles = useMemo(() => {
     if (!tablero) return []
@@ -59,8 +55,7 @@ export default function TablaCargas() {
   }, [tablero])
 
   const cambiarTablero = (id: number) => {
-    setLastTableroId(id)
-    setTableroId(id)
+    seleccionarTablero(id)
     setRowSeleccionada(null)
   }
 

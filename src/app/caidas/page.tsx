@@ -1,11 +1,14 @@
 'use client'
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { InlineMath } from 'react-katex'
-import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { TablaCalculo, EncabezadoTablero, TableroPills, AutoCell, useColSizing, type ColMeta } from '@/components/TablaCalculo'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useCables, type CableItem } from '@/context/CablesContext'
-import { generarFormacion, calcDrops as calcDropsUtil, calcCorriente, calcReactancia, calcResistencia, type CaidaInput, type FormatoFormacion } from '@/utils/electricidad'
-import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import { generarFormacion, type CaidaInput, type FormatoFormacion } from '@/utils/electricidad'
+import { evaluarCaida, LIMITE_CAIDA_PCT } from '@/utils/caida'
+import { resolverCargaCircuito, tensionesDe } from '@/utils/cargas'
+import { useTableroSeleccionado } from '@/hooks/useTableroSeleccionado'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -27,8 +30,6 @@ type CaidaRow = {
   ev:            number | null
   epct:          number | null
 }
-
-type ColMeta = { colType: 'label' | 'editable' | 'auto' | 'result' }
 
 const DEFAULT_INPUT: CaidaInput = {
   tension: '', fp: '', in_: '', cf: '', l: '', r: '', x: '', cable_id: '',
@@ -73,19 +74,6 @@ function NumCell({ value, onChange, hint }: { value: string; onChange: (v: strin
       }}
     >
       {display || '—'}
-    </span>
-  )
-}
-
-// ── Auto-filled read-only cell ────────────────────────────────────
-
-function AutoCell({ value, decimals = 2 }: { value: number | null; decimals?: number }) {
-  if (value === null) return (
-    <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'center' }}>—</span>
-  )
-  return (
-    <span style={{ fontSize: 12, display: 'block', textAlign: 'center', color: 'var(--clr-font-a20)' }}>
-      {value.toFixed(decimals)}
     </span>
   )
 }
@@ -151,7 +139,6 @@ export default function CaidaTension() {
   const { tableros, getTablero, loading, error, proyectoActivo } = useProyectos()
   const formato: FormatoFormacion = (proyectoActivo?.formato_formacion as FormatoFormacion) ?? 'ingles'
 
-  const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
   const [inputs,     setInputs]     = useState<Record<number, CaidaInput>>({})
   const [cableCache, setCableCache] = useState<Record<number, CableItem>>({})
 
@@ -159,10 +146,7 @@ export default function CaidaTension() {
   // CONTROL/DATOS. Los tableros sin categoria (legado) se consideran POTENCIA.
   const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
 
-  const idEfectivo = tableroId != null && tablerosPotencia.some(t => t.id === tableroId)
-    ? tableroId
-    : tablerosPotencia[0]?.id ?? null
-  const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
+  const { tablero, idEfectivo, seleccionarTablero } = useTableroSeleccionado(tablerosPotencia)
 
   const setField = useCallback((id: number, field: keyof CaidaInput, val: string) => {
     setInputs(prev => ({
@@ -179,42 +163,26 @@ export default function CaidaTension() {
 
   const rows = useMemo((): CaidaRow[] => {
     if (!tablero) return []
-    const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
+    const sorted = [...tablero.circuitos].sort((a, b) => a.orden - b.orden)
+    const tensiones = tensionesDe(tablero)
+    // Una acometida suma solo los circuitos principales que tiene encima (los
+    // auxiliares —retorno/combinación/ramal— no son carga propia), igual que Cargas.
+    const principales = sorted.filter(c => c.parent_id === null)
     return sorted.map(c => {
       const input = inputs[c.id] ?? DEFAULT_INPUT
       const overrideId = input.cable_id ? Number(input.cable_id) : null
       const effectiveCable = (overrideId ? cableCache[overrideId] : null) ?? c.formacion?.cable ?? null
 
-      // Para formaciones multipolares, Formacion.Nfases queda forzado a 1 (representa
-      // "un mazo"); el N° de fases real hay que tomarlo del propio cable seleccionado.
-      const cableEsMultipolar = (effectiveCable?.Nfases ?? 1) > 1
-      const nfases = cableEsMultipolar ? (effectiveCable?.Nfases ?? 3) : (c.formacion?.Nfases ?? 3)
-      const cfAuto = c.formacion?.cond_por_fase ?? null
-      const fpAuto    = c.FP ?? null
-      const largoAuto = c.Largo ?? null
-      const tipo      = c.tipo_tension
-      const tensionAuto = tipo === 'mono' ? (tablero as any).tension_mono
-                        : tipo === 'bi'   ? (tablero as any).tension_bi
-                        : tipo === 'tri'  ? (tablero as any).tension_tri
-                        : null
-      const corrienteAuto = calcCorriente(c.potencia ?? null, tipo, tensionAuto, fpAuto)
-      const mat  = effectiveCable ? (effectiveCable as any).familia?.material   ?? null : null
-      const temp = effectiveCable ? (effectiveCable as any).familia?.temperatura ?? null : null
-      const rAuto = effectiveCable ? calcResistencia(
-        effectiveCable.seccion_f,
-        effectiveCable.calibre_tipo,
-        mat,
-        temp,
-      ) : null
-      const xAuto = effectiveCable ? calcReactancia(
-        effectiveCable.diametro,
-        effectiveCable.seccion_f,
-        effectiveCable.calibre_tipo,
-        c.formacion?.disposicion ?? null,
-        effectiveCable.Nfases,
-      ) : null
+      // Carga efectiva: misma resolución que Cargas — sin esto la acometida y los
+      // ALIMENTADORES (potencia null en la DB) quedaban sin corriente y sin caída.
+      const idx = principales.indexOf(c)
+      const carga = resolverCargaCircuito(c, idx >= 0 ? principales.slice(0, idx) : [], tensiones, tableros)
+      const fpAuto        = carga.fp
+      const tensionAuto   = carga.tension
+      const corrienteAuto = carga.corriente
+      // R, X y la caída: utils/caida.ts (compartido con Verificación y Memoria).
+      const { nfases, cfAuto, largoAuto, rAuto, xAuto, ev, epct } = evaluarCaida(c, carga, effectiveCable, input)
       const formacion = c.formacion ? generarFormacion(c.formacion, formato) : '—'
-      const { ev, epct } = calcDropsUtil(input, nfases, cfAuto, fpAuto, largoAuto, tensionAuto, xAuto, corrienteAuto, rAuto)
       return {
         id: c.id, circuito: c.circuito, formacion,
         familiaId: c.formacion?.cable?.familia_id ?? null,
@@ -222,7 +190,7 @@ export default function CaidaTension() {
         nfases, cfAuto, fpAuto, largoAuto, tensionAuto, corrienteAuto, rAuto, xAuto, input, ev, epct,
       }
     })
-  }, [tablero, inputs, cableCache])
+  }, [tablero, tableros, inputs, cableCache, formato])
 
   const columns = useMemo(() => [
     // ── Identificador ────────────────────────────────────────────
@@ -276,7 +244,7 @@ export default function CaidaTension() {
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
         const { id, input, fpAuto } = info.row.original
-        return <NumCell value={input.fp} onChange={v => setField(id, 'fp', v)} hint={fpAuto !== null ? String(fpAuto) : undefined} />
+        return <NumCell value={input.fp} onChange={v => setField(id, 'fp', v)} hint={fpAuto !== null ? String(Number(fpAuto.toFixed(3))) : undefined} />
       },
     }),
     columnHelper.display({
@@ -306,14 +274,12 @@ export default function CaidaTension() {
       meta: { colType: 'result' } as ColMeta,
       cell: info => {
         const v = info.getValue()
-        return <ComputedCell value={v} decimals={2} warn={v !== null && v > 3} />
+        return <ComputedCell value={v} decimals={2} warn={v !== null && v > LIMITE_CAIDA_PCT} />
       },
     }),
   ], [setField, selectCable])
 
-  const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
-    try { return JSON.parse(localStorage.getItem('ea_col_caida') ?? '{}') } catch { return {} }
-  })
+  const { colSizing, onColumnSizingChange } = useColSizing('ea_col_caida')
 
   const table = useReactTable({
     data: rows,
@@ -323,11 +289,7 @@ export default function CaidaTension() {
     columnResizeDirection: 'ltr',
     enableColumnResizing: true,
     state: { columnSizing: colSizing },
-    onColumnSizingChange: upd => {
-      const next = typeof upd === 'function' ? upd(colSizing) : upd
-      setColSizing(next)
-      localStorage.setItem('ea_col_caida', JSON.stringify(next))
-    },
+    onColumnSizingChange,
   })
 
   if (loading && !tablero) return <p style={{ padding: 24 }}>Cargando...</p>
@@ -335,88 +297,14 @@ export default function CaidaTension() {
 
   return (
     <div className="subcontainer">
-      <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
-        {tablerosPotencia.map(t => (
-          <button
-            key={t.id}
-            onClick={() => { setLastTableroId(t.id); setTableroId(t.id) }}
-            className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
-              idEfectivo === t.id
-                ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
-                : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'
-            }`}
-          >
-            {t.nombre || t.tag}
-          </button>
-        ))}
-      </div>
+      <div className="px-3 pt-3 pb-2"><TableroPills tableros={tablerosPotencia} idActivo={idEfectivo} onSelect={seleccionarTablero} /></div>
 
       {!tablero ? (
         <p style={{ padding: 24, color: 'var(--clr-surface-tonal-a40)' }}>Sin tablero activo.</p>
       ) : (
         <div className="datatable-container">
-          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[var(--dt-border-color)]">
-            <div className="flex items-center gap-2.5">
-              <span className="text-[14px] font-semibold text-font-a0">{tablero.tag}</span>
-              {tablero.nombre && <span className="text-[13px] text-surface-tonal-a40">{tablero.nombre}</span>}
-            </div>
-            <div className="flex items-center gap-3.5 text-[11px] text-surface-tonal-a40">
-              <span className="flex items-center gap-1.5"><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4A8FD4', display: 'inline-block' }} /> Editable</span>
-              <span className="flex items-center gap-1.5"><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--clr-surface-tonal-a40)', display: 'inline-block' }} /> Autocompletado</span>
-              <span className="flex items-center gap-1.5"><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6aab6a', display: 'inline-block' }} /> Resultado</span>
-            </div>
-          </div>
-          <div className="flex justify-center">
-          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
-          <table
-            className="datatable"
-            style={{ width: table.getTotalSize(), tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}
-          >
-            <thead>
-              {table.getHeaderGroups().map(hg => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => {
-                    return (
-                      <th key={header.id} style={{ width: header.getSize(), position: 'relative', textAlign: 'center' }}>
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {header.column.getCanResize() && (
-                          <div onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()} className="resizer" />
-                        )}
-                      </th>
-                    )
-                  })}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr key={row.id}>
-                  {row.getVisibleCells().map((cell) => {
-                    const colType = (cell.column.columnDef.meta as ColMeta | undefined)?.colType
-                    return (
-                      <td key={cell.id} style={{
-                        width: cell.column.getSize(),
-                        textAlign: 'center',
-                        verticalAlign: 'middle',
-                        background: colType === 'editable' ? 'color-mix(in srgb, #4A8FD4 4%, transparent)'
-                                  : colType === 'result'   ? 'color-mix(in srgb, #6aab6a 6%, transparent)'
-                                  : undefined,
-                      }}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          </div>
-          {rows.length === 0 && (
-            <p style={{ padding: 16, textAlign: 'center', color: 'var(--clr-surface-tonal-a40)', fontSize: 13 }}>
-              Sin circuitos en este tablero.
-            </p>
-          )}
+          <EncabezadoTablero tablero={tablero} etiquetaAuto="Autocompletado" />
+          <TablaCalculo table={table} />
 
           <div className="px-3.5 py-3 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-1.5">
             <span>• <b>Caída trifásica</b> — <InlineMath math="V_{FF}" /> tensión de línea:{' '}

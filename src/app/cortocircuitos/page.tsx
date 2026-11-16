@@ -1,17 +1,21 @@
 'use client'
 import { useState, useMemo } from 'react'
 import { InlineMath } from 'react-katex'
-import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { TablaCalculo, EncabezadoTablero, TableroPills, AutoCell, useColSizing, type ColMeta } from '@/components/TablaCalculo'
 import { useProyectos } from '@/context/ProyectosContext'
 import FormacionModal from '@/components/FormacionModal'
 import ProteccionModal from '@/components/ProteccionModal'
 import { formacionData } from '@/app/cargas/utils'
 import type { FormacionData } from '@/app/cargas/types'
-import { calcSminCable, seccionEnMm2, calcReactancia, generarFormacion } from '@/utils/electricidad'
-import { calcularProyecto, impedanciaRed, impedanciaConductor, type EntradaProyecto, type Conductor } from '@/utils/cortocircuito'
+import { generarFormacion } from '@/utils/electricidad'
+import { impedanciaRed } from '@/utils/cortocircuito'
+import { verificarCircuitoCC, type BarraCC, type TipoFallaMin } from '@/utils/verificacionCortocircuito'
 import { calcularIccTablero } from '@/utils/calcularIccTablero'
-import { varianteLabel, CURVA_MULTIPLICADOR } from '@/utils/protecciones'
-import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import { evaluarSelectividad, proteccionAguasArriba, type Selectividad, type EstadoSelectividad } from '@/utils/selectividad'
+import CeldaEditable from '@/components/CeldaEditable'
+import { varianteLabel } from '@/utils/protecciones'
+import { useTableroSeleccionado } from '@/hooks/useTableroSeleccionado'
 import type { Proteccion } from '@/context/types'
 
 // ── Tipos ─────────────────────────────────────────────────────────
@@ -28,6 +32,7 @@ type CortocircRow = {
   kappa:        number | null
   Ik_kA_max:    number | null
   Ik_kA_min:    number | null
+  tipoFallaMin: TipoFallaMin | null
   ip_kA:        number | null
   S_min_002:    number | null
   S_min_02:     number | null
@@ -40,24 +45,13 @@ type CortocircRow = {
   Im_A:    number | null
   Icu_ok:  boolean | null
   Im_ok:   boolean | null
+  selectividad: Selectividad
+  selManual: string   // lo cargado a mano: un valor en A, 'total' o ''
 }
-
-type ColMeta = { colType: 'label' | 'editable' | 'auto' | 'result' }
 
 const columnHelper = createColumnHelper<CortocircRow>()
 
 // ── Celdas ────────────────────────────────────────────────────────
-
-function AutoCell({ value, decimals = 2 }: { value: number | null; decimals?: number }) {
-  if (value === null) return (
-    <span style={{ color: 'var(--clr-surface-tonal-a40)', fontSize: 12, display: 'block', textAlign: 'center' }}>—</span>
-  )
-  return (
-    <span style={{ fontSize: 12, display: 'block', textAlign: 'center', color: 'var(--clr-font-a20)' }}>
-      {value.toFixed(decimals)}
-    </span>
-  )
-}
 
 // Estado combinado de la verificación de la protección — 'sin_datos' cubre tanto el
 // caso de faltar Icc/curva para poder evaluar como el caso en que solo una de las dos
@@ -89,12 +83,30 @@ function SminCell({ value, ok }: { value: number | null; ok: boolean | null }) {
   )
 }
 
+const SELECTIVIDAD: Record<EstadoSelectividad, { texto: string; color: string }> = {
+  total:        { texto: 'Total',         color: '#6aab6a' },
+  parcial:      { texto: 'Parcial',       color: 'var(--clr-warning-a10)' },
+  no_selectiva: { texto: 'No selectiva',  color: 'var(--clr-danger-a10)' },
+  sin_datos:    { texto: '?',             color: '#d4a24a' },
+  no_aplica:    { texto: '—',             color: 'var(--clr-surface-tonal-a40)' },
+}
+
+function SelectividadCell({ s }: { s: Selectividad }) {
+  const { texto, color } = SELECTIVIDAD[s.estado]
+  return (
+    <span title={s.detalle} style={{ fontSize: 12, display: 'block', textAlign: 'center', color, fontWeight: s.estado === 'no_aplica' ? 400 : 600 }}>
+      {texto}
+      {s.estado === 'parcial' && s.Is_A != null && <span style={{ fontWeight: 400 }}> · {Math.round(s.Is_A)} A</span>}
+      {s.origen === 'manual' && <span style={{ fontWeight: 400, fontSize: 10, opacity: 0.75 }}> (fab.)</span>}
+    </span>
+  )
+}
+
 // ── Página ────────────────────────────────────────────────────────
 
 export default function Cortocircuitos() {
-  const { tableros, getTablero, loading, error, actualizarFormacion, actualizarProteccion, proyectoActivo } = useProyectos()
+  const { tableros, getTablero, loading, error, actualizarFormacion, actualizarProteccion, actualizarSelectividad, proyectoActivo } = useProyectos()
 
-  const [tableroId, setTableroId] = useState<number | null>(getLastTableroId)
 
   const [modalAbierto,          setModalAbierto]          = useState(false)
   const [circuitoEditando,      setCircuitoEditando]      = useState<number | null>(null)
@@ -110,171 +122,51 @@ export default function Cortocircuitos() {
   // CONTROL/DATOS. Los tableros sin categoria (legado) se consideran POTENCIA.
   const tablerosPotencia = tableros.filter(t => t.categoria !== 'CONTROL' && t.categoria !== 'DATOS')
 
-  const idEfectivo = tableroId != null && tablerosPotencia.some(t => t.id === tableroId)
-    ? tableroId
-    : tablerosPotencia[0]?.id ?? null
-  const tablero    = idEfectivo !== null ? getTablero(idEfectivo) : undefined
+  const { tablero, idEfectivo, seleccionarTablero } = useTableroSeleccionado(tablerosPotencia)
 
   const cambiarTablero = (id: number) => {
-    setLastTableroId(id)
-    setTableroId(id)
+    seleccionarTablero(id)
   }
 
   // Icc de barra derivada de la red aguas arriba (fuente propia del tablero, o el
   // tablero que lo alimenta vía un circuito ALIMENTADOR, recursivamente) — ver
-  // utils/calcularIccTablero.ts. Ya no se lee Tablero.corriente_cc_max/min (campo
-  // legado): si no hay fuente ni alimentador cargado, da null y se muestra "—".
+  // utils/calcularIccTablero.ts. No hay Icc cargada a mano en el tablero
+  // (se quitó el campo legado): si no hay fuente ni alimentador, da null y se muestra "—".
   const iccTablero = useMemo(
-    () => tablero ? calcularIccTablero(tablero, tableros) : { Icc_max_kA: null, Icc_min_kA: null },
+    () => tablero ? calcularIccTablero(tablero, tableros) : { Icc_max_kA: null, Icc_min_kA: null, avisos: [] },
     [tablero, tableros],
   )
 
   const rows = useMemo((): CortocircRow[] => {
     if (!tablero) return []
-    const sorted = [...tablero.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
-    // Icc máxima: peor caso para dimensionar el cable (S mín) y para el poder de
-    // corte de la protección (Icu). Icc mínima: peor caso para la coordinación de
-    // protecciones — el fusible/breaker tiene que disparar incluso ante la falla
-    // más débil posible al final del cable, por eso se usa para verificar Im.
-    const Icc_panel_A_max = iccTablero.Icc_max_kA != null ? iccTablero.Icc_max_kA * 1000 : null
-    const Icc_panel_A_min = iccTablero.Icc_min_kA != null ? iccTablero.Icc_min_kA * 1000 : null
+    const sorted = [...tablero.circuitos].sort((a, b) => a.orden - b.orden)
     // Nivel de tensión de la barra: tri > bi > mono, igual criterio que el resto de la app.
-    const nivelBarra = tablero.tension_tri ?? tablero.tension_bi ?? tablero.tension_mono ?? null
+    const Un = tablero.tension_tri ?? tablero.tension_bi ?? tablero.tension_mono ?? null
+    const barra: BarraCC = {
+      Icc_max_A: iccTablero.Icc_max_kA != null ? iccTablero.Icc_max_kA * 1000 : null,
+      Icc_min_A: iccTablero.Icc_min_kA != null ? iccTablero.Icc_min_kA * 1000 : null,
+      Un,
+      U0: tablero.tension_mono ?? (Un != null ? Un / Math.sqrt(3) : null),
+      frecuencia_hz: tablero.frecuencia === 60 ? 60 : 50,
+    }
 
+    // Todo el cálculo por circuito está en utils/verificacionCortocircuito.ts
+    // (función pura, con tests): qué falla se usa para cada verificación y por qué.
     return sorted.map(c => {
-      const effectiveCable = c.formacion?.cable ?? null
-      const familia        = (effectiveCable as any)?.familia ?? null
-
-      // n_conductores_por_fase = conductores en paralelo por fase (Formacion.cond_por_fase),
-      // no el Nfases propio del cable (que en un cable multipolar cuenta núcleos internos).
-      const nCondEff = c.formacion?.cond_por_fase ?? 1
-
-      const S_real = effectiveCable ? seccionEnMm2(effectiveCable.seccion_f, effectiveCable.calibre_tipo) : null
-      const mat = familia?.material    ?? null
-      const ais = familia?.aislamiento ?? null
-      const material: 'COBRE' | 'ALUMINIO' = (mat ?? '').toLowerCase().includes('alu') ? 'ALUMINIO' : 'COBRE'
-
-      // Reactancia propia de la formación (según disposición unipolar/multipolar y
-      // geometría real del cable) en vez del default genérico del motor de CC.
-      // calcReactancia devuelve Ω/km, el motor espera Ω/m.
-      const xUnitario = effectiveCable
-        ? calcReactancia(effectiveCable.diametro, effectiveCable.seccion_f, effectiveCable.calibre_tipo, c.formacion?.disposicion ?? null, effectiveCable.Nfases)
-        : null
-      const reactanciaUnitaria = xUnitario != null ? xUnitario / 1000 : undefined
-
-      // Motor de cálculo IEC 60909-0 (Front/src/utils/cortocircuito): la barra del
-      // tablero se modela como una red equivalente con la Icc ya conocida, y el
-      // propio circuito como el único conductor entre la barra y el punto de falla
-      // al final del cable. Se piden dos puntos de falla (0.02 s y 0.2 s) para
-      // obtener Ith en las dos zonas de protección con un solo cálculo del mismo Z1.
-      let Z1_mOhm: number | null = null, kappa: number | null = null
-      let Ik_kA_max: number | null = null, ip_kA: number | null = null
-      let Ik_kA_min: number | null = null
-      let Ith_002_A: number | null = null, Ith_02_A: number | null = null
-      let R_cable_mOhm: number | null = null, X_cable_mOhm: number | null = null
-
-      if (S_real && c.Largo) {
-        const conductor: Conductor = {
-          id: String(c.id), longitud: c.Largo, seccion: S_real,
-          n_conductores_por_fase: nCondEff, material,
-          reactancia_unitaria: reactanciaUnitaria,
-          nodo_a: 'BARRA', nodo_b: 'FIN',
-        }
-        // R/X propios del cable — mismo cálculo que usa el motor internamente para
-        // Z1 (§5.3), expuestos por separado para que se vea de dónde sale Z1.
-        try {
-          const zCable = impedanciaConductor(conductor, 'MAXIMO')
-          R_cable_mOhm = zCable.Z1.re * 1000
-          X_cable_mOhm = zCable.Z1.im * 1000
-        } catch {
-          // ídem: datos insuficientes para este circuito puntual, no rompe la tabla.
-        }
-
-        if (Icc_panel_A_max && nivelBarra) {
-          try {
-            const entrada: EntradaProyecto = {
-              proyecto: { nombre: 'cortocircuitos', frecuencia_hz: 50 },
-              red_alimentacion: { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: Icc_panel_A_max },
-              transformadores: [],
-              generadores: [],
-              motores: [],
-              conductores: [conductor],
-              puntos_falla: [
-                { id: 'F002', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MAXIMO', duracion_falla: 0.02 },
-                { id: 'F02', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MAXIMO', duracion_falla: 0.2 },
-              ],
-            }
-            const [r002, r02] = calcularProyecto(entrada)
-            Z1_mOhm = Math.hypot(r002.Z1.re, r002.Z1.im) * 1000
-            kappa = r002.kappa
-            Ik_kA_max = r002.corrientes.Ik_inicial_A / 1000
-            ip_kA = r002.corrientes.ip_A / 1000
-            Ith_002_A = r002.corrientes.Ith_A
-            Ith_02_A = r02.corrientes.Ith_A
-          } catch {
-            // Datos insuficientes o inconsistentes para este circuito puntual (ej. cable
-            // sin sección resuelta todavía) — se deja en blanco, no rompe el resto de la tabla.
-          }
-        }
-
-        // Segundo cálculo, independiente del anterior: misma falla y mismo cable,
-        // pero con la Icc mínima del tablero como fuente — da la I"k más chica
-        // posible en el extremo del cable, que es lo que hay que superar para
-        // garantizar que la protección dispare (ver columna Protección más abajo).
-        if (Icc_panel_A_min && nivelBarra) {
-          try {
-            const entradaMin: EntradaProyecto = {
-              proyecto: { nombre: 'cortocircuitos', frecuencia_hz: 50 },
-              red_alimentacion: { id: 'BARRA', nodo: 'BARRA', tension_nominal: nivelBarra, corriente_cc: Icc_panel_A_min },
-              transformadores: [],
-              generadores: [],
-              motores: [],
-              conductores: [conductor],
-              puntos_falla: [
-                { id: 'FMIN', nodo: 'FIN', tension_nominal: nivelBarra, tipos_falla: ['TRIFASICA'], escenario: 'MINIMO' },
-              ],
-            }
-            const [rMin] = calcularProyecto(entradaMin)
-            Ik_kA_min = rMin.corrientes.Ik_inicial_A / 1000
-          } catch {
-            // ídem: datos insuficientes, se deja en blanco.
-          }
-        }
-      }
-
-      const S_min_002 = Ith_002_A ? calcSminCable(Ith_002_A, 0.02, mat, ais) : null
-      const S_min_02  = Ith_02_A  ? calcSminCable(Ith_02_A, 0.2,  mat, ais) : null
-
-      const cable_ok_002 = S_min_002 != null && S_real != null ? S_real >= S_min_002 : null
-      const cable_ok_02  = S_min_02  != null && S_real != null ? S_real >= S_min_02  : null
-
-      // Protección termomagnética (u otra del catálogo) asignada al circuito:
-      // Icu tiene que soportar la falla más severa (I"k máx) y el umbral de disparo
-      // magnético (Im = multiplicador de la curva × In) tiene que dispararse incluso
-      // ante la falla más débil (I"k mín) para garantizar despeje instantáneo.
       const proteccion = c.proteccion
-      const Icu_kA = proteccion?.Icu ?? null
-      const Icu_ok = Icu_kA != null && Ik_kA_max != null ? Icu_kA >= Ik_kA_max : null
-      const curvaMult = proteccion?.curva ? CURVA_MULTIPLICADOR[proteccion.curva] : null
-      const Im_A = curvaMult && proteccion?.In != null ? curvaMult[0] * proteccion.In : null
-      const Im_ok = Im_A != null && Ik_kA_min != null ? Im_A <= Ik_kA_min * 1000 : null
-
       return {
         id: c.id, circuito: c.circuito,
         formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
         formacionData: formacionData(c as any),
-        S_real_mm2: S_real != null && !isNaN(S_real) ? S_real : null,
-        R_cable_mOhm, X_cable_mOhm,
-        Z1_mOhm, kappa, Ik_kA_max, Ik_kA_min, ip_kA,
-        S_min_002, S_min_02,
-        cable_ok_002, cable_ok_02,
+        ...verificarCircuitoCC(c, barra),
+        selectividad: evaluarSelectividad(c, proteccionAguasArriba(c, tablero, tableros), barra.Icc_max_A),
+        selManual: c.selectividad_total ? 'total' : c.selectividad_Is != null ? String(c.selectividad_Is) : '',
         proteccionId: proteccion?.id ?? null,
         proteccionData: proteccion,
         proteccionLabel: proteccion ? varianteLabel(proteccion, proteccion.familia?.tipo ?? '') : '—',
-        Icu_kA, Im_A, Icu_ok, Im_ok,
       }
     })
-  }, [tablero, formato, iccTablero])
+  }, [tablero, tableros, formato, iccTablero])
 
   // R/X equivalente aguas arriba de la barra (Z_barra en la fórmula Z1 = Z_barra + Z_cable),
   // re-derivado de la Icc máxima ya calculada — mismo criterio simplificado (R/X default de
@@ -294,9 +186,7 @@ export default function Cortocircuitos() {
     }
   }, [tablero, iccTablero])
 
-  const [colSizing, setColSizing] = useState<Record<string, number>>(() => {
-    try { return JSON.parse(localStorage.getItem('ea_col_cortocircuitos') ?? '{}') } catch { return {} }
-  })
+  const { colSizing, onColumnSizingChange } = useColSizing('ea_col_cortocircuitos')
 
   const columns = useMemo(() => [
     columnHelper.accessor('circuito', {
@@ -384,7 +274,14 @@ export default function Cortocircuitos() {
     columnHelper.accessor('Ik_kA_min', {
       header: 'I"k mín (kA)', size: 100,
       meta: { colType: 'result' } as ColMeta,
-      cell: info => <AutoCell value={info.getValue()} decimals={2} />,
+      cell: info => {
+        const tipo = info.row.original.tipoFallaMin
+        return (
+          <span title={tipo === 'FASE_NEUTRO' ? 'Falla fase-neutro en el extremo' : tipo === 'BIFASICA' ? 'Falla bifásica en el extremo (circuito sin neutro)' : undefined}>
+            <AutoCell value={info.getValue()} decimals={2} />
+          </span>
+        )
+      },
     }),
     columnHelper.accessor('ip_kA', {
       header: 'ip (kA)', size: 90,
@@ -401,7 +298,28 @@ export default function Cortocircuitos() {
       meta: { colType: 'result' } as ColMeta,
       cell: info => <SminCell value={info.getValue()} ok={info.row.original.cable_ok_02} />,
     }),
-  ], [setCircuitoEditando, setFormacionSeleccionada, setModalAbierto, setCircuitoProteccionEditando, setProteccionSeleccionada, setModalProteccionAbierto])
+    columnHelper.accessor(row => row.selectividad.estado, {
+      id: 'selectividad', header: 'Selectividad', size: 130,
+      meta: { colType: 'result' } as ColMeta,
+      cell: info => <SelectividadCell s={info.row.original.selectividad} />,
+    }),
+    columnHelper.accessor('selManual', {
+      header: 'Is fabricante (A)', size: 120,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: info => (
+        <CeldaEditable
+          valor={info.getValue()}
+          onGuardar={v => {
+            const t = v.trim().toLowerCase()
+            if (t === '') return actualizarSelectividad(info.row.original.id, null, false)
+            if (t === 'total' || t === 't') return actualizarSelectividad(info.row.original.id, null, true)
+            const num = Number(t.replace(',', '.'))
+            if (num > 0) actualizarSelectividad(info.row.original.id, num, false)
+          }}
+        />
+      ),
+    }),
+  ], [setCircuitoEditando, setFormacionSeleccionada, setModalAbierto, setCircuitoProteccionEditando, setProteccionSeleccionada, setModalProteccionAbierto, actualizarSelectividad])
 
   const table = useReactTable({
     data: rows,
@@ -411,11 +329,7 @@ export default function Cortocircuitos() {
     columnResizeDirection: 'ltr',
     enableColumnResizing: true,
     state: { columnSizing: colSizing },
-    onColumnSizingChange: upd => {
-      const next = typeof upd === 'function' ? upd(colSizing) : upd
-      setColSizing(next)
-      localStorage.setItem('ea_col_cortocircuitos', JSON.stringify(next))
-    },
+    onColumnSizingChange,
   })
 
   if (loading && !tablero) return <p style={{ padding: 24 }}>Cargando...</p>
@@ -423,99 +337,29 @@ export default function Cortocircuitos() {
 
   return (
     <div className="subcontainer">
-      <div className="flex gap-1.5 px-3 pt-3 pb-2 flex-wrap">
-        {tablerosPotencia.map(t => (
-          <button
-            key={t.id}
-            onClick={() => cambiarTablero(t.id)}
-            className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
-              idEfectivo === t.id
-                ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
-                : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'
-            }`}
-          >
-            {t.nombre || t.tag}
-          </button>
-        ))}
-      </div>
+      <div className="px-3 pt-3 pb-2"><TableroPills tableros={tablerosPotencia} idActivo={idEfectivo} onSelect={cambiarTablero} /></div>
 
       {!tablero ? (
         <p style={{ padding: 24, color: 'var(--clr-surface-tonal-a40)' }}>Sin tablero activo.</p>
       ) : (
         <div className="datatable-container">
-          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[var(--dt-border-color)]">
-            <div className="flex items-center gap-2.5">
-              <span className="text-[14px] font-semibold text-font-a0">{tablero.tag}</span>
-              {tablero.nombre && <span className="text-[13px] text-surface-tonal-a40">{tablero.nombre}</span>}
-              <span className="text-[12px] text-surface-tonal-a40">
+          <EncabezadoTablero tablero={tablero}>
+            <span className="text-[12px] text-surface-tonal-a40">
                 Icc max = {iccTablero.Icc_max_kA != null ? `${iccTablero.Icc_max_kA.toFixed(2)} kA` : '—'}
                 {' '}· Icc min = {iccTablero.Icc_min_kA != null ? `${iccTablero.Icc_min_kA.toFixed(2)} kA` : '—'}
                 {redInfo && <> · R red = {redInfo.R_mOhm.toFixed(2)} mΩ · X red = {redInfo.X_mOhm.toFixed(2)} mΩ</>}
               </span>
-            </div>
-            <div className="flex items-center gap-3.5 text-[11px] text-surface-tonal-a40">
-              <span className="flex items-center gap-1.5"><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4A8FD4', display: 'inline-block' }} /> Editable</span>
-              <span className="flex items-center gap-1.5"><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--clr-surface-tonal-a40)', display: 'inline-block' }} /> Calculado</span>
-              <span className="flex items-center gap-1.5"><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6aab6a', display: 'inline-block' }} /> Resultado</span>
-            </div>
-          </div>
+          </EncabezadoTablero>
 
-          <div className="flex justify-center">
-          <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
-          <table
-            className="datatable"
-            style={{ width: table.getTotalSize(), tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}
-          >
-            <thead>
-              {table.getHeaderGroups().map(hg => (
-                <tr key={hg.id}>
-                  {hg.headers.map(header => {
-                    const colType = (header.column.columnDef.meta as ColMeta | undefined)?.colType
-                    return (
-                      <th key={header.id} style={{
-                        width: header.getSize(), position: 'relative', textAlign: 'center',
-                        color: colType === 'result' ? '#6aab6a' : undefined,
-                      }}>
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {header.column.getCanResize() && (
-                          <div onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()} className="resizer" />
-                        )}
-                      </th>
-                    )
-                  })}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr key={row.id}>
-                  {row.getVisibleCells().map(cell => {
-                    const colType = (cell.column.columnDef.meta as ColMeta | undefined)?.colType
-                    return (
-                      <td key={cell.id} style={{
-                        width: cell.column.getSize(),
-                        textAlign: 'center',
-                        verticalAlign: 'middle',
-                        background: colType === 'editable' ? 'color-mix(in srgb, #4A8FD4 4%, transparent)'
-                                  : colType === 'result'   ? 'color-mix(in srgb, #6aab6a 6%, transparent)'
-                                  : undefined,
-                      }}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          </div>
-
-          {rows.length === 0 && (
-            <p style={{ padding: 16, textAlign: 'center', color: 'var(--clr-surface-tonal-a40)', fontSize: 13 }}>
-              Sin circuitos en este tablero.
-            </p>
+          {/* Lo que el cálculo de Icc de barra no pudo considerar — se muestra siempre
+              junto al resultado para que nadie confíe en un número que omitió algo. */}
+          {iccTablero.avisos.length > 0 && (
+            <ul className="px-3.5 py-2 border-b border-[var(--dt-border-color)] text-[12px] space-y-0.5" style={{ color: 'var(--clr-warning-a10)' }}>
+              {iccTablero.avisos.map(a => <li key={a}>⚠ {a}</li>)}
+            </ul>
           )}
+
+          <TablaCalculo table={table} />
 
           <div className="px-3.5 py-3.5 border-t border-[var(--dt-border-color)] text-[11px] text-surface-tonal-a40 flex flex-col gap-3.5">
             <p>
@@ -559,15 +403,25 @@ export default function Cortocircuitos() {
               </div>
 
               <div>
-                <span className="text-font-a20 font-medium">I&quot;k máx / mín (kA)</span> — corriente de cortocircuito
-                inicial simétrica, el resultado principal: <InlineMath math="I''_{k} = \dfrac{c \cdot U_n}{\sqrt{3}\,|Z_1|}" />.{' '}
+                <span className="text-font-a20 font-medium">I&quot;k máx (kA)</span> — corriente de cortocircuito
+                inicial simétrica de una falla trifásica en el extremo del cable:{' '}
+                <InlineMath math="I''_{k} = \dfrac{c \cdot U_n}{\sqrt{3}\,|Z_1|}" />.{' '}
                 <InlineMath math="U_n" /> es la tensión de línea del tablero; <InlineMath math="c" /> es el factor de
-                tensión de la norma (1,05 para baja tensión en el escenario de corriente máxima, cubre el margen de
-                +6% que puede tener la red real sobre su tensión nominal). Se calcula dos veces con dos fuentes
-                distintas: <b>I&quot;k máx</b> usa la Icc máxima del tablero (peor caso, para dimensionar el cable y el
-                poder de corte de la protección) e <b>I&quot;k mín</b> usa la Icc mínima (peor caso opuesto — la falla
-                más débil que puede ocurrir en el extremo del cable, que es la que hay que garantizar que dispare la
-                protección). Todas las demás columnas (Z1, κ, ip, S mín) usan siempre el escenario máximo.
+                tensión de la norma (1,05 para baja tensión en el escenario de corriente máxima). Usa la Icc máxima
+                de la barra y el cable a 20 °C. Z1, κ, ip y S mín salen de este mismo escenario.
+              </div>
+
+              <div>
+                <span className="text-font-a20 font-medium">I&quot;k mín (kA)</span> — la falla más débil que puede
+                ocurrir en el extremo del cable, que es la que tiene que hacer disparar a la protección. Si el
+                circuito lleva neutro es una falla <b>fase-neutro</b>:{' '}
+                <InlineMath math="I''_{k1} = \dfrac{c_{min} \cdot U_0}{|Z_{barra} + Z_{fase} + Z_{neutro}|}" />, con
+                cada conductor según su propia sección; si no lleva neutro, una falla <b>bifásica</b>:{' '}
+                <InlineMath math="I''_{k2} = \dfrac{c_{min} \cdot U_n}{2\,|Z_1|}" />. En ambos casos se usa la Icc
+                mínima de la barra, <InlineMath math="c_{min} = 0{,}95" /> y los conductores a la temperatura máxima
+                de servicio del cable (más resistencia, menos corriente). Pasá el mouse sobre el valor para ver qué
+                tipo de falla se usó. No se evalúa la falla fase-PE: depende del esquema de conexión a tierra, que
+                la app todavía no modela.
               </div>
 
               <div>
@@ -584,7 +438,7 @@ export default function Cortocircuitos() {
                 térmica equivalente, <InlineMath math="I_{th} = I''_k \sqrt{m+n}" />) en vez de I&quot;k directo, porque
                 tiene en cuenta el calentamiento extra que aporta la componente de corriente continua durante el
                 transitorio. <InlineMath math="k" /> es una constante del material/aislación del cable (Cu/XLPE = 143 ·
-                Cu/PVC = 115 · Al/XLPE = 87 · Al/PVC = 74).
+                Cu/PVC = 115 · Al/XLPE = 94 · Al/PVC = 76, IEC 60364-4-43 Tabla 43A).
               </div>
 
               <div>
@@ -603,23 +457,51 @@ export default function Cortocircuitos() {
                 Se calcula dos veces (columnas 0,02 s y 0,2 s) porque la protección del circuito tiene dos zonas de
                 disparo con tiempos distintos: <b>0,02 s</b> es la zona magnética (disparo instantáneo ante fallas
                 severas) y <b>0,2 s</b> la zona térmica (disparo temporizado, fallas menos severas que igual hay que
-                despejar). El cable tiene que soportar ambos casos.
+                despejar). El cable tiene que soportar ambos casos. Es una verificación <b>orientativa</b>: usa la
+                falla en el extremo y tiempos fijos. La verificación rigurosa compara la energía que deja pasar el
+                dispositivo (<InlineMath math="I^2t" />) contra <InlineMath math="k^2 S^2" /> con la falla al inicio
+                del cable, y necesita el dato de I²t del catálogo de protecciones, que todavía no está cargado.
               </div>
 
               <div>
                 <span className="text-font-a20 font-medium">Protección</span> — la termomagnética (u otro dispositivo
                 del catálogo) asignada al circuito, con un símbolo al lado que resume si es adecuada para esta falla
                 (pasá el mouse sobre él para ver los valores de Icu/Im). Se verifican dos cosas independientes:{' '}
-                <b>Icu</b> (poder de corte) tiene que ser mayor o igual a la falla más severa,{' '}
-                <InlineMath math="I_{cu} \geq I''_{k,max}" />; y el umbral de disparo magnético{' '}
-                <InlineMath math="I_m = mult_{curva} \times I_n" /> (extremo inferior del rango de la curva B/C/D/K/Z —
-                el más exigente, para no sobrestimar la protección) tiene que quedar por debajo de la falla más débil,{' '}
-                <InlineMath math="I_m \leq I''_{k,min}" />, para garantizar que dispare instantáneamente incluso en el
+                <b>Icu</b> (poder de corte) tiene que ser mayor o igual a la <b>Icc máxima de la barra</b>,{' '}
+                <InlineMath math="I_{cu} \geq I_{cc,max}" /> — el interruptor está montado en la barra, así que la
+                falla más severa que tiene que cortar es la de sus propios bornes, no la del extremo del cable; y el
+                umbral de disparo magnético <InlineMath math="I_m = mult_{curva} \times I_n" /> (extremo{' '}
+                <b>superior</b> de la banda de la curva B/C/D/K/Z — recién a partir de ahí el disparo instantáneo está
+                garantizado) tiene que quedar por debajo de la falla más débil,{' '}
+                <InlineMath math="I_m \leq I''_{k,min}" />, para asegurar que dispare instantáneamente incluso en el
                 peor caso. <b className="text-[#6aab6a]">✓</b> verde: ambas verificaciones dieron bien.{' '}
                 <b style={{ color: 'var(--clr-danger-a10)' }}>✗</b> roja: al menos una dio mal. <b style={{ color: '#d4a24a' }}>?</b>{' '}
                 ámbar: no hay datos suficientes para completar alguna de las dos verificaciones — por ejemplo, la
                 protección no tiene curva cargada (caso típico de los diferenciales) o el tablero no tiene Icc mínima
                 cargada.
+              </div>
+
+              <div>
+                <span className="text-font-a20 font-medium">Selectividad</span> — si ante una falla en este circuito
+                dispara solo su protección o también la que tiene aguas arriba (el interruptor general del tablero o,
+                si no tiene, la protección del alimentador que llega a él; pasá el mouse para ver contra cuál se
+                comparó). Se calcula solo entre protecciones con curva normalizada B/C/D/K/Z: la de aguas arriba no
+                dispara por su magnético mientras la falla no llegue al extremo <b>inferior</b> de su banda, así que
+                el límite de selectividad es <InlineMath math="I_s = mult_{min} \times I_{n,arriba}" /> (curva C:{' '}
+                <InlineMath math="5 \cdot I_n" />). Si <InlineMath math="I_s \geq I_{cc,max}" /> de la barra es{' '}
+                <b>total</b>; si no, <b>parcial</b> hasta <InlineMath math="I_s" />. Si la In de aguas arriba no supera
+                la de este circuito, <b>no selectiva</b>. Es un límite conservador: el real suele ser mayor y sale de
+                las tablas de selectividad del fabricante. En la zona de sobrecarga solo se exige que la In de aguas
+                arriba sea mayor; no se comparan las curvas térmicas punto a punto.
+              </div>
+
+              <div>
+                <span className="text-font-a20 font-medium">Is fabricante (A)</span> — límite de selectividad tomado
+                de la tabla del fabricante para ese par de protecciones: un valor en amperes, o <b>total</b>. Si está
+                cargado reemplaza al calculado (se marca «fab.»). Es la única forma de evaluar protecciones sin curva
+                normalizada (caja moldeada con relé regulable, guardamotores, fusibles): sin ese dato quedan en{' '}
+                <b style={{ color: '#d4a24a' }}>?</b>. Vacío = usar el calculado. La selectividad entre diferenciales
+                no se evalúa.
               </div>
             </div>
 

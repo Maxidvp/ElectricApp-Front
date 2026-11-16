@@ -18,6 +18,10 @@ export type CablePatch = {
   diametro: number | null
   peso: number | null
   Iadm: number
+  // Corriente admisible por forma de instalación (opcionales, ver utils/ampacidad.ts)
+  Iadm_canio?: number | null
+  Iadm_aire?: number | null
+  Iadm_enterrado?: number | null
 }
 
 export async function createCable(familiaId: number, data: CablePatch) {

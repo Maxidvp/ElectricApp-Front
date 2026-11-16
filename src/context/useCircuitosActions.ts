@@ -26,9 +26,52 @@ export function useCircuitosActions(
 ) {
   const { showError } = useToast()
 
+  // Edición optimista de campos de un circuito: aplica `patch` al estado ya mismo y
+  // dispara el guardado (encolado si el circuito todavía es temporal).
+  //   - Si el back responde bien y `mergear` está activo, se mergea su respuesta
+  //     (trae objetos anidados completos: formación, protección…).
+  //   - Si el back falla, se VUELVE ATRÁS: antes solo se mostraba un toast y la tabla
+  //     quedaba mostrando un valor que nunca se guardó. Solo se restauran los campos
+  //     que siguen teniendo el valor optimista — si el usuario ya los volvió a editar,
+  //     esa edición más nueva no se pisa.
+  //   - `alFallar: 'recargar'` es para escrituras cuya validación vive en el back y
+  //     pueden dejar más de un campo inconsistente: se recarga el proyecto entero.
+  function editarCampos(
+    id: number,
+    patch: Partial<Circuito>,
+    guardar: (realId: number) => Promise<unknown>,
+    opciones: { mergear?: boolean; alFallar?: 'revertir' | 'recargar' } = {},
+  ) {
+    const claves = Object.keys(patch) as (keyof Circuito)[]
+    let previo: Partial<Circuito> = {}
+    setTableros(prev => mapCirc(prev, id, c => {
+      previo = Object.fromEntries(claves.map(k => [k, c[k]]))
+      return { ...c, ...patch }
+    }))
+
+    firePending(id, pendingCircuitos, realId => {
+      // El circuito puede haber pasado de id temporal a real entre la edición y la respuesta.
+      const esEste = (c: Circuito) => c.id === realId || c.id === id
+      const mapear = (fn: (c: Circuito) => Circuito) =>
+        setTableros(prev => prev.map(t => ({ ...t, circuitos: t.circuitos.map(c => esEste(c) ? fn(c) : c) })))
+
+      guardar(realId)
+        .then(real => { if (opciones.mergear) mapear(c => ({ ...c, ...(real as Circuito) })) })
+        .catch(err => {
+          console.error(err)
+          if (opciones.alFallar === 'recargar') { recargar(); return }
+          mapear(c => {
+            const restaurado = { ...c } as Record<string, unknown>
+            for (const k of claves) if (c[k] === patch[k]) restaurado[k] = previo[k]
+            return restaurado as Circuito
+          })
+          showError('No se pudo guardar el cambio: se restauró el valor anterior.')
+        })
+    })
+  }
+
   function renombrarCircuito(id: number, nombre: string) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, circuito: nombre })))
-    circuitosApi.updateNombreCircuito(id, nombre).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    editarCampos(id, { circuito: nombre }, rid => circuitosApi.updateNombreCircuito(rid, nombre))
   }
 
   // Inserta el circuito optimistamente en la posición deseada, luego confirma el ID real
@@ -43,7 +86,7 @@ export function useCircuitosActions(
     setTableros(prev => {
       const t = prev.find(t => t.id === tableroId)
       if (!t) return prev
-      const s = [...t.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
+      const s = [...t.circuitos].sort((a, b) => a.orden - b.orden)
       const i = insertIndex ?? s.length
       const tag = `${t.tag}-C${t.circuitos.length + 1}`
       s.splice(i, 0, {
@@ -159,82 +202,71 @@ export function useCircuitosActions(
   }
 
   function actualizarDescripcion(id: number, descripcion: string | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, descripcion })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateDescripcionCircuito(rid, descripcion).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { descripcion }, rid => circuitosApi.updateDescripcionCircuito(rid, descripcion))
   }
 
   function actualizarFP(id: number, fp: number | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, FP: fp })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateFPCircuito(rid, fp).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { FP: fp }, rid => circuitosApi.updateFPCircuito(rid, fp))
   }
 
   function actualizarLargo(id: number, largo: number | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, Largo: largo })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateLargoCircuito(rid, largo).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { Largo: largo }, rid => circuitosApi.updateLargoCircuito(rid, largo))
   }
 
   function actualizarPotencia(id: number, potencia: number | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, potencia })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updatePotenciaCircuito(rid, potencia).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { potencia }, rid => circuitosApi.updatePotenciaCircuito(rid, potencia))
   }
 
   function actualizarTipoTension(id: number, tipo: string | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, tipo_tension: tipo })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateTipoTensionCircuito(rid, tipo).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { tipo_tension: tipo }, rid => circuitosApi.updateTipoTensionCircuito(rid, tipo))
   }
 
   function actualizarFase(id: number, fase: string | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, fase })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateFaseCircuito(rid, fase).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { fase }, rid => circuitosApi.updateFaseCircuito(rid, fase))
   }
 
   function actualizarTipo(id: number, tipo: string | null) {
-    const esAcometida = tipo === 'ACOMETIDA'
-    setTableros(prev => mapCirc(prev, id, c => ({
-      ...c, tipo, es_acometida: esAcometida,
+    editarCampos(id, {
+      tipo, es_acometida: tipo === 'ACOMETIDA',
       // Si deja de ser ALIMENTADOR se pierde el vínculo con el tablero destino.
       ...(tipo !== 'ALIMENTADOR' ? { tablero_destino_id: null, tablero_destino: null } : {}),
-    })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateTipoCircuito(rid, tipo).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    }, rid => circuitosApi.updateTipoCircuito(rid, tipo))
   }
 
   function actualizarEsAcometida(id: number, val: boolean) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, es_acometida: val })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateEsAcometidaCircuito(rid, val).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { es_acometida: val }, rid => circuitosApi.updateEsAcometidaCircuito(rid, val))
   }
 
   function actualizarMetodoInstalacion(id: number, metodo: string | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, metodo_instalacion: metodo })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateMetodoInstalacionCircuito(rid, metodo).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { metodo_instalacion: metodo }, rid => circuitosApi.updateMetodoInstalacionCircuito(rid, metodo))
   }
 
   function actualizarFcManual(id: number, fc: number | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, fc_manual: fc })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateFcManualCircuito(rid, fc).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { fc_manual: fc }, rid => circuitosApi.updateFcManualCircuito(rid, fc))
   }
 
   function actualizarFtManual(id: number, ft: number | null) {
-    setTableros(prev => mapCirc(prev, id, c => ({ ...c, ft_manual: ft })))
-    firePending(id, pendingCircuitos, rid => circuitosApi.updateFtManualCircuito(rid, ft).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') }))
+    editarCampos(id, { ft_manual: ft }, rid => circuitosApi.updateFtManualCircuito(rid, ft))
+  }
+
+  // Límite de selectividad manual (dato de fabricante): un valor en A, "total", o nada
+  // (vuelve al calculado).
+  function actualizarSelectividad(id: number, Is: number | null, total: boolean) {
+    const patch = { selectividad_Is: total ? null : Is, selectividad_total: total }
+    editarCampos(id, patch, rid => circuitosApi.updateSelectividadCircuito(rid, patch))
   }
 
   // Vincula (o desvincula, con tableroDestinoId null) un circuito ALIMENTADOR a otro tablero.
   // La validación de ciclos/duplicados vive en el back, por eso ante un error se recarga
   // el proyecto en vez de confiar en el estado optimista (podría haber quedado inconsistente).
   function vincularTableroAlimentador(id: number, tableroDestinoId: number | null) {
-    const destino = tableroDestinoId != null
-      ? tableros.find(t => t.id === tableroDestinoId)
-      : null
-    setTableros(prev => mapCirc(prev, id, c => ({
-      ...c,
+    const destino = tableroDestinoId != null ? tableros.find(t => t.id === tableroDestinoId) : null
+    editarCampos(id, {
       // El back fuerza tipo=ALIMENTADOR en la misma escritura cuando se vincula a un destino.
       ...(destino ? { tipo: 'ALIMENTADOR', es_acometida: false } : {}),
       tablero_destino_id: tableroDestinoId,
       tablero_destino: destino ? { id: destino.id, tag: destino.tag, nombre: destino.nombre } : null,
-    })))
-    firePending(id, pendingCircuitos, rid =>
-      circuitosApi.updateTableroDestinoCircuito(rid, tableroDestinoId).catch(err => { console.error(err); recargar() })
-    )
+    }, rid => circuitosApi.updateTableroDestinoCircuito(rid, tableroDestinoId), { alFallar: 'recargar' })
   }
 
   function agregarAcometida(tableroId: number, nombre: string, insertIndex: number) {
@@ -252,7 +284,7 @@ export function useCircuitosActions(
     setTableros(prev => {
       const t = prev.find(t => t.id === tableroId)
       if (!t) return prev
-      const s = [...t.circuitos].sort((a, b) => (a as any).orden - (b as any).orden)
+      const s = [...t.circuitos].sort((a, b) => a.orden - b.orden)
       s.splice(insertIndex, 0, temp)
       const reordered = s.map((c, i) => ({ ...c, orden: i }))
       capturedOrderAlim = reordered.map((c, i) => ({ id: c.id, orden: i }))
@@ -280,15 +312,18 @@ export function useCircuitosActions(
     pendingCircuitos.current.set(tempId, promise)
   }
 
+  // Estas tres mergean la respuesta del back (`mergear`): trae el objeto anidado
+  // completo y los ids definitivos. El estado optimista ya muestra el objeto completo
+  // que devolvió el modal, así que la UI no espera al PATCH para actualizarse.
   function actualizarFormacion(
     circuitoId: number,
     data: FormacionPatch,
     cables: { fase: Cable; neutro: Cable | null; tierra: Cable | null },
   ) {
-    setTableros(prev => mapCirc(prev, circuitoId, c => ({
-      ...c,
+    const actual = tableros.flatMap(t => t.circuitos).find(c => c.id === circuitoId)
+    editarCampos(circuitoId, {
       formacion: {
-        id:              c.formacion?.id ?? 0,
+        id:              actual?.formacion?.id ?? 0,
         cable_id:        data.cable_id,
         cond_por_fase:   data.cond_por_fase,
         Nfases:          data.Nfases,
@@ -300,30 +335,17 @@ export function useCircuitosActions(
         cable_neutro: cables.neutro,
         cable_tierra: cables.tierra,
       },
-    })))
-    const fire = (realId: number) =>
-      circuitosApi.updateFormacion(realId, data)
-        .then(real => setTableros(prev => mapCirc(prev, realId, c => ({ ...c, ...real as Circuito }))))
-        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
-    firePending(circuitoId, pendingCircuitos, fire)
+    }, rid => circuitosApi.updateFormacion(rid, data), { mergear: true })
   }
 
   function actualizarProteccion(circuitoId: number, proteccion: Proteccion | null) {
-    setTableros(prev => mapCirc(prev, circuitoId, c => ({ ...c, proteccion_id: proteccion?.id ?? null, proteccion })))
-    const fire = (realId: number) =>
-      circuitosApi.updateProteccionCircuito(realId, proteccion?.id ?? null)
-        .then(real => setTableros(prev => mapCirc(prev, realId, c => ({ ...c, ...real as Circuito }))))
-        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
-    firePending(circuitoId, pendingCircuitos, fire)
+    editarCampos(circuitoId, { proteccion_id: proteccion?.id ?? null, proteccion },
+      rid => circuitosApi.updateProteccionCircuito(rid, proteccion?.id ?? null), { mergear: true })
   }
 
   function asignarGrupoDiferencial(circuitoId: number, grupo: GrupoDiferencial | null) {
-    setTableros(prev => mapCirc(prev, circuitoId, c => ({ ...c, grupo_diferencial_id: grupo?.id ?? null, grupo_diferencial: grupo })))
-    const fire = (realId: number) =>
-      circuitosApi.updateGrupoDiferencialCircuito(realId, grupo?.id ?? null)
-        .then(real => setTableros(prev => mapCirc(prev, realId, c => ({ ...c, ...real as Circuito }))))
-        .catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
-    firePending(circuitoId, pendingCircuitos, fire)
+    editarCampos(circuitoId, { grupo_diferencial_id: grupo?.id ?? null, grupo_diferencial: grupo },
+      rid => circuitosApi.updateGrupoDiferencialCircuito(rid, grupo?.id ?? null), { mergear: true })
   }
 
   return {
@@ -331,7 +353,7 @@ export function useCircuitosActions(
     reordenarCircuitos,
     actualizarDescripcion, actualizarFP, actualizarLargo, actualizarPotencia,
     actualizarTipoTension, actualizarFase, actualizarTipo, actualizarEsAcometida,
-    actualizarMetodoInstalacion, actualizarFcManual, actualizarFtManual,
+    actualizarMetodoInstalacion, actualizarFcManual, actualizarFtManual, actualizarSelectividad,
     vincularTableroAlimentador,
     agregarAcometida, actualizarFormacion, actualizarProteccion, asignarGrupoDiferencial, crearCircuitoAuxiliar, reordenarSubcircuitos,
   }

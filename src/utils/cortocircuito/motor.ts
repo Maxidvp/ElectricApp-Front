@@ -122,8 +122,11 @@ function calcularPuntoEscenario(
   const c = obtenerC(punto.tension_nominal, esc, btTolerancia10)
   const Un = punto.tension_nominal
 
+  // Las advertencias sobre Z0 solo importan si se pidió alguna falla a tierra:
+  // en una trifásica son ruido y tapan los avisos que sí cambian el resultado.
+  const necesitaZ0 = punto.tipos_falla.some(t => t === 'BIFASICA_TIERRA' || t === 'MONOFASICA_TIERRA')
   const impedancias = construirImpedancias(entrada, esc, Un)
-  advertenciasComunes.push(...impedancias.advertencias)
+  advertenciasComunes.push(...impedancias.advertencias.filter(a => necesitaZ0 || !a.includes('Z0')))
 
   // 1) Z1 sin motores, para evaluar el criterio de inclusión §5.6
   const Z1_sin_motores = reducirEnNodo(impedancias.grafo, impedancias.fuentesZ1, punto.nodo, false)
@@ -146,7 +149,6 @@ function calcularPuntoEscenario(
   const Z2 = Z1
 
   // 3) Z0 (solo si hace falta para alguna falla a tierra pedida)
-  const necesitaZ0 = punto.tipos_falla.some(t => t === 'BIFASICA_TIERRA' || t === 'MONOFASICA_TIERRA')
   const Z0 = necesitaZ0 ? reducirEnNodo(impedancias.grafo, impedancias.fuentesZ0, punto.nodo, true) : null
 
   const rx = Z1.im !== 0 ? Z1.re / Z1.im : 0

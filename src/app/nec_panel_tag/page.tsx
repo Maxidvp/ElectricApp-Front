@@ -5,7 +5,7 @@ import { useProyectos } from '@/context/ProyectosContext'
 import { renombrarCircuitosBulk, actualizarFasesBulk } from '@/services/circuitos'
 import { updateTablero } from '@/services/tableros'
 import type { Circuito } from '@/context/types'
-import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
+import { useTableroSeleccionado } from '@/hooks/useTableroSeleccionado'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -125,7 +125,6 @@ export default function NecPanelTagPage() {
   const faseLabels: [string, string, string] = FASE_LABELS[proyectoActivo?.nomenclatura_fases ?? 'RST'] ?? FASE_LABELS.RST
 
   // Persist selected tablero via cookie (same pattern as other pages)
-  const [selectedId, setSelectedId] = useState<number | null>(getLastTableroId)
 
   // Panel de breakers — circuitos de potencia — no aplica a tableros CONTROL/DATOS.
   // Los tableros sin categoria (legado) se consideran POTENCIA.
@@ -139,10 +138,7 @@ export default function NecPanelTagPage() {
   const [savedOk,    setSavedOk]    = useState(false)
 
   // Resolve selected tablero from context
-  const idEfectivo = selectedId != null && tablerosPotencia.some(t => t.id === selectedId)
-    ? selectedId
-    : tablerosPotencia[0]?.id ?? null
-  const tablero    = tablerosPotencia.find(t => t.id === idEfectivo) ?? null
+  const { tablero, idEfectivo, seleccionarTablero } = useTableroSeleccionado(tablerosPotencia)
 
   // Rebuild layout and sync totalSlots when tablero changes
   useEffect(() => {
@@ -238,8 +234,7 @@ export default function NecPanelTagPage() {
           value={idEfectivo ?? ''}
           onChange={e => {
             const id = Number(e.target.value)
-            setSelectedId(id)
-            setLastTableroId(id)
+            seleccionarTablero(id)
           }}
           className="px-2 py-1 bg-surface-tonal-a10 border border-surface-tonal-a20 rounded-md text-font-a0 text-[13px] cursor-pointer outline-none focus:border-primary-a20"
         >

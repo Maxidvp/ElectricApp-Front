@@ -1,10 +1,9 @@
 'use client'
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useProyectos } from '@/context/ProyectosContext'
 import { useAuth } from '@/context/AuthContext'
-import { getLastTableroId, TABLERO_ID_EVENT } from '@/utils/cookies'
 import CambiarPasswordModal from '@/components/CambiarPasswordModal'
 
 // `categoria: null` = siempre visible, no depende del tablero seleccionado.
@@ -21,6 +20,7 @@ const NAV_LINKS: { href: string; label: string; categoria: NavCategoria; adminOn
   { href: '/caidas',         label: 'Caídas',         categoria: 'POTENCIA' },
   { href: '/cortocircuitos', label: 'Cortocircuitos', categoria: 'POTENCIA' },
   { href: '/unifilares',     label: 'Unifilares',     categoria: 'POTENCIA' },
+  { href: '/verificacion',   label: 'Verificación',   categoria: null },
   { href: '/ruteo',          label: 'Ruteo',          categoria: null },
   { href: '/ocupaciones',    label: 'Ocupaciones',    categoria: null },
   { href: '/caneros',        label: 'Cañeros',        categoria: null },
@@ -35,7 +35,7 @@ const NAV_LINKS: { href: string; label: string; categoria: NavCategoria; adminOn
 export default function Navbar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { tableros } = useProyectos()
+  const { tableros, tableroSeleccionadoId } = useProyectos()
   const { usuario, logout } = useAuth()
 
   const [menuAbierto, setMenuAbierto] = useState(false)
@@ -51,18 +51,7 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', cerrarSiEsAfuera)
   }, [menuAbierto])
 
-  // El cambio de tablero se persiste en una cookie leída por cada página (no en
-  // el contexto), así que este componente no se entera solo con el re-render
-  // normal de React — necesita escuchar el evento que dispara setLastTableroId
-  // para actualizarse aunque el usuario no haya navegado a otra ruta.
-  const [, forceUpdate] = useReducer(x => x + 1, 0)
-  useEffect(() => {
-    window.addEventListener(TABLERO_ID_EVENT, forceUpdate)
-    return () => window.removeEventListener(TABLERO_ID_EVENT, forceUpdate)
-  }, [])
-
-  const tableroIdSeleccionado = getLastTableroId()
-  const tableroSeleccionado = tableros.find(t => t.id === tableroIdSeleccionado) ?? tableros[0]
+  const tableroSeleccionado = tableros.find(t => t.id === tableroSeleccionadoId) ?? tableros[0]
   // Sin categoria asignada (tableros legado) o sin tablero aún: se asume POTENCIA.
   const categoriaActiva: 'POTENCIA' | 'CONTROL' | 'DATOS' =
     tableroSeleccionado?.categoria === 'CONTROL' || tableroSeleccionado?.categoria === 'DATOS'
@@ -87,12 +76,12 @@ export default function Navbar() {
 
       <div className="w-px h-[22px] bg-surface-tonal-a20 shrink-0" />
 
-      <div className="flex gap-1 flex-1">
+      <div className="flex gap-1 flex-1 min-w-0 overflow-x-auto">
         {linksVisibles.map(l => (
           <Link
             key={l.href}
             href={l.href}
-            className={`text-[13px] no-underline py-[5px] px-[10px] rounded-md transition-colors ${
+            className={`text-[13px] no-underline py-[5px] px-[10px] rounded-md transition-colors whitespace-nowrap shrink-0 ${
               pathname === l.href
                 ? 'text-font-a0 bg-surface-tonal-a10'
                 : 'text-surface-tonal-a40 hover:text-font-a0 hover:bg-surface-tonal-a10'

@@ -10,7 +10,6 @@ import { RuteoCanvas } from './RuteoCanvas'
 import { RuteoPanel } from './RuteoPanel'
 import { ConjuntosModal } from './ConjuntosModal'
 import ConfirmModal from '@/components/ConfirmModal'
-import { getLastTableroId } from '@/utils/cookies'
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
 
@@ -43,6 +42,7 @@ export default function RuteoPage() {
     addSegmento, removeSegmento, removeSegmentos, editSegmentosZ, splitSegmento,
     asignarCircuito, quitarCircuito, asignarLazo, quitarLazo, asignarPuertoRed, quitarPuertoRed,
     addPared, removePared,
+    tableroSeleccionadoId,
   } = useProyectos()
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null
@@ -289,7 +289,7 @@ export default function RuteoPage() {
       const conjunto = conjuntos.find(c => c.id === activeConjuntoId)
       const conjuntoTableros = conjunto ? tableros.filter(tb => conjunto.tableros.some(ct => ct.id === tb.id)) : tableros
       if (conjuntoTableros.length > 0) {
-        const lastId = getLastTableroId()
+        const lastId = tableroSeleccionadoId
         const preferido = lastId != null && conjuntoTableros.some(tb => tb.id === lastId) ? lastId : conjuntoTableros[0].id
         setAsignarTableroId(preferido)
       }

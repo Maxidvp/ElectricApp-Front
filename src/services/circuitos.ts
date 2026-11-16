@@ -114,6 +114,16 @@ export async function updateFtManualCircuito(id: number, ft_manual: number | nul
   return res.json()
 }
 
+export async function updateSelectividadCircuito(id: number, data: { selectividad_Is: number | null; selectividad_total: boolean }) {
+  const res = await apiFetch(`/circuitos/${id}/selectividad`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Error al actualizar el límite de selectividad')
+  return res.json()
+}
+
 export async function updateNombreCircuito(id: number, circuito: string) {
   const res = await apiFetch(`/circuitos/${id}/nombre`, {
     method: 'PATCH',

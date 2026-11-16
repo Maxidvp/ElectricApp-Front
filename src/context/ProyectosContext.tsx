@@ -47,6 +47,10 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   const [activaArquitecturaId,setActivaArquitecturaIdState] = useState<number | null>(null)
   const [loading,             setLoading]             = useState(true)
   const [error,               setError]               = useState<string | null>(null)
+  // Tablero seleccionado — global: lo comparten todas las páginas y el Navbar. La
+  // cookie es solo para recordarlo entre recargas.
+  const [tableroSeleccionadoId, setTableroSeleccionadoId] = useState<number | null>(getLastTableroId)
+  const seleccionarTablero = (id: number) => { setTableroSeleccionadoId(id); setLastTableroId(id) }
 
   const { usuario, loading: authLoading } = useAuth()
 
@@ -54,6 +58,9 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   const pendingSegmentos = useRef<Map<number, Promise<Segmento>>>(new Map())
   const editVer          = useRef<Map<number, number>>(new Map())
   const proyectoActivoRef = useRef<ProyectoMeta | null>(null)
+  // N° de la última carga de proyecto pedida: si el usuario cambia de proyecto antes
+  // de que responda la anterior, la respuesta vieja se descarta en vez de pisar al nuevo.
+  const cargaSeq = useRef(0)
 
   const LS_PROYECTO    = 'ea_proyecto'
   const lsConjunto     = (id: number) => `ea_conjunto_${id}`
@@ -102,7 +109,10 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   function setProyectoActivo(p: ProyectoMeta | null) {
     setProyectoActivoState(p)
     proyectoActivoRef.current = p
+    const seq = ++cargaSeq.current
+    const vigente = () => seq === cargaSeq.current
     if (!p) {
+      setLoading(false)
       localStorage.removeItem(LS_PROYECTO)
       setTableros([]); setConjuntos([]); setSegmentos([]); setParedes([]); setArquitecturaes([]); setCanieros([])
       setActiveConjuntoIdState(null); setActivaArquitecturaIdState(null)
@@ -113,6 +123,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     apiFetch(`/proyectos/${p.id}`)
       .then(r => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json() })
       .then(data => {
+        if (!vigente()) return
         const tablerosList = data.tableros ?? []
         setTableros(tablerosList)
 
@@ -126,9 +137,8 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         prefetchCablesFamilias(familiaIds)
 
         if (tablerosList.length > 0) {
-          const cookieId = getLastTableroId()
-          if (!cookieId || !tablerosList.find((t: any) => t.id === cookieId))
-            setLastTableroId(tablerosList[0].id)
+          const recordado = getLastTableroId()
+          seleccionarTablero(tablerosList.some((t: Tablero) => t.id === recordado) ? recordado! : tablerosList[0].id)
         }
 
         const conjs: Conjunto[] = (data.conjuntos ?? []).map((c: any) => ({
@@ -154,8 +164,8 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         const resolvedTabla  = (activeConjData?.arquitecturas?.[0]?.id as number | undefined) ?? null
         setActivaArquitecturaIdState(resolvedTabla)
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch(err => { if (vigente()) setError(err.message) })
+      .finally(() => { if (vigente()) setLoading(false) })
   }
 
   const recargar = () => { if (proyectoActivo) setProyectoActivo(proyectoActivo) }
@@ -234,9 +244,36 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // ── Escrituras optimistas con vuelta atrás ─────────────────────
+  // Antes, si el back rechazaba un cambio solo se mostraba un toast y la pantalla
+  // seguía mostrando un valor que nunca se guardó.
+  //   - Edición: se restaura el ítem tal como estaba.
+  //   - Borrado: se recarga el proyecto (lo borrado pudo tener hijos en cascada que
+  //     no conviene reconstruir a mano).
+  type Coleccion = 'fuentes' | 'lazos' | 'puertos_red'
+
+  function editarItem(col: Coleccion, id: number, data: object, guardar: () => Promise<unknown>) {
+    type Item = { id: number }
+    let previo: Item | undefined
+    const mapear = (fn: (x: Item) => Item) =>
+      setTableros(prev => prev.map(t => ({ ...t, [col]: (t[col] as Item[]).map(x => x.id === id ? fn(x) : x) })))
+    mapear(x => { previo = x; return { ...x, ...data } })
+    return guardar().catch(err => {
+      console.error(err)
+      if (previo) mapear(() => previo!)
+      showError('No se pudo guardar el cambio: se restauró el valor anterior.')
+    })
+  }
+
+  function alFallarBorrado(err: unknown) {
+    console.error(err)
+    showError('No se pudo eliminar: se recargó el proyecto.')
+    recargar()
+  }
+
   async function agregarTablero(data: any): Promise<Tablero> {
     const real = await tablerosApi.createTablero({ ...data, proyecto_id: proyectoActivo?.id ?? null }) as Tablero
-    setTableros(prev => [...prev, { ...real, circuitos: [], fuentes: [], lazos: [], puertos_red: [], elementos_unifilar: [] }])
+    setTableros(prev => [...prev, { ...real, circuitos: [], fuentes: [], lazos: [], puertos_red: [], elementos_unifilar: [], grupos_diferenciales: [] }])
     return real
   }
 
@@ -249,18 +286,28 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       lazos: real.lazos ?? [],
       puertos_red: real.puertos_red ?? [],
       elementos_unifilar: real.elementos_unifilar ?? [],
+      grupos_diferenciales: real.grupos_diferenciales ?? [],
     }])
     return real
   }
 
   async function actualizarTablero(id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) {
-    setTableros(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
-    await tablerosApi.updateTablero(id, data).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    let previo: Tablero | undefined
+    setTableros(prev => prev.map(t => { if (t.id !== id) return t; previo = t; return { ...t, ...data } }))
+    await tablerosApi.updateTablero(id, data).catch(err => {
+      console.error(err)
+      // Solo vuelven atrás los campos de esta edición: circuitos, fuentes, etc. pueden
+      // haber cambiado mientras tanto y no hay que pisarlos.
+      const claves = Object.keys(data) as (keyof Tablero)[]
+      if (previo) setTableros(prev => prev.map(t => t.id === id
+        ? { ...t, ...Object.fromEntries(claves.map(k => [k, previo![k]])) } : t))
+      showError('No se pudo guardar el cambio: se restauró el valor anterior.')
+    })
   }
 
   async function eliminarTablero(id: number) {
     setTableros(prev => prev.filter(t => t.id !== id))
-    await tablerosApi.deleteTablero(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    await tablerosApi.deleteTablero(id).catch(alFallarBorrado)
   }
 
   // ── Fuentes de alimentación CRUD ───────────────────────────────
@@ -270,16 +317,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function actualizarFuente(id: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) {
-    setTableros(prev => prev.map(t => ({
-      ...t,
-      fuentes: t.fuentes.map(f => f.id === id ? { ...f, ...data } : f),
-    })))
-    await fuentesApi.updateFuenteAlimentacion(id, data).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    await editarItem('fuentes', id, data, () => fuentesApi.updateFuenteAlimentacion(id, data))
   }
 
   async function eliminarFuente(id: number) {
     setTableros(prev => prev.map(t => ({ ...t, fuentes: t.fuentes.filter(f => f.id !== id) })))
-    await fuentesApi.deleteFuenteAlimentacion(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    await fuentesApi.deleteFuenteAlimentacion(id).catch(alFallarBorrado)
   }
 
   // ── Grupos diferenciales ────────────────────────────────────────
@@ -338,16 +381,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function actualizarLazo(id: number, data: Omit<LazoInstrumentacion, 'id' | 'tablero_id'>) {
-    setTableros(prev => prev.map(t => ({
-      ...t,
-      lazos: t.lazos.map(l => l.id === id ? { ...l, ...data } : l),
-    })))
-    await lazosApi.updateLazoInstrumentacion(id, data).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    await editarItem('lazos', id, data, () => lazosApi.updateLazoInstrumentacion(id, data))
   }
 
   async function eliminarLazo(id: number) {
     setTableros(prev => prev.map(t => ({ ...t, lazos: t.lazos.filter(l => l.id !== id) })))
-    await lazosApi.deleteLazoInstrumentacion(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    await lazosApi.deleteLazoInstrumentacion(id).catch(alFallarBorrado)
   }
 
   async function agregarLazoVacio(tableroId: number) {
@@ -367,6 +406,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error(err)
       setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, lazos: t.lazos.filter(l => l.id !== tempId) } : t))
+      showError('No se pudo crear el lazo. Reintentá.')
     }
   }
 
@@ -393,16 +433,12 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function actualizarPuertoRed(id: number, data: Omit<PuertoRed, 'id' | 'tablero_id'>) {
-    setTableros(prev => prev.map(t => ({
-      ...t,
-      puertos_red: t.puertos_red.map(p => p.id === id ? { ...p, ...data } : p),
-    })))
-    await puertosRedApi.updatePuertoRed(id, data).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    await editarItem('puertos_red', id, data, () => puertosRedApi.updatePuertoRed(id, data))
   }
 
   async function eliminarPuertoRed(id: number) {
     setTableros(prev => prev.map(t => ({ ...t, puertos_red: t.puertos_red.filter(p => p.id !== id) })))
-    await puertosRedApi.deletePuertoRed(id).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
+    await puertosRedApi.deletePuertoRed(id).catch(alFallarBorrado)
   }
 
   async function agregarPuertoRedVacio(tableroId: number) {
@@ -422,6 +458,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error(err)
       setTableros(prev => prev.map(t => t.id === tableroId ? { ...t, puertos_red: t.puertos_red.filter(p => p.id !== tempId) } : t))
+      showError('No se pudo crear el puerto. Reintentá.')
     }
   }
 
@@ -460,6 +497,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       agregarFamiliaProyecto, quitarFamiliaProyecto,
       agregarParticipante, quitarParticipante, restaurarCheckpoint,
       tableros, loading, error, recargar,
+      tableroSeleccionadoId, seleccionarTablero,
       getTablero, getCircuito,
       agregarTablero, duplicarTablero, actualizarTablero, eliminarTablero,
       agregarFuente, actualizarFuente, eliminarFuente,

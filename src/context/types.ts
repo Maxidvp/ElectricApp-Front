@@ -13,11 +13,18 @@ export type Cable = {
   id: number
   nombre: string
   seccion_f: string
+  seccion_n?: string   // sección del neutro incluido en el cable (multipolares)
   diametro: number | null
   calibre_tipo: string
   familia_id: number
   Nfases: number
+  Nneutro?: number     // > 0 si el cable multipolar ya trae el neutro adentro
   Iadm: number
+  // Corriente admisible por forma de instalación — null = el catálogo no la tiene y
+  // se usa `Iadm` (ver utils/ampacidad.ts)
+  Iadm_canio?: number | null
+  Iadm_aire?: number | null
+  Iadm_enterrado?: number | null
   familia?: { material: string | null; temperatura: number | null; aislamiento: string | null; norma: string | null } | null
 }
 
@@ -93,7 +100,11 @@ export type Circuito = {
   metodo_instalacion: string | null
   fc_manual: number | null
   ft_manual: number | null
-  role: string | null       // null = principal, 'retorno', 'combinacion', 'ramal'
+  // Límite de selectividad con la protección de aguas arriba, dato de fabricante
+  // cargado a mano (pisa al calculado — ver utils/selectividad.ts)
+  selectividad_Is?: number | null   // A
+  selectividad_total?: boolean
+  role: string | null      // null = principal, 'retorno', 'combinacion', 'ramal'
   parent_id: number | null
   // Solo aplica si tipo === 'ALIMENTADOR': tablero al que este circuito alimenta
   tablero_destino_id: number | null
@@ -203,8 +214,6 @@ export type Tablero = {
   tension_tri: number | null
   frecuencia: number | null
   corriente_nom: number | null
-  corriente_cc_max: number | null
-  corriente_cc_min: number | null
   potencia_inst: number | null   // kW — en CONTROL/DATOS representa la carga total del tablero
   potencia_dem: number | null    // kW — solo aplica a categoria POTENCIA
   factor_potencia: number | null   // FP — solo aplica a categoria CONTROL/DATOS
@@ -244,6 +253,10 @@ export type ProyectosContextType = {
   loading: boolean
   error: string | null
   recargar: () => void
+  // Tablero seleccionado, compartido por todas las páginas y el Navbar (ver
+  // hooks/useTableroSeleccionado.ts para resolverlo contra los tableros de una página).
+  tableroSeleccionadoId: number | null
+  seleccionarTablero: (id: number) => void
   getTablero: (id: number) => Tablero | undefined
   getCircuito: (id: number) => Circuito | undefined
   renombrarCircuito: (id: number, nombre: string) => void
@@ -261,6 +274,7 @@ export type ProyectosContextType = {
   actualizarEsAcometida: (id: number, val: boolean) => void
   actualizarMetodoInstalacion: (id: number, metodo: string | null) => void
   actualizarFcManual: (id: number, fc: number | null) => void
+  actualizarSelectividad: (id: number, Is: number | null, total: boolean) => void
   actualizarFtManual: (id: number, ft: number | null) => void
   vincularTableroAlimentador: (id: number, tableroDestinoId: number | null) => void
   agregarAcometida: (tableroId: number, nombre: string, insertIndex: number) => void
