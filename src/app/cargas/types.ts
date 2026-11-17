@@ -14,6 +14,7 @@ export type CircuitoAPI = {
   potencia: number | null
   tablero_destino_id: number | null
   tablero_destino: { id: number; tag: string; nombre: string | null } | null
+  acometida_destino_id?: number | null
   formacion: {
     nombre: string
     cond_por_fase: number
@@ -47,6 +48,7 @@ export type CircuitoRow = {
   formacionData: FormacionData | null
   tablero_destino_id: number | null
   tablero_destino: { id: number; tag: string; nombre: string | null } | null
+  acometida_destino: string | null   // nombre de la acometida del destino a la que llega
 }
 
 // Datos que necesita FormacionModal para pre-cargar un formulario

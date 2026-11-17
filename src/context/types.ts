@@ -109,6 +109,8 @@ export type Circuito = {
   // Solo aplica si tipo === 'ALIMENTADOR': tablero al que este circuito alimenta
   tablero_destino_id: number | null
   tablero_destino: { id: number; tag: string; nombre: string | null } | null
+  // Acometida del tablero destino a la que llega (null = toda la carga del tablero)
+  acometida_destino_id?: number | null
 }
 
 export type FuenteAlimentacion = {
@@ -276,7 +278,7 @@ export type ProyectosContextType = {
   actualizarFcManual: (id: number, fc: number | null) => void
   actualizarSelectividad: (id: number, Is: number | null, total: boolean) => void
   actualizarFtManual: (id: number, ft: number | null) => void
-  vincularTableroAlimentador: (id: number, tableroDestinoId: number | null) => void
+  vincularTableroAlimentador: (id: number, tableroDestinoId: number | null, acometidaDestinoId?: number | null) => void
   agregarAcometida: (tableroId: number, nombre: string, insertIndex: number) => void
   crearCircuitoAuxiliar: (parentId: number, role: 'retorno' | 'combinacion' | 'ramal') => Promise<Circuito>
   reordenarSubcircuitos: (orderedHijoIds: number[]) => void

@@ -8,12 +8,12 @@
 //   falta — no se pudo verificar porque falta un dato; no es un "cumple".
 //   aviso — cumple o no bloquea, pero el resultado tiene una salvedad.
 import type { Circuito, Tablero } from '@/context/types'
-import { resolverCargaCircuito, tensionesDe, type CargaCircuito } from '@/utils/cargas'
+import { resolverCargaCircuito, resolverParaSuma, calcCorrientesPorFase, tensionesDe, type CargaCircuito } from '@/utils/cargas'
 import { evaluarAmpacidad, type AmpacidadCircuito, type ParametrosSitio } from '@/utils/ampacidad'
 import { evaluarCaida, LIMITE_CAIDA_PCT, type CaidaCircuito } from '@/utils/caida'
 import { calcularIccTablero, type IccTablero } from '@/utils/calcularIccTablero'
 import { verificarCircuitoCC, type BarraCC, type ResultadoCircuitoCC } from '@/utils/verificacionCortocircuito'
-import { evaluarSelectividad, proteccionAguasArriba, type Selectividad } from '@/utils/selectividad'
+import { selectividadCircuito, type Selectividad } from '@/utils/selectividad'
 
 export type NivelHallazgo = 'error' | 'falta' | 'aviso'
 export type AreaHallazgo = 'Datos' | 'Ampacidad' | 'Protección' | 'Caída' | 'Cortocircuito' | 'Selectividad'
@@ -35,6 +35,8 @@ export type TableroEvaluado = {
   tablero: Tablero
   icc: IccTablero
   hallazgos: Hallazgo[]          // propios del tablero (no de un circuito)
+  // Corriente por fase de las salidas (sin la acometida, que es su suma) — null sin datos
+  fases: { R: number; S: number; T: number } | null
   circuitos: CircuitoEvaluado[]
 }
 
@@ -137,7 +139,7 @@ export function evaluarProyecto(tableros: Tablero[], segmentos: Segmento[], siti
         const ampacidad = evaluarAmpacidad(c, carga.corriente, segmentos, sitio)
         const caida = evaluarCaida(c, carga)
         const cc = verificarCircuitoCC(c, barra)
-        const selectividad = evaluarSelectividad(c, proteccionAguasArriba(c, tablero, tableros), barra.Icc_max_A)
+        const selectividad = selectividadCircuito(c, tablero, tableros, barra.Icc_max_A)
         return { circuito: c, carga, ampacidad, caida, cc, selectividad, hallazgos: hallazgosCircuito(c, carga, ampacidad, caida, cc, barra, selectividad) }
       })
       // Una reserva sin nada cargado no es un circuito a verificar.
@@ -148,7 +150,9 @@ export function evaluarProyecto(tableros: Tablero[], segmentos: Segmento[], siti
       if (e.hallazgos.length === 0) resumen.circuitosOk++
       contar(e.hallazgos)
     }
-    return { tablero, icc, hallazgos: hallazgosTablero, circuitos }
+    const fases = calcCorrientesPorFase(
+      resolverParaSuma(principales.filter(c => !c.es_acometida), tableros), tensiones)
+    return { tablero, icc, hallazgos: hallazgosTablero, fases, circuitos }
   })
 
   return { tableros: evaluados, resumen }

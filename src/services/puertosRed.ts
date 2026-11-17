@@ -51,3 +51,10 @@ export async function reordenarPuertosRed(ordenes: { id: number; orden: number }
   if (!res.ok) throw new Error('Error al reordenar los puertos de red')
   return res.json()
 }
+
+// Deshace un borrado (el back hace borrado lógico: ver Back/src/lib/borradoLogico.ts).
+export async function restaurarPuertoRed(id: number) {
+  const res = await apiFetch(`/puertos-red/${id}/restaurar`, { method: 'POST' })
+  if (!res.ok) throw new Error('No se pudo restaurar')
+  return res.json()
+}

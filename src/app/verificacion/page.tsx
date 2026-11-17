@@ -56,8 +56,8 @@ export default function Verificacion() {
           <Chip n={resumen.error} nivel="error" texto="no cumplen" />
           <Chip n={resumen.falta} nivel="falta" texto="datos faltantes" />
           <Chip n={resumen.aviso} nivel="aviso" texto="salvedades" />
-          <Link href="/memoria" className="rounded-md border border-surface-tonal-a30 px-3 py-1 text-[12px] text-font-a0 no-underline hover:bg-surface-tonal-a10">
-            Memoria de cálculo →
+          <Link href="/memorias" className="rounded-md border border-surface-tonal-a30 px-3 py-1 text-[12px] text-font-a0 no-underline hover:bg-surface-tonal-a10">
+            Memorias y planillas →
           </Link>
         </div>
       </div>

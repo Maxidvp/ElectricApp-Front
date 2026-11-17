@@ -77,7 +77,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       size: 110,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
-        const { id, tipo, tablero_destino } = info.row.original
+        const { id, tipo, tablero_destino, acometida_destino } = info.row.original
         return (
           <div className="flex flex-col gap-px">
             <select
@@ -101,9 +101,9 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
               <span
                 onClick={e => { e.stopPropagation(); irATablero(tablero_destino.id) }}
                 className="text-[10px] text-info-a10 underline decoration-dotted cursor-pointer truncate block text-center"
-                title={`Ir a ${tablero_destino.nombre || tablero_destino.tag}`}
+                title={`Ir a ${tablero_destino.nombre || tablero_destino.tag}${acometida_destino ? ` — llega a la acometida ${acometida_destino}` : ''}`}
               >
-                → {tablero_destino.nombre || tablero_destino.tag}
+                → {tablero_destino.nombre || tablero_destino.tag}{acometida_destino ? ` · ${acometida_destino}` : ''}
               </span>
             )}
           </div>

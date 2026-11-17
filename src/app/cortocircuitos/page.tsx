@@ -12,7 +12,7 @@ import { generarFormacion } from '@/utils/electricidad'
 import { impedanciaRed } from '@/utils/cortocircuito'
 import { verificarCircuitoCC, type BarraCC, type TipoFallaMin } from '@/utils/verificacionCortocircuito'
 import { calcularIccTablero } from '@/utils/calcularIccTablero'
-import { evaluarSelectividad, proteccionAguasArriba, type Selectividad, type EstadoSelectividad } from '@/utils/selectividad'
+import { selectividadCircuito, type Selectividad, type EstadoSelectividad } from '@/utils/selectividad'
 import CeldaEditable from '@/components/CeldaEditable'
 import { varianteLabel } from '@/utils/protecciones'
 import { useTableroSeleccionado } from '@/hooks/useTableroSeleccionado'
@@ -159,7 +159,7 @@ export default function Cortocircuitos() {
         formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
         formacionData: formacionData(c as any),
         ...verificarCircuitoCC(c, barra),
-        selectividad: evaluarSelectividad(c, proteccionAguasArriba(c, tablero, tableros), barra.Icc_max_A),
+        selectividad: selectividadCircuito(c, tablero, tableros, barra.Icc_max_A),
         selManual: c.selectividad_total ? 'total' : c.selectividad_Is != null ? String(c.selectividad_Is) : '',
         proteccionId: proteccion?.id ?? null,
         proteccionData: proteccion,

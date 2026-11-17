@@ -165,11 +165,11 @@ export async function updateTipoCircuito(id: number, tipo: string | null) {
   return res.json()
 }
 
-export async function updateTableroDestinoCircuito(id: number, tablero_destino_id: number | null) {
+export async function updateTableroDestinoCircuito(id: number, tablero_destino_id: number | null, acometida_destino_id: number | null = null) {
   const res = await apiFetch(`/circuitos/${id}/tablero-destino`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tablero_destino_id }),
+    body: JSON.stringify({ tablero_destino_id, acometida_destino_id }),
   })
   if (!res.ok) {
     const error = await res.json().catch(() => null)
@@ -254,5 +254,11 @@ export async function updateFormacion(circuitoId: number, data: FormacionPatch) 
     body: JSON.stringify(data)
   })
   if (!res.ok) throw new Error('Error al actualizar la formación')
+  return res.json()
+}
+// Deshace un borrado (el back hace borrado lógico: ver Back/src/lib/borradoLogico.ts).
+export async function restaurarCircuito(id: number) {
+  const res = await apiFetch(`/circuitos/${id}/restaurar`, { method: 'POST' })
+  if (!res.ok) throw new Error('No se pudo restaurar')
   return res.json()
 }

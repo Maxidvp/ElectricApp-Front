@@ -45,3 +45,9 @@ export async function deleteTablero(id: number) {
   if (!res.ok) throw new Error('Error al eliminar el tablero')
   return res.json()
 }
+// Deshace un borrado (el back hace borrado lógico: ver Back/src/lib/borradoLogico.ts).
+export async function restaurarTablero(id: number) {
+  const res = await apiFetch(`/tableros/${id}/restaurar`, { method: 'POST' })
+  if (!res.ok) throw new Error('No se pudo restaurar')
+  return res.json()
+}

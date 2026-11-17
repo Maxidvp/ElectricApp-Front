@@ -51,3 +51,10 @@ export async function reordenarLazos(ordenes: { id: number; orden: number }[]) {
   if (!res.ok) throw new Error('Error al reordenar los lazos de instrumentación')
   return res.json()
 }
+
+// Deshace un borrado (el back hace borrado lógico: ver Back/src/lib/borradoLogico.ts).
+export async function restaurarLazoInstrumentacion(id: number) {
+  const res = await apiFetch(`/lazos-instrumentacion/${id}/restaurar`, { method: 'POST' })
+  if (!res.ok) throw new Error('No se pudo restaurar')
+  return res.json()
+}

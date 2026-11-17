@@ -78,6 +78,28 @@ describe('calcularIccTablero', () => {
     expect(Math.abs(r.Icc_max_kA! - 19.117) / 19.117).toBeLessThanOrEqual(0.005)
   })
 
+  it('dos alimentadores al mismo tablero (barra partida): máxima por el más corto, mínima por el más largo', () => {
+    // Mismo caso de arriba más un segundo alimentador desde el mismo TG, idéntico pero de 150 m.
+    // Máxima: la del camino corto (50 m), 19 117 A, igual que arriba.
+    // Mínima por el camino de 150 m (c = 0.95, cable a 90 °C):
+    //   RL = 0.017241·(1 + 0.00393·70)·150/480 = 6.870 mΩ ; XL = 0.08·150/2 = 6.000 mΩ
+    //   R = 0.0302 + 2.5545 + 6.870 = 9.455 ; X = 0.3025 + 9.5685 + 6.000 = 15.871 ; Z = 18.474 mΩ
+    //   I"k = 0.95·400/(√3·18.474 mΩ) = 11 876 A
+    const xlpe240 = {
+      id: 1, nombre: '1x240 mm²', seccion_f: '240', diametro: null, calibre_tipo: 'mm²', familia_id: 1, Nfases: 1, Iadm: 0,
+      familia: { material: 'Cobre', temperatura: 90, aislamiento: 'XLPE', norma: null },
+    }
+    const alim = (id: number, Largo: number) => ({
+      id, circuito: `ALIM-${id}`, tipo: 'ALIMENTADOR', tablero_id: 1, tablero_destino_id: 2, Largo,
+      formacion: { cable: xlpe240, cond_por_fase: 2, Nfases: 3, Nneutro: 0, disposicion: null },
+    })
+    const tg = { id: 1, tag: 'TG', tension_tri: 400, fuentes: [red, trafo], circuitos: [alim(9, 50), alim(10, 150)] } as unknown as Tablero
+    const t2 = { id: 2, tag: 'T2', tension_tri: 400, fuentes: [], circuitos: [] } as unknown as Tablero
+    const r = calcularIccTablero(t2, [tg, t2])
+    expect(Math.abs(r.Icc_max_kA! - 19.117) / 19.117).toBeLessThanOrEqual(0.005)
+    expect(Math.abs(r.Icc_min_kA! - 11.876) / 11.876).toBeLessThanOrEqual(0.005)
+  })
+
   it('sin fuentes → null, sin inventar un número', () => {
     const t = tablero([])
     const r = calcularIccTablero(t, [t])

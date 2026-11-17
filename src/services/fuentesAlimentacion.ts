@@ -25,3 +25,10 @@ export async function deleteFuenteAlimentacion(id: number) {
   if (!res.ok) throw new Error('Error al eliminar la fuente de alimentación')
   return res.json()
 }
+
+// Deshace un borrado (el back hace borrado lógico: ver Back/src/lib/borradoLogico.ts).
+export async function restaurarFuenteAlimentacion(id: number) {
+  const res = await apiFetch(`/fuentes-alimentacion/${id}/restaurar`, { method: 'POST' })
+  if (!res.ok) throw new Error('No se pudo restaurar')
+  return res.json()
+}

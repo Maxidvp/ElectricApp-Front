@@ -43,7 +43,7 @@ export type Selectividad = {
   detalle: string
 }
 
-type CircuitoSel = Pick<Circuito, 'id' | 'circuito' | 'proteccion' | 'es_acometida' | 'parent_id' | 'tipo' | 'tablero_destino_id' | 'selectividad_Is' | 'selectividad_total'>
+type CircuitoSel = Pick<Circuito, 'id' | 'orden' | 'circuito' | 'acometida_destino_id' | 'proteccion' | 'es_acometida' | 'parent_id' | 'tipo' | 'tablero_destino_id' | 'selectividad_Is' | 'selectividad_total'>
 type TableroSel = { id: number; circuitos: CircuitoSel[] }
 
 // Un diferencial puro no es una protección de sobrecorriente: no entra en este estudio.
@@ -52,20 +52,52 @@ const esDeSobrecorriente = (p: Proteccion | null | undefined): p is Proteccion =
 
 const A = (n: number) => `${Math.round(n)} A`
 
-// Protección de sobrecorriente inmediatamente aguas arriba de un circuito:
-//   1. el interruptor general del tablero (su circuito de acometida), si tiene;
-//   2. si no (o si el circuito ES la acometida), la protección del circuito
-//      ALIMENTADOR de otro tablero que llega a este.
-// null = no hay ninguna cargada en el proyecto (ej. tablero alimentado por una fuente).
-export function proteccionAguasArriba(c: CircuitoSel, tablero: TableroSel, tableros: TableroSel[]): AguasArriba | null {
+// Protecciones de sobrecorriente inmediatamente aguas arriba de un circuito:
+//   1. las acometidas del tablero que lo alimentan: TODAS las que están debajo de él
+//      en el orden del tablero. Una acometida alimenta todo lo que tiene arriba, así
+//      que con dos (emergencia primero, principal al final) las cargas esenciales
+//      —arriba de la de emergencia— dependen de las dos, y las no esenciales —entre
+//      ambas— solo de la principal;
+//   2. si no hay ninguna (o si el circuito ES una acometida), la protección de cada
+//      circuito ALIMENTADOR de otro tablero que llega a este. Para una acometida, solo
+//      los que llegan a ELLA: los vinculados a ella, más los que no indican acometida
+//      si es la principal (la última del tablero).
+// La selectividad tiene que darse con todas: ver selectividadCircuito.
+// Vacío = no hay ninguna cargada en el proyecto (ej. tablero alimentado por una fuente).
+export function proteccionesAguasArriba(c: CircuitoSel, tablero: TableroSel, tableros: TableroSel[]): AguasArriba[] {
   if (!c.es_acometida) {
-    const general = tablero.circuitos.find(x => x.es_acometida && x.parent_id === null && x.id !== c.id && esDeSobrecorriente(x.proteccion))
-    if (general) return { proteccion: general.proteccion!, circuito: general.circuito, mismoTramo: false }
+    const generales = tablero.circuitos
+      .filter(x => x.es_acometida && x.parent_id === null && x.orden > c.orden && esDeSobrecorriente(x.proteccion))
+      .sort((a, b) => a.orden - b.orden)
+    if (generales.length > 0) return generales.map(g => ({ proteccion: g.proteccion!, circuito: g.circuito, mismoTramo: false }))
   }
-  const alimentador = tableros.flatMap(t => t.circuitos)
-    .find(x => x.tipo === 'ALIMENTADOR' && x.tablero_destino_id === tablero.id && esDeSobrecorriente(x.proteccion))
-  if (alimentador) return { proteccion: alimentador.proteccion!, circuito: alimentador.circuito, mismoTramo: c.es_acometida }
-  return null
+  const acometidas = tablero.circuitos.filter(x => x.es_acometida && x.parent_id === null)
+  const esPrincipal = c.es_acometida && acometidas.every(a => a.orden <= c.orden)
+  const llegaAca = (x: CircuitoSel) => {
+    if (!c.es_acometida) return true
+    const vinculada = x.acometida_destino_id != null && acometidas.some(a => a.id === x.acometida_destino_id)
+    return vinculada ? x.acometida_destino_id === c.id : esPrincipal
+  }
+  return tableros.flatMap(t => t.circuitos)
+    .filter(x => x.tipo === 'ALIMENTADOR' && x.tablero_destino_id === tablero.id && esDeSobrecorriente(x.proteccion) && llegaAca(x))
+    .map(x => ({ proteccion: x.proteccion!, circuito: x.circuito, mismoTramo: c.es_acometida }))
+}
+
+export const proteccionAguasArriba = (c: CircuitoSel, tablero: TableroSel, tableros: TableroSel[]): AguasArriba | null =>
+  proteccionesAguasArriba(c, tablero, tableros)[0] ?? null
+
+// De peor a mejor. Entre dos parciales, la de menor límite.
+const GRAVEDAD: Record<EstadoSelectividad, number> = { no_selectiva: 0, sin_datos: 1, parcial: 2, total: 3, no_aplica: 4 }
+
+// Selectividad de un circuito contra TODAS sus protecciones de aguas arriba: se informa
+// el peor caso. El límite manual del circuito, si está cargado, vale para todas.
+export function selectividadCircuito(c: CircuitoSel, tablero: TableroSel, tableros: TableroSel[], Icc_max_A: number | null): Selectividad {
+  const arriba = proteccionesAguasArriba(c, tablero, tableros)
+  if (arriba.length === 0) return evaluarSelectividad(c, null, Icc_max_A)
+  return arriba.map(a => evaluarSelectividad(c, a, Icc_max_A)).reduce((peor, s) => {
+    if (GRAVEDAD[s.estado] !== GRAVEDAD[peor.estado]) return GRAVEDAD[s.estado] < GRAVEDAD[peor.estado] ? s : peor
+    return s.estado === 'parcial' && (s.Is_A ?? Infinity) < (peor.Is_A ?? Infinity) ? s : peor
+  })
 }
 
 // `Icc_max_A`: Icc máxima de la barra donde está montada la protección de aguas abajo.

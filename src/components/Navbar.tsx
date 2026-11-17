@@ -21,6 +21,7 @@ const NAV_LINKS: { href: string; label: string; categoria: NavCategoria; adminOn
   { href: '/cortocircuitos', label: 'Cortocircuitos', categoria: 'POTENCIA' },
   { href: '/unifilares',     label: 'Unifilares',     categoria: 'POTENCIA' },
   { href: '/verificacion',   label: 'Verificación',   categoria: null },
+  { href: '/memorias',       label: 'Memorias',       categoria: null },
   { href: '/ruteo',          label: 'Ruteo',          categoria: null },
   { href: '/ocupaciones',    label: 'Ocupaciones',    categoria: null },
   { href: '/caneros',        label: 'Cañeros',        categoria: null },

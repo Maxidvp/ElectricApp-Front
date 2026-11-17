@@ -2,6 +2,77 @@
 // I = P / (k · V · FP) (k = √3 trifásico, 1 mono/bifásico); el cálculo está en cada
 // comentario, nunca copiado de la salida de la app.
 import { describe, expect, it } from 'vitest'
+import { desequilibrioFases } from './cargas'
+
+describe('dos alimentadores al mismo tablero (barra partida)', () => {
+  // Destino: 4 kW trifásicos FP 1. Origen: una carga propia de 2 kW + DOS alimentadores
+  // hacia ese destino. Cada alimentador se dimensiona para los 4 kW completos
+  // (I = 4000 / (√3 · 400) = 5.77 A), pero la acometida del origen suma 2 + 4 = 6 kW,
+  // no 2 + 4 + 4 = 10 kW.
+  const base = { tipo: null, potencia: null, FP: null, tipo_tension: 'tri', fase: 'RST', es_acometida: false, tablero_destino_id: null }
+  const destino = { id: 2, categoria: 'POTENCIA', tension_mono: 230, tension_bi: null, tension_tri: 400, potencia_inst: null, factor_potencia: null,
+    circuitos: [{ ...base, potencia: 4, FP: 1 }] }
+  const a1 = { ...base, tipo: 'ALIMENTADOR', tablero_destino_id: 2 }
+  const a2 = { ...base, tipo: 'ALIMENTADOR', tablero_destino_id: 2 }
+  const propia = { ...base, potencia: 2, FP: 1 }
+  const origen = { id: 1, categoria: 'POTENCIA', tension_mono: 230, tension_bi: null, tension_tri: 400, potencia_inst: null, factor_potencia: null,
+    circuitos: [propia, a1, a2] }
+  const tableros = [origen, destino]
+  const tensiones = { mono: 230, bi: null, tri: 400 }
+
+  it('cada alimentador lleva toda la demanda del destino', () => {
+    for (const a of [a1, a2]) {
+      const r = resolverCargaCircuito(a, [], tensiones, tableros)
+      expect(r.potencia).toBe(4)
+      expect(r.corriente).toBeCloseTo(5.774, 2)
+    }
+  })
+  it('la acometida del origen cuenta el destino una sola vez: 6 kW', () => {
+    const acometida = { ...base, es_acometida: true }
+    expect(resolverCargaCircuito(acometida, [propia, a1, a2], tensiones, tableros).potencia).toBe(6)
+  })
+})
+
+describe('alimentador vinculado a una acometida del destino (emergencia / principal)', () => {
+  // Destino, en orden: ESENCIAL 1 kW · acometida EMERGENCIA · NO ESENCIAL 3 kW · acometida GENERAL.
+  // Una acometida alimenta lo que tiene arriba: EMERGENCIA → 1 kW; GENERAL → 1 + 3 = 4 kW.
+  const base = { tipo: null, potencia: null, FP: null, tipo_tension: 'tri', fase: 'RST', es_acometida: false, tablero_destino_id: null, parent_id: null }
+  const destino = { id: 2, categoria: 'POTENCIA', tension_mono: 230, tension_bi: null, tension_tri: 400, potencia_inst: null, factor_potencia: null,
+    circuitos: [
+      { ...base, id: 20, orden: 0, potencia: 1, FP: 1 },
+      { ...base, id: 21, orden: 1, es_acometida: true },
+      { ...base, id: 22, orden: 2, potencia: 3, FP: 1 },
+      { ...base, id: 23, orden: 3, es_acometida: true },
+    ] }
+  const aEmergencia = { ...base, id: 10, orden: 0, tipo: 'ALIMENTADOR', tablero_destino_id: 2, acometida_destino_id: 21 }
+  const aPrincipal  = { ...base, id: 11, orden: 1, tipo: 'ALIMENTADOR', tablero_destino_id: 2 }
+  const origen = { id: 1, categoria: 'POTENCIA', tension_mono: 230, tension_bi: null, tension_tri: 400, potencia_inst: null, factor_potencia: null,
+    circuitos: [aEmergencia, aPrincipal] }
+  const tableros = [origen, destino]
+  const tensiones = { mono: 230, bi: null, tri: 400 }
+
+  it('el de emergencia toma solo las esenciales (1 kW); el principal, todo (4 kW)', () => {
+    expect(resolverCargaCircuito(aEmergencia, [], tensiones, tableros).potencia).toBe(1)
+    expect(resolverCargaCircuito(aPrincipal, [], tensiones, tableros).potencia).toBe(4)
+  })
+  it('vínculo a una acometida que ya no existe → toma todo el tablero', () => {
+    expect(resolverCargaCircuito({ ...aEmergencia, acometida_destino_id: 999 }, [], tensiones, tableros).potencia).toBe(4)
+  })
+  it('si los dos salen del mismo tablero, su acometida cuenta el destino una vez, con la mayor: 4 kW (no 5)', () => {
+    const acometida = { ...base, es_acometida: true }
+    expect(resolverCargaCircuito(acometida, [aEmergencia, aPrincipal], tensiones, tableros).potencia).toBe(4)
+  })
+})
+
+describe('desequilibrioFases', () => {
+  it('30 / 20 / 10 A → promedio 20 A, (30 − 10) / 20 = 100 %', () => {
+    expect(desequilibrioFases({ R: 30, S: 20, T: 10 })).toBeCloseTo(100, 6)
+  })
+  it('fases iguales → 0 %; sin corriente → null', () => {
+    expect(desequilibrioFases({ R: 12, S: 12, T: 12 })).toBe(0)
+    expect(desequilibrioFases({ R: 0, S: 0, T: 0 })).toBeNull()
+  })
+})
 import { resolverCargaCircuito, tensionesDe, type CircuitoCarga, type TableroCarga } from './cargas'
 
 function cerca(actual: number | null, esperado: number, tol = 0.001) {

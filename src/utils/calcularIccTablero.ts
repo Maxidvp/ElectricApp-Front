@@ -9,6 +9,8 @@
 //   - Fuente propia tipo GENERADOR: única fuente de ese camino.
 //   - Circuito ALIMENTADOR entrante desde otro tablero: se hereda la red de ese tablero
 //     (recursivamente) y se le agrega en serie el cable del propio circuito ALIMENTADOR.
+//     Un tablero puede tener varios entrantes (barra partida, normal + emergencia): cada
+//     uno es un camino más.
 //   - Nada de lo anterior: sin datos, no se puede derivar (el llamador debe mostrar "—").
 //
 // Limitaciones conocidas — cada una se devuelve como aviso en `avisos`, nunca en silencio:
@@ -146,24 +148,25 @@ function candidatosPropios(tablero: Tablero, avisar: (msg: string) => void): Can
 
 function candidatosDe(tablero: Tablero, todos: Tablero[], visitados: Set<number>, avisar: (msg: string) => void): Candidato[] {
   if (visitados.has(tablero.id)) return []
-  visitados.add(tablero.id)
+  // Copia por rama: `visitados` solo corta ciclos dentro de UN camino. Si fuera
+  // compartido, dos alimentadores que vienen del mismo tablero darían un solo camino.
+  const enCamino = new Set(visitados).add(tablero.id)
 
   const candidatos = candidatosPropios(tablero, avisar)
 
   // El front no trae la relación inversa (circuito_entrante) en el propio tablero —
   // se busca entre todos los circuitos del proyecto el ALIMENTADOR que apunta acá.
-  const entrante = todos.flatMap(t => t.circuitos).find(c => c.tipo === 'ALIMENTADOR' && c.tablero_destino_id === tablero.id)
-  if (entrante) {
+  const entrantes = todos.flatMap(t => t.circuitos).filter(c => c.tipo === 'ALIMENTADOR' && c.tablero_destino_id === tablero.id)
+  for (const entrante of entrantes) {
     const origen = todos.find(t => t.id === entrante.tablero_id)
-    if (origen) {
-      const conductor = conductorDeCircuito(entrante, nodoTablero(origen.id), nodoTablero(tablero.id))
-      if (conductor) {
-        for (const c of candidatosDe(origen, todos, visitados, avisar)) {
-          candidatos.push({ ...c, conductores: [...c.conductores, conductor] })
-        }
-      } else {
-        avisar(`${tablero.tag}: el alimentador desde ${origen.tag} no tiene cable o largo cargado; lo que viene de ${origen.tag} no entra en el cálculo.`)
+    if (!origen) continue
+    const conductor = conductorDeCircuito(entrante, nodoTablero(origen.id), nodoTablero(tablero.id))
+    if (conductor) {
+      for (const c of candidatosDe(origen, todos, enCamino, avisar)) {
+        candidatos.push({ ...c, conductores: [...c.conductores, conductor] })
       }
+    } else {
+      avisar(`${tablero.tag}: el alimentador ${entrante.circuito} desde ${origen.tag} no tiene cable o largo cargado; lo que viene por él no entra en el cálculo.`)
     }
   }
 

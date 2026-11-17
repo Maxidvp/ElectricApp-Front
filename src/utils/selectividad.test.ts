@@ -3,7 +3,7 @@
 // mano en cada caso: Is = extremo inferior de la banda de la protección de arriba.
 import { describe, expect, it } from 'vitest'
 import type { Proteccion } from '@/context/types'
-import { evaluarSelectividad, proteccionAguasArriba, type AguasArriba } from './selectividad'
+import { evaluarSelectividad, proteccionAguasArriba, proteccionesAguasArriba, selectividadCircuito, type AguasArriba } from './selectividad'
 
 const prot = (tipo: string, In: number | null, curva: string | null): Proteccion => ({
   id: 1, familia_id: 1, polos: 2, In, Icu: 6, curva, sensibilidad_mA: null, clase_diferencial: null,
@@ -13,7 +13,7 @@ const prot = (tipo: string, In: number | null, curva: string | null): Proteccion
 const itm = (In: number, curva = 'C') => prot('termomagnetico', In, curva)
 
 const circ = (campos: object = {}) => ({
-  id: 1, circuito: 'C1', proteccion: itm(16) as Proteccion | null, es_acometida: false, parent_id: null,
+  id: 1, orden: 1, circuito: 'C1', proteccion: itm(16) as Proteccion | null, es_acometida: false, parent_id: null,
   tipo: 'TUG' as string | null, tablero_destino_id: null as number | null, ...campos,
 })
 const arriba = (proteccion: Proteccion, mismoTramo = false): AguasArriba => ({ proteccion, circuito: 'GENERAL', mismoTramo })
@@ -82,7 +82,7 @@ describe('evaluarSelectividad — fuera del alcance del cálculo', () => {
 })
 
 describe('proteccionAguasArriba', () => {
-  const general = circ({ id: 10, circuito: 'GENERAL', es_acometida: true, proteccion: itm(63) })
+  const general = circ({ id: 10, orden: 9, circuito: 'GENERAL', es_acometida: true, proteccion: itm(63) })
   const salida = circ({ id: 11, circuito: 'TOMAS' })
   const alimentador = circ({ id: 20, circuito: 'ALIM-TS', tipo: 'ALIMENTADOR', tablero_destino_id: 2, proteccion: itm(80) })
   const principal = { id: 1, circuitos: [alimentador] }
@@ -90,6 +90,18 @@ describe('proteccionAguasArriba', () => {
   it('una salida toma el interruptor general de su tablero', () => {
     const seccional = { id: 2, circuitos: [general, salida] }
     expect(proteccionAguasArriba(salida, seccional, [principal, seccional])).toMatchObject({ circuito: 'GENERAL', mismoTramo: false })
+  })
+
+  it('acometida de emergencia + principal: las esenciales dependen de las dos, el resto solo de la principal', () => {
+    // Orden del tablero: ESENCIAL (1) · EMERGENCIA C32 (2) · NO-ESENCIAL (3) · GENERAL C63 (9)
+    const emergencia = circ({ id: 12, orden: 2, circuito: 'EMERGENCIA', es_acometida: true, proteccion: itm(32) })
+    const esencial = circ({ id: 13, orden: 1, circuito: 'ESENCIAL' })
+    const noEsencial = circ({ id: 14, orden: 3, circuito: 'NO-ESENCIAL' })
+    const t = { id: 2, circuitos: [esencial, emergencia, noEsencial, general] }
+    // Esencial C16: contra C32 (5·32 = 160 A) y contra C63 (315 A) → manda la peor, 160 A.
+    expect(selectividadCircuito(esencial, t, [t], 6000)).toMatchObject({ estado: 'parcial', Is_A: 160 })
+    // No esencial C16: solo la principal C63 → 315 A.
+    expect(selectividadCircuito(noEsencial, t, [t], 6000)).toMatchObject({ estado: 'parcial', Is_A: 315 })
   })
 
   it('sin interruptor general, toma la protección del alimentador que llega al tablero', () => {
@@ -102,10 +114,30 @@ describe('proteccionAguasArriba', () => {
     expect(proteccionAguasArriba(general, seccional, [principal, seccional])).toMatchObject({ circuito: 'ALIM-TS', mismoTramo: true })
   })
 
+  it('cada acometida se compara con el alimentador que llega a ella', () => {
+    // EMERGENCIA (orden 2) ← ALIM-EMERG (vinculado a ella); GENERAL (orden 9) ← ALIM-TS (sin indicar: principal)
+    const emergencia = circ({ id: 12, orden: 2, circuito: 'EMERGENCIA', es_acometida: true, proteccion: itm(32) })
+    const alimEmerg = circ({ id: 21, circuito: 'ALIM-EMERG', tipo: 'ALIMENTADOR', tablero_destino_id: 2, acometida_destino_id: 12, proteccion: itm(40) })
+    const origen = { id: 1, circuitos: [alimentador, alimEmerg] }
+    const seccional = { id: 2, circuitos: [emergencia, general] }
+    expect(proteccionesAguasArriba(emergencia, seccional, [origen, seccional]).map(a => a.circuito)).toEqual(['ALIM-EMERG'])
+    expect(proteccionesAguasArriba(general, seccional, [origen, seccional]).map(a => a.circuito)).toEqual(['ALIM-TS'])
+  })
+
   it('un diferencial como general no cuenta: se sigue hasta el alimentador', () => {
     const generalDif = { ...general, proteccion: prot('diferencial', 63, null) }
     const seccional = { id: 2, circuitos: [generalDif, salida] }
     expect(proteccionAguasArriba(salida, seccional, [principal, seccional])?.circuito).toBe('ALIM-TS')
+  })
+
+  it('dos alimentadores al mismo tablero (barra partida): manda el peor', () => {
+    // Salida C16. Llegan un C80 (límite 5·80 = 400 A) y un C40 (5·40 = 200 A) → parcial hasta 200 A.
+    const otro = circ({ id: 21, circuito: 'ALIM-EMERG', tipo: 'ALIMENTADOR', tablero_destino_id: 2, proteccion: itm(40) })
+    const origen = { id: 1, circuitos: [alimentador, otro] }
+    const seccional = { id: 2, circuitos: [salida] }
+    const r = selectividadCircuito(salida, seccional, [origen, seccional], 6000)
+    expect(r).toMatchObject({ estado: 'parcial', Is_A: 200 })
+    expect(r.aguasArriba?.circuito).toBe('ALIM-EMERG')
   })
 
   it('tablero sin general ni alimentador → null', () => {

@@ -37,6 +37,8 @@ export function mapearCircuitos(
       formacionData: formacionData(c),
       tablero_destino_id: c.es_acometida ? null : c.tablero_destino_id,
       tablero_destino: c.es_acometida ? null : c.tablero_destino,
+      acometida_destino: c.acometida_destino_id == null ? null
+        : tableros.find(t => t.id === c.tablero_destino_id)?.circuitos.find(x => x.id === c.acometida_destino_id && x.es_acometida)?.circuito ?? null,
     }
   })
 }

@@ -40,6 +40,29 @@ circuito usar `editarCampos` (`useCircuitosActions.ts`); para fuentes/lazos/puer
 `editarItem` (`ProyectosContext.tsx`). Los borrados que fallan recargan el proyecto.
 Las acciones de ruteo (`useRuteoActions.ts`) todavía NO tienen vuelta atrás.
 
+## Acometidas de un tablero y alimentadores que le llegan
+
+**Dentro del tablero** (modelo definido por el usuario, no cambiarlo): una fila de
+acometida alimenta **todo lo que tiene arriba** en el orden del tablero, acumulado. Con
+dos acometidas, la de emergencia va primero (arriba quedan las cargas esenciales) y la
+principal al final (suma todo, incluidas las esenciales): en emergencia salen de
+servicio las no esenciales. Si dos partes tienen que tener alimentaciones separadas, son
+dos tableros. Por eso un circuito tiene aguas arriba a todas las acometidas que están
+debajo de él (`selectividad.ts`).
+
+**Entre tableros**: un tablero puede recibir más de un circuito ALIMENTADOR.
+- `cargas.ts` — un alimentador puede indicar a qué acometida del destino llega
+  (`Circuito.acometida_destino_id`, se elige en `AlimentadorModal` cuando el destino tiene
+  más de una): toma lo que esa acometida tiene arriba. Sin indicarla (o si esa acometida
+  ya no existe) toma todo el tablero. Si varios salen del mismo tablero hacia un mismo
+  destino, en la acometida del origen el destino se cuenta una vez, con la mayor de sus
+  demandas (`resolverParaSuma`).
+- `calcularIccTablero.ts` — cada entrante es un camino más: máxima del mejor, mínima del
+  peor, sin sumarlos en paralelo (con aviso).
+- `selectividad.ts` — `selectividadCircuito` evalúa contra todos y devuelve el peor caso. Una
+  acometida se compara solo con los alimentadores que llegan a ella.
+No buscar "el" alimentador o "la" acometida de un tablero con `find`: usar `filter`.
+
 ## Catálogos (Cables, Protecciones)
 
 `CablesContext`/`ProteccionesContext`: mismo patrón de dos niveles que el
@@ -76,15 +99,30 @@ la app: recorre la fuente propia de un tablero (o la cadena de circuitos
 ALIMENTADOR que lo alimentan, recursivamente) para derivar su Icc de barra en
 vez de pedirla cargada a mano.
 
+**Deshacer (Ctrl+Z / Ctrl+Y)** — `context/historial.ts`. No usa los checkpoints (esos
+son revisiones enteras). Cada edición hecha con `editarCampos` / `editarItem` /
+`actualizarTablero` registra un paso con su inversa; deshacer manda el valor anterior
+por la misma ruta. Por eso el `guardar` que se les pasa **recibe los valores** (`(rid, v)
+=> api(rid, v.campo)`) en vez de capturarlos del closure. Los borrados usan
+`borrarConDeshacer` (`ProyectosContext.tsx`): el back hace borrado lógico (marca
+`borrado_en`, ver `Back/src/lib/borradoLogico.ts`) y deshacer llama a `POST …/restaurar`,
+así que sirve mientras dure la ventana; el back elimina de verdad lo borrado al día.
+Todavía sin deshacer: ruteo, grupos diferenciales, altas, duplicados, reordenamientos y
+vincular alimentador.
+
 ## Verificación y Memoria de cálculo
 
 `/verificacion` (panel con todos los ✗ / datos faltantes / avisos del proyecto) y
-`/memoria` (memoria de cálculo imprimible, se llega desde Verificación) **no
+`/memorias` (índice de documentos imprimibles; cada uno en `/memorias/<id>`: memoria
+general, planilla de cargas, cortocircuito y selectividad, lista de cables) **no
 calculan nada propio**: usan `evaluarProyecto` (`utils/verificacionProyecto.ts`),
 que corre las mismas funciones puras que las páginas (`cargas.ts`, `ampacidad.ts`,
 `caida.ts`, `verificacionCortocircuito.ts`). Si agregás una verificación nueva,
 sumala a esa función y a `hallazgosCircuito` para que aparezca en los dos lados.
 Un dato faltante se informa como `falta`, nunca como cumple.
+Para sumar un documento: agregarlo a `components/memoria/documentos.ts` y su contenido
+en `app/memorias/[doc]/page.tsx`, armándolo con las tablas de `components/memoria/tablas.tsx`.
+Siempre muestran el estado actual; una emisión se conserva con un checkpoint.
 
 **Selectividad** (`utils/selectividad.ts`): solo entre protecciones con curva
 normalizada (`CURVA_MULTIPLICADOR`), límite = extremo inferior de la banda magnética de

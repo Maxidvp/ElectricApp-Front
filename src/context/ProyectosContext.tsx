@@ -19,7 +19,8 @@ import { useAuth } from '@/context/AuthContext'
 
 import type { Tablero, Circuito, FuenteAlimentacion, GrupoDiferencial, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta } from './types'
 import { nextTempId, DESCRIPCION_CREANDO, mapCirc } from './helpers'
-import { useCircuitosActions } from './useCircuitosActions'
+import { useCircuitosActions, type BorrarConDeshacer } from './useCircuitosActions'
+import { useHistorial, sigueIgual } from './historial'
 import { useRuteoActions } from './useRuteoActions'
 
 export type { ProyectoMeta }
@@ -32,7 +33,7 @@ const ProyectosContext = createContext<ProyectosContextType | null>(null)
 
 // ── Provider ──────────────────────────────────────────────────────
 export function ProyectosProvider({ children }: { children: React.ReactNode }) {
-  const { showError, showSuccess } = useToast()
+  const { showError, showSuccess, showAccion } = useToast()
   const [proyectos,           setProyectos]           = useState<ProyectoMeta[]>([])
   const [proyectoActivo,      setProyectoActivoState] = useState<ProyectoMeta | null>(null)
   const [tableros,            setTableros]            = useState<Tablero[]>([])
@@ -61,6 +62,56 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   // N° de la última carga de proyecto pedida: si el usuario cambia de proyecto antes
   // de que responda la anterior, la respuesta vieja se descarta en vez de pisar al nuevo.
   const cargaSeq = useRef(0)
+
+  // ── Deshacer / rehacer (Ctrl+Z, Ctrl+Y) ────────────────────────
+  const tablerosRef = useRef(tableros)
+  tablerosRef.current = tableros
+  const historial = useHistorial({ ok: showSuccess, error: showError })
+  const historialRef = useRef(historial)
+  historialRef.current = historial
+
+  useEffect(() => {
+    const alTeclear = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      const tecla = e.key.toLowerCase()
+      if (tecla !== 'z' && tecla !== 'y') return
+      // Dentro de un campo de texto, Ctrl+Z es el deshacer propio del navegador.
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
+      e.preventDefault()
+      if (tecla === 'y' || e.shiftKey) historialRef.current.rehacer()
+      else historialRef.current.deshacer()
+    }
+    window.addEventListener('keydown', alTeclear)
+    return () => window.removeEventListener('keydown', alTeclear)
+  }, [])
+
+  // ── Borrado con deshacer ───────────────────────────────────────
+  // El back hace borrado LÓGICO (marca la fila, no la elimina — Back/src/lib/
+  // borradoLogico.ts), así que deshacer es pedirle que la restaure y volver a mostrar lo
+  // que se había quitado de pantalla, con todo lo que colgaba de ella intacto. Se puede
+  // deshacer mientras dure la ventana; el back elimina de verdad lo borrado al día.
+  const borrarConDeshacer: BorrarConDeshacer = ({ descripcion, quitar, restaurar, ejecutar, restaurarEnServidor }) => {
+    const alFallar = (err: unknown) => {
+      console.error(err)
+      showError('No se pudo eliminar: se recargó el proyecto.')
+      recargar()
+    }
+    let borrado = Promise.resolve()
+    const borrar = () => { quitar(); borrado = ejecutar().then(() => {}, alFallar) }
+    const deshacer = async () => {
+      await borrado
+      try { await restaurarEnServidor() } catch (err) { console.error(err); return false }
+      restaurar()
+      return true
+    }
+
+    borrar()
+    const paso = { descripcion: `eliminar ${descripcion}`, deshacer, rehacer: () => { borrar(); return true } }
+    historial.registrar(paso)
+    // Atajo visible; pasado el aviso sigue disponible con Ctrl+Z.
+    showAccion(`Se eliminó ${descripcion}.`, { etiqueta: 'Deshacer', onClick: () => { historial.deshacerPaso(paso) } }, 6000)
+  }
 
   const LS_PROYECTO    = 'ea_proyecto'
   const lsConjunto     = (id: number) => `ea_conjunto_${id}`
@@ -109,6 +160,8 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   function setProyectoActivo(p: ProyectoMeta | null) {
     setProyectoActivoState(p)
     proyectoActivoRef.current = p
+    // El estado se reemplaza entero: el historial de deshacer no sigue valiendo.
+    historial.limpiar()
     const seq = ++cargaSeq.current
     const vigente = () => seq === cargaSeq.current
     if (!p) {
@@ -252,23 +305,57 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   //     no conviene reconstruir a mano).
   type Coleccion = 'fuentes' | 'lazos' | 'puertos_red'
 
-  function editarItem(col: Coleccion, id: number, data: object, guardar: () => Promise<unknown>) {
+  function editarItem<D extends object>(col: Coleccion, id: number, data: D, guardar: (d: D) => Promise<unknown>, nombre: string) {
     type Item = { id: number }
-    let previo: Item | undefined
-    const mapear = (fn: (x: Item) => Item) =>
-      setTableros(prev => prev.map(t => ({ ...t, [col]: (t[col] as Item[]).map(x => x.id === id ? fn(x) : x) })))
-    mapear(x => { previo = x; return { ...x, ...data } })
-    return guardar().catch(err => {
-      console.error(err)
-      if (previo) mapear(() => previo!)
-      showError('No se pudo guardar el cambio: se restauró el valor anterior.')
+    const claves = Object.keys(data)
+    const aplicar = (valores: D) => {
+      let previo: Item | undefined
+      const mapear = (fn: (x: Item) => Item) =>
+        setTableros(prev => prev.map(t => ({ ...t, [col]: (t[col] as Item[]).map(x => x.id === id ? fn(x) : x) })))
+      mapear(x => { previo = x; return { ...x, ...valores } })
+      const guardado = guardar(valores).catch(err => {
+        console.error(err)
+        if (previo) mapear(() => previo!)
+        showError('No se pudo guardar el cambio: se restauró el valor anterior.')
+      })
+      return { guardado, previo: () => Object.fromEntries(claves.map(k => [k, (previo as Record<string, unknown> | undefined)?.[k]])) as D }
+    }
+    const { guardado, previo } = aplicar(data)
+    const intercambiar = (valores: D, esperado: D) => {
+      const actual = tablerosRef.current.flatMap(t => t[col] as Item[]).find(x => x.id === id)
+      if (!actual || !sigueIgual(actual as Record<string, unknown>, esperado as Record<string, unknown>)) return false
+      aplicar(valores)
+      return true
+    }
+    historial.registrar({
+      descripcion: `edición de ${nombre}`,
+      deshacer: () => intercambiar(previo(), data),
+      rehacer: () => intercambiar(data, previo()),
     })
+    return guardado
   }
 
-  function alFallarBorrado(err: unknown) {
-    console.error(err)
-    showError('No se pudo eliminar: se recargó el proyecto.')
-    recargar()
+  // Borrado con deshacer de una fuente / lazo / puerto (ver borrarConDeshacer).
+  function borrarItem(col: Coleccion, id: number, descripcion: string, ejecutar: () => Promise<unknown>, restaurarEnServidor: () => Promise<unknown>) {
+    type Item = { id: number }
+    let quitado: { tableroId: number; item: Item; indice: number } | null = null
+    borrarConDeshacer({
+      descripcion,
+      quitar: () => setTableros(prev => prev.map(t => {
+        const lista = t[col] as Item[]
+        const indice = lista.findIndex(x => x.id === id)
+        if (indice === -1) return t
+        quitado = { tableroId: t.id, item: lista[indice], indice }
+        return { ...t, [col]: lista.filter(x => x.id !== id) }
+      })),
+      restaurar: () => setTableros(prev => prev.map(t => {
+        if (!quitado || t.id !== quitado.tableroId) return t
+        const lista = [...(t[col] as Item[])]
+        lista.splice(quitado.indice, 0, quitado.item)
+        return { ...t, [col]: lista }
+      })),
+      ejecutar, restaurarEnServidor,
+    })
   }
 
   async function agregarTablero(data: any): Promise<Tablero> {
@@ -292,22 +379,55 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function actualizarTablero(id: number, data: Partial<Omit<Tablero, 'id' | 'circuitos'>>) {
-    let previo: Tablero | undefined
-    setTableros(prev => prev.map(t => { if (t.id !== id) return t; previo = t; return { ...t, ...data } }))
-    await tablerosApi.updateTablero(id, data).catch(err => {
-      console.error(err)
-      // Solo vuelven atrás los campos de esta edición: circuitos, fuentes, etc. pueden
-      // haber cambiado mientras tanto y no hay que pisarlos.
-      const claves = Object.keys(data) as (keyof Tablero)[]
-      if (previo) setTableros(prev => prev.map(t => t.id === id
-        ? { ...t, ...Object.fromEntries(claves.map(k => [k, previo![k]])) } : t))
-      showError('No se pudo guardar el cambio: se restauró el valor anterior.')
+    type Datos = typeof data
+    const claves = Object.keys(data) as (keyof Tablero)[]
+    const aplicar = (valores: Datos) => {
+      let previo: Tablero | undefined
+      setTableros(prev => prev.map(t => { if (t.id !== id) return t; previo = t; return { ...t, ...valores } }))
+      const anteriores = () => Object.fromEntries(claves.map(k => [k, previo?.[k]])) as Datos
+      const guardado = tablerosApi.updateTablero(id, valores).catch(err => {
+        console.error(err)
+        // Solo vuelven atrás los campos de esta edición: circuitos, fuentes, etc. pueden
+        // haber cambiado mientras tanto y no hay que pisarlos.
+        if (previo) setTableros(prev => prev.map(t => t.id === id ? { ...t, ...anteriores() } : t))
+        showError('No se pudo guardar el cambio: se restauró el valor anterior.')
+      })
+      return { guardado, anteriores }
+    }
+    const { guardado, anteriores } = aplicar(data)
+    const intercambiar = (valores: Datos, esperado: Datos) => {
+      const actual = tablerosRef.current.find(t => t.id === id)
+      if (!actual || !sigueIgual(actual as unknown as Record<string, unknown>, esperado as Record<string, unknown>)) return false
+      aplicar(valores)
+      return true
+    }
+    historial.registrar({
+      descripcion: `edición del tablero ${tablerosRef.current.find(t => t.id === id)?.tag ?? ''}`.trim(),
+      deshacer: () => intercambiar(anteriores(), data),
+      rehacer: () => intercambiar(data, anteriores()),
     })
+    await guardado
   }
 
   async function eliminarTablero(id: number) {
-    setTableros(prev => prev.filter(t => t.id !== id))
-    await tablerosApi.deleteTablero(id).catch(alFallarBorrado)
+    let quitado: { tablero: Tablero; indice: number } | null = null
+    borrarConDeshacer({
+      descripcion: `el tablero ${tablerosRef.current.find(t => t.id === id)?.tag ?? ''}`.trim(),
+      quitar: () => setTableros(prev => {
+        const indice = prev.findIndex(t => t.id === id)
+        if (indice === -1) return prev
+        quitado = { tablero: prev[indice], indice }
+        return prev.filter(t => t.id !== id)
+      }),
+      restaurar: () => setTableros(prev => {
+        if (!quitado || prev.some(t => t.id === id)) return prev
+        const next = [...prev]
+        next.splice(quitado.indice, 0, quitado.tablero)
+        return next
+      }),
+      ejecutar: () => tablerosApi.deleteTablero(id),
+      restaurarEnServidor: () => tablerosApi.restaurarTablero(id),
+    })
   }
 
   // ── Fuentes de alimentación CRUD ───────────────────────────────
@@ -317,12 +437,11 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function actualizarFuente(id: number, data: Omit<FuenteAlimentacion, 'id' | 'tablero_id'>) {
-    await editarItem('fuentes', id, data, () => fuentesApi.updateFuenteAlimentacion(id, data))
+    await editarItem('fuentes', id, data, d => fuentesApi.updateFuenteAlimentacion(id, d), 'la fuente')
   }
 
   async function eliminarFuente(id: number) {
-    setTableros(prev => prev.map(t => ({ ...t, fuentes: t.fuentes.filter(f => f.id !== id) })))
-    await fuentesApi.deleteFuenteAlimentacion(id).catch(alFallarBorrado)
+    borrarItem('fuentes', id, 'la fuente', () => fuentesApi.deleteFuenteAlimentacion(id), () => fuentesApi.restaurarFuenteAlimentacion(id))
   }
 
   // ── Grupos diferenciales ────────────────────────────────────────
@@ -381,12 +500,11 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function actualizarLazo(id: number, data: Omit<LazoInstrumentacion, 'id' | 'tablero_id'>) {
-    await editarItem('lazos', id, data, () => lazosApi.updateLazoInstrumentacion(id, data))
+    await editarItem('lazos', id, data, d => lazosApi.updateLazoInstrumentacion(id, d), 'el lazo')
   }
 
   async function eliminarLazo(id: number) {
-    setTableros(prev => prev.map(t => ({ ...t, lazos: t.lazos.filter(l => l.id !== id) })))
-    await lazosApi.deleteLazoInstrumentacion(id).catch(alFallarBorrado)
+    borrarItem('lazos', id, 'el lazo', () => lazosApi.deleteLazoInstrumentacion(id), () => lazosApi.restaurarLazoInstrumentacion(id))
   }
 
   async function agregarLazoVacio(tableroId: number) {
@@ -433,12 +551,11 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function actualizarPuertoRed(id: number, data: Omit<PuertoRed, 'id' | 'tablero_id'>) {
-    await editarItem('puertos_red', id, data, () => puertosRedApi.updatePuertoRed(id, data))
+    await editarItem('puertos_red', id, data, d => puertosRedApi.updatePuertoRed(id, d), 'el puerto')
   }
 
   async function eliminarPuertoRed(id: number) {
-    setTableros(prev => prev.map(t => ({ ...t, puertos_red: t.puertos_red.filter(p => p.id !== id) })))
-    await puertosRedApi.deletePuertoRed(id).catch(alFallarBorrado)
+    borrarItem('puertos_red', id, 'el puerto', () => puertosRedApi.deletePuertoRed(id), () => puertosRedApi.restaurarPuertoRed(id))
   }
 
   async function agregarPuertoRedVacio(tableroId: number) {
@@ -479,7 +596,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   }
 
   // ── Domain action hooks ───────────────────────────────────────
-  const circuitos = useCircuitosActions(tableros, setTableros, pendingCircuitos, recargar)
+  const circuitos = useCircuitosActions(tableros, setTableros, pendingCircuitos, recargar, tablerosRef, historial, borrarConDeshacer)
 
   const ruteo = useRuteoActions(
     conjuntos, canios, bandejas, tablaParedes,

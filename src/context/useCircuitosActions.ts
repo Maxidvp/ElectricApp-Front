@@ -4,9 +4,28 @@ import type { FormacionPatch } from '@/services/circuitos'
 import type { Tablero, Circuito, Cable, Proteccion, GrupoDiferencial } from './types'
 import { nextTempId, mapCirc, addCirc, replaceCirc, mergeWithTemp, DESCRIPCION_CREANDO } from './helpers'
 import { useToast } from './ToastContext'
+import { sigueIgual, type Historial } from './historial'
 
 type SetTableros = Dispatch<SetStateAction<Tablero[]>>
 type PendingMap  = MutableRefObject<Map<number, Promise<Circuito>>>
+
+export type BorrarConDeshacer = (b: {
+  descripcion: string
+  quitar: () => void                            // lo saca de pantalla (y se guarda lo que sacó)
+  restaurar: () => void                         // lo vuelve a poner tal como estaba
+  ejecutar: () => Promise<unknown>              // el DELETE (borrado lógico en el back)
+  restaurarEnServidor: () => Promise<unknown>   // POST …/restaurar
+}) => void
+
+// Guarda en el servidor los valores `v` de los campos editados. Recibe los valores en
+// vez de capturarlos del closure para poder reusarla al deshacer (con los anteriores).
+type Guardar = (realId: number, v: Partial<Circuito>) => Promise<unknown>
+type Opciones = {
+  mergear?: boolean
+  alFallar?: 'revertir' | 'recargar'
+  // Nombre del dato para el historial ("Deshecho: largo de C1"); false = no se puede deshacer.
+  historial?: string | false
+}
 
 // Dispara un PATCH inmediato o lo encola tras confirmar el ID real si el circuito aún es temporal.
 // Problema que resuelve: el usuario puede editar un campo (FP, largo, etc.) en la misma
@@ -23,10 +42,19 @@ export function useCircuitosActions(
   setTableros: SetTableros,
   pendingCircuitos: PendingMap,
   recargar: () => void,
+  // Siempre el estado más nuevo: deshacer se ejecuta mucho después del render en que
+  // se registró el paso, y `tableros` de ese render ya quedó viejo.
+  tablerosRef: MutableRefObject<Tablero[]>,
+  historial: Historial,
+  borrarConDeshacer: BorrarConDeshacer,
 ) {
   const { showError } = useToast()
 
-  // Edición optimista de campos de un circuito: aplica `patch` al estado ya mismo y
+  // Id real de un circuito que pudo haberse editado mientras todavía era temporal.
+  const idReal = async (id: number) =>
+    id < 0 && pendingCircuitos.current.has(id) ? (await pendingCircuitos.current.get(id)!).id : id
+
+  // `aplicar` — edición optimista de campos de un circuito: aplica `patch` al estado ya mismo y
   // dispara el guardado (encolado si el circuito todavía es temporal).
   //   - Si el back responde bien y `mergear` está activo, se mergea su respuesta
   //     (trae objetos anidados completos: formación, protección…).
@@ -36,12 +64,7 @@ export function useCircuitosActions(
   //     esa edición más nueva no se pisa.
   //   - `alFallar: 'recargar'` es para escrituras cuya validación vive en el back y
   //     pueden dejar más de un campo inconsistente: se recarga el proyecto entero.
-  function editarCampos(
-    id: number,
-    patch: Partial<Circuito>,
-    guardar: (realId: number) => Promise<unknown>,
-    opciones: { mergear?: boolean; alFallar?: 'revertir' | 'recargar' } = {},
-  ) {
+  function aplicar(id: number, patch: Partial<Circuito>, guardar: Guardar, opciones: Opciones) {
     const claves = Object.keys(patch) as (keyof Circuito)[]
     let previo: Partial<Circuito> = {}
     setTableros(prev => mapCirc(prev, id, c => {
@@ -55,7 +78,7 @@ export function useCircuitosActions(
       const mapear = (fn: (c: Circuito) => Circuito) =>
         setTableros(prev => prev.map(t => ({ ...t, circuitos: t.circuitos.map(c => esEste(c) ? fn(c) : c) })))
 
-      guardar(realId)
+      guardar(realId, patch)
         .then(real => { if (opciones.mergear) mapear(c => ({ ...c, ...(real as Circuito) })) })
         .catch(err => {
           console.error(err)
@@ -68,10 +91,33 @@ export function useCircuitosActions(
           showError('No se pudo guardar el cambio: se restauró el valor anterior.')
         })
     })
+    // Se lee recién al deshacer: para entonces el updater de arriba ya corrió.
+    return () => previo
+  }
+
+  // Edición + registro en el historial (Ctrl+Z). Deshacer aplica los valores anteriores
+  // por el mismo camino, sin volver a registrar; ver context/historial.ts.
+  function editarCampos(id: number, patch: Partial<Circuito>, guardar: Guardar, opciones: Opciones = {}) {
+    const previo = aplicar(id, patch, guardar, opciones)
+    if (opciones.historial === false) return
+
+    const nombre = tablerosRef.current.flatMap(t => t.circuitos).find(c => c.id === id)?.circuito ?? 'circuito'
+    const intercambiar = async (valores: Partial<Circuito>, esperado: Partial<Circuito>) => {
+      const rid = await idReal(id)
+      const actual = tablerosRef.current.flatMap(t => t.circuitos).find(c => c.id === rid || c.id === id)
+      if (!actual || !sigueIgual(actual, esperado)) return false
+      aplicar(actual.id, valores, guardar, opciones)
+      return true
+    }
+    historial.registrar({
+      descripcion: `${opciones.historial ?? 'edición'} de ${patch.circuito ?? nombre}`,
+      deshacer: () => intercambiar(previo(), patch),
+      rehacer: () => intercambiar(patch, previo()),
+    })
   }
 
   function renombrarCircuito(id: number, nombre: string) {
-    editarCampos(id, { circuito: nombre }, rid => circuitosApi.updateNombreCircuito(rid, nombre))
+    editarCampos(id, { circuito: nombre }, (rid, v) => circuitosApi.updateNombreCircuito(rid, v.circuito!), { historial: 'nombre' })
   }
 
   // Inserta el circuito optimistamente en la posición deseada, luego confirma el ID real
@@ -162,12 +208,24 @@ export function useCircuitosActions(
     pendingCircuitos.current.set(tempId, promise)
   }
 
+  // El circuito sale de pantalla junto con sus auxiliares; deshacer los recupera a
+  // todos (el back los marca y restaura juntos) — ver borrarConDeshacer en ProyectosContext.
   function eliminarCircuito(circuitoId: number) {
-    setTableros(prev => prev.map(t => ({
-      ...t,
-      circuitos: t.circuitos.filter(c => c.id !== circuitoId && c.parent_id !== circuitoId),
-    })))
-    circuitosApi.deleteCircuito(circuitoId).catch(err => { console.error(err); recargar() })
+    const nombre = tablerosRef.current.flatMap(t => t.circuitos).find(c => c.id === circuitoId)?.circuito ?? ''
+    let quitados: Circuito[] = []
+    borrarConDeshacer({
+      descripcion: `el circuito ${nombre}`.trim(),
+      quitar: () => setTableros(prev => prev.map(t => {
+        const fuera = t.circuitos.filter(c => c.id === circuitoId || c.parent_id === circuitoId)
+        if (fuera.length === 0) return t
+        quitados = fuera
+        return { ...t, circuitos: t.circuitos.filter(c => !fuera.includes(c)) }
+      })),
+      restaurar: () => setTableros(prev => prev.map(t =>
+        t.id === quitados[0]?.tablero_id ? { ...t, circuitos: [...t.circuitos, ...quitados] } : t)),
+      ejecutar: async () => circuitosApi.deleteCircuito(await idReal(circuitoId)),
+      restaurarEnServidor: async () => circuitosApi.restaurarCircuito(await idReal(circuitoId)),
+    })
   }
 
   function reordenarSubcircuitos(orderedHijoIds: number[]) {
@@ -202,71 +260,76 @@ export function useCircuitosActions(
   }
 
   function actualizarDescripcion(id: number, descripcion: string | null) {
-    editarCampos(id, { descripcion }, rid => circuitosApi.updateDescripcionCircuito(rid, descripcion))
+    editarCampos(id, { descripcion }, (rid, v) => circuitosApi.updateDescripcionCircuito(rid, v.descripcion ?? null), { historial: 'descripción' })
   }
 
   function actualizarFP(id: number, fp: number | null) {
-    editarCampos(id, { FP: fp }, rid => circuitosApi.updateFPCircuito(rid, fp))
+    editarCampos(id, { FP: fp }, (rid, v) => circuitosApi.updateFPCircuito(rid, v.FP ?? null), { historial: 'FP' })
   }
 
   function actualizarLargo(id: number, largo: number | null) {
-    editarCampos(id, { Largo: largo }, rid => circuitosApi.updateLargoCircuito(rid, largo))
+    editarCampos(id, { Largo: largo }, (rid, v) => circuitosApi.updateLargoCircuito(rid, v.Largo ?? null), { historial: 'largo' })
   }
 
   function actualizarPotencia(id: number, potencia: number | null) {
-    editarCampos(id, { potencia }, rid => circuitosApi.updatePotenciaCircuito(rid, potencia))
+    editarCampos(id, { potencia }, (rid, v) => circuitosApi.updatePotenciaCircuito(rid, v.potencia ?? null), { historial: 'potencia' })
   }
 
   function actualizarTipoTension(id: number, tipo: string | null) {
-    editarCampos(id, { tipo_tension: tipo }, rid => circuitosApi.updateTipoTensionCircuito(rid, tipo))
+    editarCampos(id, { tipo_tension: tipo }, (rid, v) => circuitosApi.updateTipoTensionCircuito(rid, v.tipo_tension ?? null), { historial: 'tipo de tensión' })
   }
 
   function actualizarFase(id: number, fase: string | null) {
-    editarCampos(id, { fase }, rid => circuitosApi.updateFaseCircuito(rid, fase))
+    editarCampos(id, { fase }, (rid, v) => circuitosApi.updateFaseCircuito(rid, v.fase ?? null), { historial: 'fase' })
   }
 
   function actualizarTipo(id: number, tipo: string | null) {
     editarCampos(id, {
       tipo, es_acometida: tipo === 'ACOMETIDA',
       // Si deja de ser ALIMENTADOR se pierde el vínculo con el tablero destino.
-      ...(tipo !== 'ALIMENTADOR' ? { tablero_destino_id: null, tablero_destino: null } : {}),
-    }, rid => circuitosApi.updateTipoCircuito(rid, tipo))
+      ...(tipo !== 'ALIMENTADOR' ? { tablero_destino_id: null, tablero_destino: null, acometida_destino_id: null } : {}),
+    }, async (rid, v) => {
+      const r = await circuitosApi.updateTipoCircuito(rid, v.tipo ?? null)
+      // Al deshacer un cambio que había cortado el vínculo de un ALIMENTADOR, se vuelve a vincular.
+      return v.tablero_destino_id != null ? circuitosApi.updateTableroDestinoCircuito(rid, v.tablero_destino_id) : r
+    }, { historial: 'tipo' })
   }
 
   function actualizarEsAcometida(id: number, val: boolean) {
-    editarCampos(id, { es_acometida: val }, rid => circuitosApi.updateEsAcometidaCircuito(rid, val))
+    editarCampos(id, { es_acometida: val }, (rid, v) => circuitosApi.updateEsAcometidaCircuito(rid, !!v.es_acometida), { historial: 'acometida' })
   }
 
   function actualizarMetodoInstalacion(id: number, metodo: string | null) {
-    editarCampos(id, { metodo_instalacion: metodo }, rid => circuitosApi.updateMetodoInstalacionCircuito(rid, metodo))
+    editarCampos(id, { metodo_instalacion: metodo }, (rid, v) => circuitosApi.updateMetodoInstalacionCircuito(rid, v.metodo_instalacion ?? null), { historial: 'método de instalación' })
   }
 
   function actualizarFcManual(id: number, fc: number | null) {
-    editarCampos(id, { fc_manual: fc }, rid => circuitosApi.updateFcManualCircuito(rid, fc))
+    editarCampos(id, { fc_manual: fc }, (rid, v) => circuitosApi.updateFcManualCircuito(rid, v.fc_manual ?? null), { historial: 'FC' })
   }
 
   function actualizarFtManual(id: number, ft: number | null) {
-    editarCampos(id, { ft_manual: ft }, rid => circuitosApi.updateFtManualCircuito(rid, ft))
+    editarCampos(id, { ft_manual: ft }, (rid, v) => circuitosApi.updateFtManualCircuito(rid, v.ft_manual ?? null), { historial: 'FT' })
   }
 
   // Límite de selectividad manual (dato de fabricante): un valor en A, "total", o nada
   // (vuelve al calculado).
   function actualizarSelectividad(id: number, Is: number | null, total: boolean) {
     const patch = { selectividad_Is: total ? null : Is, selectividad_total: total }
-    editarCampos(id, patch, rid => circuitosApi.updateSelectividadCircuito(rid, patch))
+    editarCampos(id, patch, (rid, v) => circuitosApi.updateSelectividadCircuito(rid, { selectividad_Is: v.selectividad_Is ?? null, selectividad_total: !!v.selectividad_total }), { historial: 'límite de selectividad' })
   }
 
   // Vincula (o desvincula, con tableroDestinoId null) un circuito ALIMENTADOR a otro tablero.
   // La validación de ciclos/duplicados vive en el back, por eso ante un error se recarga
   // el proyecto en vez de confiar en el estado optimista (podría haber quedado inconsistente).
-  function vincularTableroAlimentador(id: number, tableroDestinoId: number | null) {
+  function vincularTableroAlimentador(id: number, tableroDestinoId: number | null, acometidaDestinoId: number | null = null) {
     const destino = tableroDestinoId != null ? tableros.find(t => t.id === tableroDestinoId) : null
     editarCampos(id, {
       // El back fuerza tipo=ALIMENTADOR en la misma escritura cuando se vincula a un destino.
       ...(destino ? { tipo: 'ALIMENTADOR', es_acometida: false } : {}),
       tablero_destino_id: tableroDestinoId,
+      acometida_destino_id: destino ? acometidaDestinoId : null,
       tablero_destino: destino ? { id: destino.id, tag: destino.tag, nombre: destino.nombre } : null,
-    }, rid => circuitosApi.updateTableroDestinoCircuito(rid, tableroDestinoId), { alFallar: 'recargar' })
+    }, rid => circuitosApi.updateTableroDestinoCircuito(rid, tableroDestinoId, acometidaDestinoId), { alFallar: 'recargar', historial: false })
   }
 
   function agregarAcometida(tableroId: number, nombre: string, insertIndex: number) {
@@ -335,17 +398,22 @@ export function useCircuitosActions(
         cable_neutro: cables.neutro,
         cable_tierra: cables.tierra,
       },
-    }, rid => circuitosApi.updateFormacion(rid, data), { mergear: true })
+    }, (rid, v) => circuitosApi.updateFormacion(rid, {
+      cable_id: v.formacion!.cable_id, cond_por_fase: v.formacion!.cond_por_fase, Nfases: v.formacion!.Nfases,
+      Nneutro: v.formacion!.Nneutro, cable_neutro_id: v.formacion!.cable_neutro_id,
+      cable_tierra_id: v.formacion!.cable_tierra_id, disposicion: v.formacion!.disposicion,
+      // No hay ruta para quitar una formación: la primera asignación no se puede deshacer.
+    }), { mergear: true, historial: actual?.formacion ? 'formación' : false })
   }
 
   function actualizarProteccion(circuitoId: number, proteccion: Proteccion | null) {
     editarCampos(circuitoId, { proteccion_id: proteccion?.id ?? null, proteccion },
-      rid => circuitosApi.updateProteccionCircuito(rid, proteccion?.id ?? null), { mergear: true })
+      (rid, v) => circuitosApi.updateProteccionCircuito(rid, v.proteccion_id ?? null), { mergear: true, historial: 'protección' })
   }
 
   function asignarGrupoDiferencial(circuitoId: number, grupo: GrupoDiferencial | null) {
     editarCampos(circuitoId, { grupo_diferencial_id: grupo?.id ?? null, grupo_diferencial: grupo },
-      rid => circuitosApi.updateGrupoDiferencialCircuito(rid, grupo?.id ?? null), { mergear: true })
+      (rid, v) => circuitosApi.updateGrupoDiferencialCircuito(rid, v.grupo_diferencial_id ?? null), { mergear: true, historial: 'grupo diferencial' })
   }
 
   return {

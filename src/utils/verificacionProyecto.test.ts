@@ -74,12 +74,13 @@ describe('evaluarProyecto', () => {
   it('selectividad: C16 bajo general C63 con dato manual / sin él', () => {
     // Tablero sin fuente → sin Icc de barra: el límite calculado (5·63 = 315 A) no se
     // puede clasificar → falta. Con "total" de fabricante no depende de la Icc → sin observación.
-    const general = circ(1, { es_acometida: true, tipo: 'ACOMETIDA', proteccion: itm(63) })
-    const salida = (extra: object) => circ(2, { potencia: 2.2, FP: 1, Largo: 10, formacion, proteccion: itm(16), ...extra })
-    const sinDato = proyecto([general, salida({})]).tableros[0].circuitos[1]
+    // La acometida va DEBAJO de lo que alimenta (suma lo que tiene arriba).
+    const general = circ(2, { es_acometida: true, tipo: 'ACOMETIDA', proteccion: itm(63) })
+    const salida = (extra: object) => circ(1, { potencia: 2.2, FP: 1, Largo: 10, formacion, proteccion: itm(16), ...extra })
+    const sinDato = proyecto([salida({}), general]).tableros[0].circuitos[0]
     expect(sinDato.selectividad.Is_A).toBe(315)
     expect(peorNivel(sinDato.hallazgos, 'Selectividad')).toBe('falta')
-    const conDato = proyecto([general, salida({ selectividad_total: true })]).tableros[0].circuitos[1]
+    const conDato = proyecto([salida({ selectividad_total: true }), general]).tableros[0].circuitos[0]
     expect(conDato.selectividad).toMatchObject({ estado: 'total', origen: 'manual' })
     expect(peorNivel(conDato.hallazgos, 'Selectividad')).toBeNull()
   })

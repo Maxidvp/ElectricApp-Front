@@ -59,18 +59,18 @@ export default function TablaCargas() {
     setRowSeleccionada(null)
   }
 
-  // Tableros del proyecto que se pueden elegir como destino de un ALIMENTADOR:
-  // no el propio, y no uno que ya reciba de otro alimentador (vínculo 1 a 1).
+  // Tableros del proyecto que se pueden elegir como destino de un ALIMENTADOR: todos
+  // menos el propio. Un tablero puede recibir más de un alimentador (barra partida,
+  // normal + emergencia); los ciclos los rechaza el back.
   const tablerosDisponibles = useMemo(() => {
     if (!idEfectivo) return []
-    const yaAlimentados = new Set(
-      tableros.flatMap(t => t.circuitos)
-        .filter(c => c.tipo === 'ALIMENTADOR' && c.tablero_destino_id != null)
-        .map(c => c.tablero_destino_id)
-    )
     return tableros
-      .filter(t => t.id !== idEfectivo && !yaAlimentados.has(t.id))
-      .map(t => ({ id: t.id, tag: t.tag, nombre: t.nombre }))
+      .filter(t => t.id !== idEfectivo)
+      .map(t => ({
+        id: t.id, tag: t.tag, nombre: t.nombre,
+        acometidas: t.circuitos.filter(c => c.es_acometida && c.parent_id === null)
+          .sort((a, b) => a.orden - b.orden).map(c => ({ id: c.id, circuito: c.circuito })),
+      }))
   }, [tableros, idEfectivo])
 
   // ── Datos ─────────────────────────────────────────────────────
@@ -125,7 +125,19 @@ export default function TablaCargas() {
         .filter((r): r is CircuitoRow => r !== null)
       const newRows = contextData.filter(r => !prevIds.has(r.id) && !handledPos.has(r.id))
 
-      return [...updated, ...newRows]
+      // Las filas nuevas entran en su lugar según el orden del contexto (detrás de la
+      // fila que las precede ahí), no al final: un circuito restaurado con "deshacer"
+      // vuelve a donde estaba, y uno nuevo queda arriba de la acometida que lo suma.
+      const resultado = [...updated]
+      for (const nueva of newRows) {
+        let pos = 0
+        for (let k = contextData.indexOf(nueva) - 1; k >= 0; k--) {
+          const j = resultado.findIndex(r => r.id === contextData[k].id)
+          if (j !== -1) { pos = j + 1; break }
+        }
+        resultado.splice(pos, 0, nueva)
+      }
+      return resultado
     })
   }, [contextData])
 
@@ -348,8 +360,8 @@ export default function TablaCargas() {
         <AlimentadorModal
           tableros={tablerosDisponibles}
           onCargaEquivalente={() => { actualizarTipo(alimentadorPicker.id, 'ALIMENTADOR'); setAlimentadorPicker(null) }}
-          onVincular={tableroDestinoId => {
-            vincularTableroAlimentador(alimentadorPicker.id, tableroDestinoId)
+          onVincular={(tableroDestinoId, acometidaDestinoId) => {
+            vincularTableroAlimentador(alimentadorPicker.id, tableroDestinoId, acometidaDestinoId)
             setAlimentadorPicker(null)
           }}
           onCancelar={() => setAlimentadorPicker(null)}

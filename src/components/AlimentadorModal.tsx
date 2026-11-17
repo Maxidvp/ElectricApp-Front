@@ -1,17 +1,25 @@
 'use client'
 import { useState } from 'react'
 
-type TableroOpt = { id: number; tag: string; nombre: string | null }
+// `acometidas`: las del tablero, en orden. La última es la principal (alimenta todo).
+type TableroOpt = { id: number; tag: string; nombre: string | null; acometidas?: { id: number; circuito: string }[] }
 
 type Props = {
   tableros: TableroOpt[]
   onCargaEquivalente: () => void
-  onVincular: (tableroDestinoId: number) => void
+  // acometidaDestinoId null = toda la carga del tablero (acometida principal)
+  onVincular: (tableroDestinoId: number, acometidaDestinoId: number | null) => void
   onCancelar: () => void
 }
 
 export default function AlimentadorModal({ tableros, onCargaEquivalente, onVincular, onCancelar }: Props) {
   const [seleccionado, setSeleccionado] = useState<number | null>(null)
+  const [acometida, setAcometida] = useState<number | null>(null)
+  // Solo tiene sentido elegir cuando el destino tiene más de una acometida.
+  const acometidas = tableros.find(t => t.id === seleccionado)?.acometidas ?? []
+  const principal = acometidas[acometidas.length - 1]
+  const pill = (activo: boolean) => `px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
+    activo ? 'bg-info-a0 border-info-a10 opacity-100 font-medium' : 'bg-transparent border-surface-tonal-a30 text-font-a0 opacity-55 hover:opacity-85'}`
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200]" onClick={onCancelar}>
@@ -35,7 +43,7 @@ export default function AlimentadorModal({ tableros, onCargaEquivalente, onVincu
               {tableros.map(t => (
                 <button
                   key={t.id}
-                  onClick={() => setSeleccionado(t.id)}
+                  onClick={() => { setSeleccionado(t.id); setAcometida(null) }}
                   className={`px-3.5 py-1.25 rounded-full border text-xs cursor-pointer transition-[opacity,background] duration-150 ${
                     seleccionado === t.id
                       ? 'bg-info-a0 border-info-a10 opacity-100 font-medium'
@@ -46,6 +54,23 @@ export default function AlimentadorModal({ tableros, onCargaEquivalente, onVincu
                 </button>
               ))}
             </div>
+            {acometidas.length > 1 && (
+              <>
+                <p className="text-[12px] text-surface-tonal-a40 mt-1">
+                  Ese tablero tiene más de una acometida. ¿A cuál llega este alimentador? Toma las cargas que esa acometida tiene arriba.
+                </p>
+                <div className="flex gap-1.5 flex-wrap max-w-[420px]">
+                  {acometidas.map(a => {
+                    const esPrincipal = a.id === principal.id
+                    return (
+                      <button key={a.id} onClick={() => setAcometida(esPrincipal ? null : a.id)} className={pill(esPrincipal ? acometida === null : acometida === a.id)}>
+                        {a.circuito}{esPrincipal ? ' (principal: todo el tablero)' : ''}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -57,7 +82,7 @@ export default function AlimentadorModal({ tableros, onCargaEquivalente, onVincu
             Cancelar
           </button>
           <button
-            onClick={() => seleccionado != null && onVincular(seleccionado)}
+            onClick={() => seleccionado != null && onVincular(seleccionado, acometida)}
             disabled={seleccionado === null}
             className="h-[32px] px-4 rounded-[7px] text-[13px] cursor-pointer border border-info-a10 bg-info-a0 text-white hover:opacity-90 disabled:opacity-40"
           >
