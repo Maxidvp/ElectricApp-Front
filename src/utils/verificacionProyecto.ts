@@ -11,7 +11,7 @@ import type { Circuito, Tablero } from '@/context/types'
 import { resolverCargaCircuito, resolverParaSuma, calcCorrientesPorFase, tensionesDe, type CargaCircuito } from '@/utils/cargas'
 import { evaluarAmpacidad, type AmpacidadCircuito, type ParametrosSitio } from '@/utils/ampacidad'
 import { evaluarCaida, LIMITE_CAIDA_PCT, type CaidaCircuito } from '@/utils/caida'
-import { calcularIccTablero, type IccTablero } from '@/utils/calcularIccTablero'
+import { calcularIccTablero, esCircuitoEsencial, type IccTablero } from '@/utils/calcularIccTablero'
 import { verificarCircuitoCC, type BarraCC, type ResultadoCircuitoCC } from '@/utils/verificacionCortocircuito'
 import { selectividadCircuito, type Selectividad } from '@/utils/selectividad'
 
@@ -55,19 +55,22 @@ const kA = (n: number) => `${n.toFixed(2)} kA`
 function hallazgosCircuito(
   c: Circuito, carga: CargaCircuito, amp: AmpacidadCircuito, caida: CaidaCircuito, cc: ResultadoCircuitoCC, barra: BarraCC,
   sel: Selectividad,
+  // true = es la cabecera de un tablero al que le llega un alimentador de otro tablero:
+  // el cable, su largo y su método de instalación son los de ese alimentador.
+  cabeceraAlimentada = false,
 ): Hallazgo[] {
   const h: Hallazgo[] = []
   const add = (nivel: NivelHallazgo, area: AreaHallazgo, mensaje: string) => h.push({ nivel, area, mensaje })
 
   // ── Datos de entrada ──
-  if (!c.formacion) add('falta', 'Datos', 'Sin cable asignado (formación)')
+  if (!c.formacion && !cabeceraAlimentada) add('falta', 'Datos', 'Sin cable asignado (formación)')
   if (carga.corriente == null) add('falta', 'Datos', 'Sin corriente de diseño: falta potencia, FP o tipo de tensión')
-  if (!c.Largo) add('falta', 'Datos', 'Sin largo cargado')
+  if (!c.Largo && !cabeceraAlimentada) add('falta', 'Datos', 'Sin largo cargado')
   if (!c.proteccion) add('falta', 'Datos', 'Sin protección asignada')
 
   // ── Ampacidad ──
   if (amp.cumple === false) add('error', 'Ampacidad', `El cable no alcanza: Iz ${A(amp.iadm_corr!)} < Ib ${A(carga.corriente!)}`)
-  if (c.formacion && !amp.metodo) add('falta', 'Ampacidad', 'Sin método de instalación: no se aplicó factor de agrupamiento')
+  if (c.formacion && !amp.metodo && !cabeceraAlimentada) add('falta', 'Ampacidad', 'Sin método de instalación: no se aplicó factor de agrupamiento')
   if (amp.iadmAviso) add('aviso', 'Ampacidad', amp.iadmAviso)
   if (amp.metodo && amp.nAgrupados == null && amp.fcManual == null)
     add('aviso', 'Ampacidad', 'Circuito sin ruteo: no se pudo sugerir FC (se usó 1)')
@@ -89,9 +92,12 @@ function hallazgosCircuito(
     add('error', 'Cortocircuito', `Poder de corte insuficiente: Icu ${kA(cc.Icu_kA!)} < Icc de barra ${kA(barra.Icc_max_A! / 1000)}`)
   if (cc.Im_ok === false)
     add('error', 'Cortocircuito', `No garantiza disparo magnético: Im ${A(cc.Im_A!)} > I"k mín ${A(cc.Ik_kA_min! * 1000)}`)
-  if (c.proteccion && barra.Icc_max_A != null && cc.Icu_kA == null)
+  // Un interruptor-seccionador no corta cortocircuitos ni tiene disparo magnético: no se
+  // le exige Icu ni curva (lo protege el aparato de aguas arriba).
+  const tipoProt = c.proteccion?.familia?.tipo
+  if (c.proteccion && barra.Icc_max_A != null && cc.Icu_kA == null && tipoProt !== 'seccionador')
     add('falta', 'Cortocircuito', 'La protección no tiene Icu cargado')
-  if (c.proteccion && cc.Ik_kA_min != null && cc.Im_A == null && c.proteccion.familia?.tipo !== 'diferencial')
+  if (c.proteccion && cc.Ik_kA_min != null && cc.Im_A == null && tipoProt !== 'diferencial' && tipoProt !== 'seccionador')
     add('falta', 'Cortocircuito', 'La protección no tiene curva/In para verificar el disparo magnético')
   if (cc.cable_ok_002 === false || cc.cable_ok_02 === false)
     add('aviso', 'Cortocircuito', 'Sección térmica orientativa insuficiente (tiempos fijos; confirmar con el I²t del dispositivo)')
@@ -130,6 +136,11 @@ export function evaluarProyecto(tableros: Tablero[], segmentos: Segmento[], siti
     for (const a of icc.avisos) hallazgosTablero.push({ nivel: 'aviso', area: 'Cortocircuito', mensaje: a })
     contar(hallazgosTablero)
 
+    // Los circuitos no esenciales no los alimenta el respaldo: su Icc mínima es la de la
+    // alimentación principal (ver "Fuentes de respaldo" en calcularIccTablero.ts).
+    const barraPrincipal: BarraCC = { ...barra, Icc_min_A: icc.Icc_min_principal_kA != null ? icc.Icc_min_principal_kA * 1000 : barra.Icc_min_A }
+    const llegaAlimentador = tableros.some(t => t.circuitos.some(x => x.tipo === 'ALIMENTADOR' && x.tablero_destino_id === tablero.id))
+
     const tensiones = tensionesDe(tablero)
     const principales = tablero.circuitos.filter(c => c.parent_id === null).sort((a, b) => a.orden - b.orden)
 
@@ -138,9 +149,10 @@ export function evaluarProyecto(tableros: Tablero[], segmentos: Segmento[], siti
         const carga = resolverCargaCircuito(c, principales.slice(0, idx), tensiones, tableros)
         const ampacidad = evaluarAmpacidad(c, carga.corriente, segmentos, sitio)
         const caida = evaluarCaida(c, carga)
-        const cc = verificarCircuitoCC(c, barra)
+        const barraC = esCircuitoEsencial(c, tablero) ? barra : barraPrincipal
+        const cc = verificarCircuitoCC(c, barraC)
         const selectividad = selectividadCircuito(c, tablero, tableros, barra.Icc_max_A)
-        return { circuito: c, carga, ampacidad, caida, cc, selectividad, hallazgos: hallazgosCircuito(c, carga, ampacidad, caida, cc, barra, selectividad) }
+        return { circuito: c, carga, ampacidad, caida, cc, selectividad, hallazgos: hallazgosCircuito(c, carga, ampacidad, caida, cc, barraC, selectividad, c.es_acometida && llegaAlimentador) }
       })
       // Una reserva sin nada cargado no es un circuito a verificar.
       .filter(e => !(e.circuito.tipo === 'RESERVA' && !e.circuito.formacion && e.carga.corriente == null))

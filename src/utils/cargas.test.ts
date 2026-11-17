@@ -64,6 +64,39 @@ describe('alimentador vinculado a una acometida del destino (emergencia / princi
   })
 })
 
+describe('simultaneidad (Planilla de Análisis de Cargas, CTM-002)', () => {
+  // Ejemplo "vivienda con quincho" de CTM-002, tablero TS1 a 220 V:
+  //   C7 IUG  120 W · Fs 1,00 → 120 W  · I = 120 / (220 · 0,90)  = 0,6 A
+  //   C8 TUG  900 W · Fs 0,50 → 450 W  · I = 450 / (220 · 0,90)  = 2,3 A
+  //   C9 TUE 1200 W · Fs 1,00 → 1200 W · I = 1200 / (220 · 0,80) = 6,8 A
+  //   Subtotal: instalada 2220 W, simultánea 1770 W, Fs resultante 1770/2220 = 0,80
+  const base = { tipo: null, tipo_tension: 'mono', fase: 'R', es_acometida: false, tablero_destino_id: null }
+  const c7 = { ...base, potencia: 0.12, FP: 0.9, factor_simultaneidad: 1 }
+  const c8 = { ...base, potencia: 0.9, FP: 0.9, factor_simultaneidad: 0.5 }
+  const c9 = { ...base, potencia: 1.2, FP: 0.8, factor_simultaneidad: null }   // sin cargar = 1
+  const tensiones = { mono: 220, bi: null, tri: null }
+
+  it('la corriente de cada circuito sale de su potencia simultánea', () => {
+    expect(resolverCargaCircuito(c7, [], tensiones, []).corriente).toBeCloseTo(0.606, 2)
+    const r8 = resolverCargaCircuito(c8, [], tensiones, [])
+    expect(r8.potenciaInstalada).toBe(0.9)
+    expect(r8.potencia).toBeCloseTo(0.45, 6)
+    expect(r8.corriente).toBeCloseTo(2.27, 2)
+    expect(resolverCargaCircuito(c9, [], tensiones, []).corriente).toBeCloseTo(6.82, 2)
+  })
+
+  it('la acometida suma las simultáneas y da el Fs resultante', () => {
+    const r = resolverCargaCircuito({ ...base, potencia: null, FP: null, es_acometida: true }, [c7, c8, c9], tensiones, [])
+    expect(r.potenciaInstalada).toBeCloseTo(2.22, 6)
+    expect(r.potencia).toBeCloseTo(1.77, 6)
+    expect(r.fs).toBeCloseTo(0.797, 3)
+  })
+
+  it('un Fs fuera de (0, 1] se ignora', () => {
+    expect(resolverCargaCircuito({ ...c8, factor_simultaneidad: 1.5 }, [], tensiones, []).potencia).toBe(0.9)
+  })
+})
+
 describe('desequilibrioFases', () => {
   it('30 / 20 / 10 A → promedio 20 A, (30 − 10) / 20 = 100 %', () => {
     expect(desequilibrioFases({ R: 30, S: 20, T: 10 })).toBeCloseTo(100, 6)

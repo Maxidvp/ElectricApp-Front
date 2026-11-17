@@ -32,7 +32,11 @@ export function mapearCircuitos(
       FP: carga.fp, Largo: c.Largo,
       tipo_tension: c.es_acometida ? carga.tipo : c.tipo_tension,
       fase: c.fase, es_acometida: c.es_acometida,
-      potencia: carga.potencia, corriente: carga.corriente, corrientesFase: carga.corrientesFase,
+      // La columna editable "Potencia" es la INSTALADA; la corriente sale de la simultánea.
+      potencia: carga.potenciaInstalada, potenciaSimultanea: carga.potencia, fs: carga.fs,
+      fsCargado: c.factor_simultaneidad ?? null,
+      cantidad_puntos: c.cantidad_puntos ?? null, potencia_unitaria: c.potencia_unitaria ?? null,
+      corriente: carga.corriente, corrientesFase: carga.corrientesFase,
       formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
       formacionData: formacionData(c),
       tablero_destino_id: c.es_acometida ? null : c.tablero_destino_id,

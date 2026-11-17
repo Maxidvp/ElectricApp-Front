@@ -17,7 +17,8 @@ import { prefetchCablesFamilias } from '@/context/CablesContext'
 import { getLastTableroId, setLastTableroId } from '@/utils/cookies'
 import { useAuth } from '@/context/AuthContext'
 
-import type { Tablero, Circuito, FuenteAlimentacion, GrupoDiferencial, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta } from './types'
+import type { Tablero, Circuito, FuenteAlimentacion, GrupoDiferencial, LazoInstrumentacion, PuertoRed, ProyectosContextType, ProyectoMeta, Local } from './types'
+import * as localesApi from '@/services/locales'
 import { nextTempId, DESCRIPCION_CREANDO, mapCirc } from './helpers'
 import { useCircuitosActions, type BorrarConDeshacer } from './useCircuitosActions'
 import { useHistorial, sigueIgual } from './historial'
@@ -44,6 +45,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
   const [paredes,             setParedes]             = useState<Pared[]>([])
   const [tablaParedes,        setArquitecturaes]      = useState<Arquitectura[]>([])
   const [canieros,            setCanieros]            = useState<Caniero[]>([])
+  const [locales,             setLocales]             = useState<Local[]>([])
   const [activeConjuntoId,    setActiveConjuntoIdState]    = useState<number | null>(null)
   const [activaArquitecturaId,setActivaArquitecturaIdState] = useState<number | null>(null)
   const [loading,             setLoading]             = useState(true)
@@ -167,7 +169,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     if (!p) {
       setLoading(false)
       localStorage.removeItem(LS_PROYECTO)
-      setTableros([]); setConjuntos([]); setSegmentos([]); setParedes([]); setArquitecturaes([]); setCanieros([])
+      setTableros([]); setConjuntos([]); setSegmentos([]); setParedes([]); setArquitecturaes([]); setCanieros([]); setLocales([])
       setActiveConjuntoIdState(null); setActivaArquitecturaIdState(null)
       return
     }
@@ -205,6 +207,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
         setParedes(tablas.flatMap((tp: Arquitectura) => tp.paredes))
 
         setCanieros(data.canieros ?? [])
+        setLocales(data.locales ?? [])
 
         const availableConjIds: number[] = (data.conjuntos ?? []).map((c: any) => c.id)
         const savedConjId  = Number(localStorage.getItem(lsConjunto(p.id))) || null
@@ -595,6 +598,38 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
     puertosRedApi.reordenarPuertosRed(orderedIds.map((id, i) => ({ id, orden: i }))).catch(err => { console.error(err); showError('No se pudo guardar el cambio. Reintentá.') })
   }
 
+  // ── Locales (Planilla de Locales) ───────────────────────────────
+  async function agregarLocal(datos: Partial<Local> = {}) {
+    if (!proyectoActivo) return
+    try {
+      const real = await localesApi.crearLocal(proyectoActivo.id, datos)
+      setLocales(prev => [...prev, real])
+    } catch (err) {
+      console.error(err)
+      showError('No se pudo crear el local. Reintentá.')
+    }
+  }
+
+  // Edición optimista con vuelta atrás, mismo criterio que editarItem.
+  function actualizarLocal(id: number, datos: Partial<Local>) {
+    let previo: Local | undefined
+    setLocales(prev => prev.map(l => { if (l.id !== id) return l; previo = l; return { ...l, ...datos } }))
+    localesApi.actualizarLocal(id, datos).catch(err => {
+      console.error(err)
+      if (previo) setLocales(prev => prev.map(l => l.id === id ? previo! : l))
+      showError('No se pudo guardar el cambio: se restauró el valor anterior.')
+    })
+  }
+
+  function eliminarLocal(id: number) {
+    setLocales(prev => prev.filter(l => l.id !== id))
+    localesApi.eliminarLocal(id).catch(err => {
+      console.error(err)
+      showError('No se pudo eliminar: se recargó el proyecto.')
+      recargar()
+    })
+  }
+
   // ── Domain action hooks ───────────────────────────────────────
   const circuitos = useCircuitosActions(tableros, setTableros, pendingCircuitos, recargar, tablerosRef, historial, borrarConDeshacer)
 
@@ -628,6 +663,7 @@ export function ProyectosProvider({ children }: { children: React.ReactNode }) {
       activeConjuntoId, setActiveConjuntoId,
       paredes, tablaParedes, activaArquitecturaId, setActivaArquitecturaId,
       canieros, setCanieros,
+      locales, agregarLocal, actualizarLocal, eliminarLocal,
       ...ruteo,
     }}>
       {children}

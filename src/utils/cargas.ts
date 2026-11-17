@@ -18,6 +18,8 @@ export type CircuitoCarga = {
   tablero_destino_id: number | null
   // Para un ALIMENTADOR que llega a una acometida concreta del destino (ver resolverAlimentador)
   acometida_destino_id?: number | null
+  // Factor de simultaneidad del circuito (null = 1) — ver fsDe
+  factor_simultaneidad?: number | null
   id?: number
   circuito?: string
   orden?: number
@@ -40,15 +42,22 @@ export type TableroCarga = {
 // cruda (c.potencia) siempre es null en la DB: no se carga a mano, se toma del
 // tablero destino.
 export type CircuitoResuelto = {
-  potencia: number | null
+  potencia: number | null       // kW SIMULTÁNEA (instalada × Fs): la que dimensiona
+  potenciaInst?: number | null  // kW instalada (sin Fs), para la planilla de cargas
   FP: number | null
   tipo_tension: string | null
   fase: string | null
   es_acometida: boolean
 }
 
+// Simultaneidad (Planilla de Análisis de Cargas de COPAIPA, CTM-002): cada circuito
+// tiene un Fs; su potencia SIMULTÁNEA = instalada × Fs es la que define su corriente y la
+// que suma su acometida. La acometida no tiene un Fs propio: el que se informa para ella
+// es el resultante, Σ simultánea / Σ instalada.
 export type CargaCircuito = {
-  potencia: number | null     // kW
+  potencia: number | null     // kW — SIMULTÁNEA: de acá sale la corriente de diseño
+  potenciaInstalada: number | null  // kW — instalada, sin Fs
+  fs: number | null           // Fs aplicado (circuito) o resultante (acometida); null sin datos
   fp: number | null
   tipo: string | null         // 'mono' | 'bi' | 'tri' — tipo de tensión efectivo
   tension: number | null      // V — la que corresponde a `tipo` en el tablero
@@ -118,12 +127,13 @@ export function calcAcometidaAgregada(circuitos: CircuitoResuelto[], tensiones: 
   const tipoTablero = tipoTensionTablero(tensiones)
   const above    = circuitos.filter(x => !x.es_acometida)
   const potencia = above.reduce((s, x) => s + (x.potencia ?? 0), 0) || null
+  const potenciaInst = above.reduce((s, x) => s + (x.potenciaInst ?? x.potencia ?? 0), 0) || null
   const conFP    = above.filter(x => x.FP != null && (x.potencia ?? 0) > 0)
   const sumPot   = conFP.reduce((s, x) => s + x.potencia!, 0)
   const fp       = sumPot > 0 ? conFP.reduce((s, x) => s + x.FP! * x.potencia!, 0) / sumPot : null
   const tension  = tensionDeTipo(tipoTablero, tensiones)
   return {
-    tipoTablero, potencia, fp, tension,
+    tipoTablero, potencia, potenciaInst, fp, tension,
     corriente: calcCorriente(potencia, tipoTablero, tension, fp),
     corrientesFase: calcCorrientesPorFase(above, tensiones),
   }
@@ -137,6 +147,15 @@ export function desequilibrioFases(f: { R: number; S: number; T: number }): numb
   return (Math.max(f.R, f.S, f.T) - Math.min(f.R, f.S, f.T)) / prom * 100
 }
 
+// Fs de un circuito: 1 si no está cargado. Un valor fuera de (0, 1] se ignora (el back ya
+// lo rechaza al guardar): un factor mayor que 1 aumentaría la carga.
+export function fsDe(c: { factor_simultaneidad?: number | null }): number {
+  const fs = c.factor_simultaneidad
+  return fs != null && fs > 0 && fs <= 1 ? fs : 1
+}
+
+const por = (p: number | null, fs: number) => (p == null ? null : p * fs)
+
 // Potencia/FP EFECTIVA de un ALIMENTADOR vinculado a otro tablero — null si `c` no
 // es un alimentador vinculado o el destino no se encontró.
 // Destino POTENCIA: se suma su acometida (sus circuitos propios, recursivamente).
@@ -149,12 +168,12 @@ export function desequilibrioFases(f: { R: number; S: number; T: number }): numb
 // `visitados` corta un eventual ciclo de alimentadores (A→B→A) cargado por error.
 export function resolverAlimentador(
   c: CircuitoCarga, tableros: TableroCarga[], visitados: Set<number> = new Set(),
-): { potencia: number | null; fp: number | null; tipoTableroFallback: string | null } | null {
+): { potencia: number | null; potenciaInst: number | null; fp: number | null; tipoTableroFallback: string | null } | null {
   if (c.tipo !== 'ALIMENTADOR' || c.tablero_destino_id == null) return null
   const destino = tableros.find(t => t.id === c.tablero_destino_id)
   if (!destino || visitados.has(destino.id)) return null
   if (destino.categoria === 'CONTROL' || destino.categoria === 'DATOS')
-    return { potencia: destino.potencia_inst ?? null, fp: destino.factor_potencia ?? null, tipoTableroFallback: null }
+    return { potencia: destino.potencia_inst ?? null, potenciaInst: destino.potencia_inst ?? null, fp: destino.factor_potencia ?? null, tipoTableroFallback: null }
 
   const sub = new Set(visitados).add(destino.id)
   const acometida = c.acometida_destino_id != null
@@ -166,7 +185,7 @@ export function resolverAlimentador(
     resolverParaSuma(alimentados, tableros, sub),
     tensionesDe(destino),
   )
-  return { potencia: agregado.potencia, fp: agregado.fp, tipoTableroFallback: agregado.tipoTablero }
+  return { potencia: agregado.potencia, potenciaInst: agregado.potenciaInst, fp: agregado.fp, tipoTableroFallback: agregado.tipoTablero }
 }
 
 // Circuitos de un tablero listos para SUMAR en su acometida. Varios alimentadores del
@@ -185,15 +204,19 @@ export function resolverParaSuma(circuitos: CircuitoCarga[], tableros: TableroCa
   })
   return resueltos.map((r, i) => {
     const destino = circuitos[i].tipo === 'ALIMENTADOR' ? circuitos[i].tablero_destino_id : null
-    return destino != null && mayorPorDestino.get(destino) !== i ? { ...r, potencia: null } : r
+    return destino != null && mayorPorDestino.get(destino) !== i ? { ...r, potencia: null, potenciaInst: null } : r
   })
 }
 
 // Potencia/FP efectiva de cualquier circuito para agregar en una acometida.
 export function resolverEfectivo(c: CircuitoCarga, tableros: TableroCarga[], visitados: Set<number> = new Set()): CircuitoResuelto {
   const alim = resolverAlimentador(c, tableros, visitados)
+  const inst = alim ? alim.potenciaInst : (c.potencia ?? null)
   return {
-    potencia: alim ? alim.potencia : (c.potencia ?? null),
+    // Un alimentador vinculado parte de la potencia ya simultánea del destino; su propio
+    // Fs (si lo tiene) se aplica encima, para la simultaneidad entre tableros.
+    potencia: por(alim ? alim.potencia : (c.potencia ?? null), fsDe(c)),
+    potenciaInst: inst,
     FP: alim ? alim.fp : c.FP,
     tipo_tension: c.tipo_tension, fase: c.fase, es_acometida: c.es_acometida,
   }
@@ -213,21 +236,30 @@ export function resolverCargaCircuito(
 ): CargaCircuito {
   if (c.es_acometida) {
     const a = calcAcometidaAgregada(resolverParaSuma(anteriores, tableros), tensiones)
-    return { potencia: a.potencia, fp: a.fp, tipo: a.tipoTablero, tension: a.tension, corriente: a.corriente, corrientesFase: a.corrientesFase }
+    return {
+      potencia: a.potencia, potenciaInstalada: a.potenciaInst,
+      fs: a.potencia != null && a.potenciaInst ? a.potencia / a.potenciaInst : null,
+      fp: a.fp, tipo: a.tipoTablero, tension: a.tension, corriente: a.corriente, corrientesFase: a.corrientesFase,
+    }
   }
 
   const tipo = tipoEfectivoCircuito(c, tensiones)
   const tension = tensionDeTipo(tipo, tensiones)
 
+  const fs = fsDe(c)
   const alim = resolverAlimentador(c, tableros)
   if (alim) {
+    const potencia = por(alim.potencia, fs)
     return {
-      potencia: alim.potencia, fp: alim.fp, tipo, tension,
-      corriente: calcCorriente(alim.potencia, tipo ?? alim.tipoTableroFallback, tension, alim.fp),
+      potencia, potenciaInstalada: alim.potenciaInst,
+      fs: potencia != null && alim.potenciaInst ? potencia / alim.potenciaInst : null,
+      fp: alim.fp, tipo, tension,
+      corriente: calcCorriente(potencia, tipo ?? alim.tipoTableroFallback, tension, alim.fp),
       corrientesFase: null,
     }
   }
 
-  const potencia = c.potencia ?? null
-  return { potencia, fp: c.FP, tipo, tension, corriente: calcCorriente(potencia, tipo, tension, c.FP), corrientesFase: null }
+  const potenciaInstalada = c.potencia ?? null
+  const potencia = por(potenciaInstalada, fs)
+  return { potencia, potenciaInstalada, fs, fp: c.FP, tipo, tension, corriente: calcCorriente(potencia, tipo, tension, c.FP), corrientesFase: null }
 }

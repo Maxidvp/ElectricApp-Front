@@ -20,7 +20,7 @@ export default function TablaCargas() {
     tableros, getTablero, loading, error,
     renombrarCircuito, agregarCircuito, duplicarCircuito, eliminarCircuito,
     reordenarCircuitos, actualizarDescripcion, actualizarTipo, actualizarFormacion,
-    actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia,
+    actualizarFP, actualizarLargo, actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarDatosCarga,
     vincularTableroAlimentador,
     proyectoActivo,
   } = useProyectos()
@@ -168,7 +168,7 @@ export default function TablaCargas() {
 
   const columns = useColumnas(tensionesDisponibles, {
     renombrarCircuito, actualizarDescripcion, actualizarTipo,
-    actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFP, actualizarLargo,
+    actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFP, actualizarLargo, actualizarDatosCarga,
     setPendingTipo, setAlimentadorPicker, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto,
     irATablero: cambiarTablero,
   }, proyectoActivo?.nomenclatura_fases ?? 'RST')

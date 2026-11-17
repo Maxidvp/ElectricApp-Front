@@ -32,9 +32,32 @@ type Candidato = {
   transformadores: Transformer[]
   generadores: SyncGenerator[]
   conductores: Conductor[]
+  // Camino de RESPALDO: solo llega a las cargas esenciales del tablero (las que están
+  // arriba de una acometida que no es la principal). Ver "Fuentes de respaldo" abajo.
+  respaldo?: boolean
 }
 
-export type IccTablero = { Icc_max_kA: number | null; Icc_min_kA: number | null; avisos: string[] }
+// Icc_min_principal_kA: Icc mínima considerando solo los caminos de la alimentación
+// principal (sin los de respaldo). Es la que corresponde a los circuitos NO esenciales,
+// que en emergencia quedan fuera de servicio. Coincide con Icc_min_kA si el tablero no
+// tiene caminos de respaldo.
+export type IccTablero = { Icc_max_kA: number | null; Icc_min_kA: number | null; Icc_min_principal_kA?: number | null; avisos: string[] }
+
+// ── Fuentes de respaldo ─────────────────────────────────────────────────────────
+// En un tablero con más de una acometida, la última es la principal (alimenta todo) y las
+// anteriores alimentan solo lo que tienen arriba (las cargas esenciales). Se toma como
+// camino de respaldo:
+//   - un GENERADOR propio del tablero, y
+//   - un alimentador de otro tablero vinculado a una acometida que no es la principal.
+// Un camino de respaldo no llega a los circuitos no esenciales ni a los tableros que
+// cuelgan de ellos: un seccional alimentado desde la barra no esencial no ve al grupo.
+const acometidasDe = (t: Tablero) => t.circuitos.filter(c => c.es_acometida && c.parent_id === null).sort((a, b) => a.orden - b.orden)
+
+// ¿El circuito es esencial? = tiene debajo una acometida que no es la principal.
+export function esCircuitoEsencial(c: Pick<Circuito, 'orden' | 'es_acometida'>, tablero: Tablero): boolean {
+  const acometidas = acometidasDe(tablero)
+  return acometidas.slice(0, -1).some(a => a.orden > c.orden || (c.es_acometida && a.orden === c.orden))
+}
 
 const nodoTablero = (id: number) => `T${id}`
 const nivelTension = (t: Tablero) => t.tension_tri ?? t.tension_bi ?? t.tension_mono ?? null
@@ -140,6 +163,8 @@ function candidatosPropios(tablero: Tablero, avisar: (msg: string) => void): Can
     candidatos.push({
       red_alimentacion: { id: '__sin_red__', nodo: `${nodo}_AISLADO`, tension_nominal: nivelTension(tablero) ?? gen.tension_nominal, corriente_cc: 1e-6 },
       transformadores: [], generadores: [gen], conductores: [],
+      // Con una sola acometida el generador alimenta todo el tablero: no es "respaldo".
+      respaldo: acometidasDe(tablero).length > 1,
     })
   }
 
@@ -162,8 +187,16 @@ function candidatosDe(tablero: Tablero, todos: Tablero[], visitados: Set<number>
     if (!origen) continue
     const conductor = conductorDeCircuito(entrante, nodoTablero(origen.id), nodoTablero(tablero.id))
     if (conductor) {
+      // Los caminos de respaldo del origen solo siguen por este alimentador si sale de
+      // su barra esencial. Para este tablero, lo que llega es respaldo si el alimentador
+      // está vinculado a una acometida que no es la principal.
+      const esencialEnOrigen = esCircuitoEsencial(entrante, origen)
+      const principal = acometidasDe(tablero).slice(-1)[0]
+      const respaldo = entrante.acometida_destino_id != null && principal != null && entrante.acometida_destino_id !== principal.id
+        && acometidasDe(tablero).some(a => a.id === entrante.acometida_destino_id)
       for (const c of candidatosDe(origen, todos, enCamino, avisar)) {
-        candidatos.push({ ...c, conductores: [...c.conductores, conductor] })
+        if (c.respaldo && !esencialEnOrigen) continue
+        candidatos.push({ ...c, conductores: [...c.conductores, conductor], respaldo })
       }
     } else {
       avisar(`${tablero.tag}: el alimentador ${entrante.circuito} desde ${origen.tag} no tiene cable o largo cargado; lo que viene por él no entra en el cálculo.`)
@@ -185,7 +218,7 @@ export function calcularIccTablero(tablero: Tablero, todosTableros: Tablero[]): 
   if (candidatos.length > 1)
     avisar(`Hay ${candidatos.length} fuentes posibles; se calculó cada una por separado, sin sumarlas en paralelo ni considerar el estado de los interruptores. Si operan a la vez, la Icc máxima real es mayor que la informada.`)
 
-  let max: number | null = null, min: number | null = null
+  let max: number | null = null, min: number | null = null, minPrincipal: number | null = null
   for (const cand of candidatos) {
     try {
       const entrada: EntradaProyecto = {
@@ -201,15 +234,17 @@ export function calcularIccTablero(tablero: Tablero, todosTableros: Tablero[]): 
         ],
       }
       const [rMax, rMin] = calcularProyecto(entrada)
-      for (const a of [...rMax.advertencias, ...rMin.advertencias]) avisar(a)
+      // La red ficticia de un camino con generador solo existe para el motor de cálculo: sus avisos no dicen nada del proyecto.
+      for (const a of [...rMax.advertencias, ...rMin.advertencias]) if (!a.includes('__sin_red__')) avisar(a)
       const ikMax = rMax.corrientes.Ik_inicial_A / 1000
       const ikMin = rMin.corrientes.Ik_inicial_A / 1000
       max = max == null ? ikMax : Math.max(max, ikMax)
       min = min == null ? ikMin : Math.min(min, ikMin)
+      if (!cand.respaldo) minPrincipal = minPrincipal == null ? ikMin : Math.min(minPrincipal, ikMin)
     } catch (e) {
       // Candidato con datos insuficientes o inconsistentes — no rompe a los demás, pero se avisa.
       avisar(`Una fuente quedó afuera por datos inconsistentes: ${(e as Error).message}`)
     }
   }
-  return { Icc_max_kA: max, Icc_min_kA: min, avisos }
+  return { Icc_max_kA: max, Icc_min_kA: min, Icc_min_principal_kA: minPrincipal ?? min, avisos }
 }

@@ -82,7 +82,7 @@ export function TablaBalance({ t }: Props) {
           <td>{n(R, 1)}</td><td>{n(S, 1)}</td><td>{n(T, 1)}</td><td>{n((R + S + T) / 3, 1)}</td><td>{d != null ? `${n(d, 1)} %` : '—'}</td>
         </tr></tbody>
       </table>
-      <p className="mem-nota">Suma de las corrientes de las salidas por fase, sin factores de simultaneidad. Desequilibrio = (I máx − I mín) / I promedio.</p>
+      <p className="mem-nota">Suma de las corrientes simultáneas de las salidas por fase. Desequilibrio = (I máx − I mín) / I promedio.</p>
     </>
   )
 }

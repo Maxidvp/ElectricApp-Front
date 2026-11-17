@@ -16,6 +16,7 @@ type Acciones = {
   actualizarPotencia:   (id: number, val: number | null) => void
   actualizarFP:         (id: number, val: number | null) => void
   actualizarLargo:      (id: number, val: number | null) => void
+  actualizarDatosCarga: (id: number, datos: { factor_simultaneidad?: number | null; cantidad_puntos?: number | null; potencia_unitaria?: number | null }) => void
   setPendingTipo:       (val: { id: number; tipoPrevio: string | null; nuevoTipo: string | null } | null) => void
   setAlimentadorPicker: (val: { id: number } | null) => void
   setCircuitoEditando:  (id: number | null) => void
@@ -41,7 +42,7 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
   const {
     renombrarCircuito, actualizarDescripcion, actualizarTipo,
     actualizarTipoTension, actualizarFase, actualizarPotencia,
-    actualizarFP, actualizarLargo,
+    actualizarFP, actualizarLargo, actualizarDatosCarga,
     setPendingTipo, setAlimentadorPicker, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto,
     irATablero,
   } = acciones
@@ -166,8 +167,47 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
         )
       },
     }),
+    // ── Planilla de Análisis de Cargas (CTM-002): cantidad de bocas/tomas, potencia
+    // unitaria, potencia instalada, Fs y potencia simultánea ──
+    columnHelper.accessor('cantidad_puntos', {
+      header: 'Cant.',
+      size: 60,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: info => {
+        const { es_acometida, tipo, tablero_destino_id, id } = info.row.original
+        if (es_acometida || (tipo === 'ALIMENTADOR' && tablero_destino_id != null)) return <span className="text-xs text-font-a20">—</span>
+        return (
+          <CeldaEditable
+            valor={info.getValue() != null ? String(info.getValue()) : ''}
+            onGuardar={v => { const n = Number(v.trim().replace(',', '.')); actualizarDatosCarga(id, { cantidad_puntos: v.trim() && !isNaN(n) ? n : null }) }}
+          />
+        )
+      },
+    }),
+    columnHelper.accessor('potencia_unitaria', {
+      header: 'P unit. (W)',
+      size: 80,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: info => {
+        const { es_acometida, tipo, tablero_destino_id, id, cantidad_puntos, potencia } = info.row.original
+        if (es_acometida || (tipo === 'ALIMENTADOR' && tablero_destino_id != null)) return <span className="text-xs text-font-a20">—</span>
+        const v = info.getValue()
+        // Aviso si cantidad × potencia unitaria no da la potencia instalada cargada.
+        const noCoincide = v != null && cantidad_puntos != null && potencia != null && Math.abs(cantidad_puntos * v / 1000 - potencia) > 0.0005
+        return (
+          <span title={noCoincide ? `${cantidad_puntos} × ${v} W = ${(cantidad_puntos! * v! / 1000).toFixed(3)} kW, distinto de la potencia instalada cargada (${potencia} kW)` : undefined}
+            className="flex items-center gap-1">
+            <CeldaEditable
+              valor={v != null ? String(v) : ''}
+              onGuardar={t => { const n = Number(t.trim().replace(',', '.')); actualizarDatosCarga(id, { potencia_unitaria: t.trim() && !isNaN(n) ? n : null }) }}
+            />
+            {noCoincide && <span className="text-[11px]" style={{ color: 'var(--clr-warning-a10)' }}>⚠</span>}
+          </span>
+        )
+      },
+    }),
     columnHelper.accessor('potencia', {
-      header: 'Potencia (kW)',
+      header: 'P inst. (kW)',
       size: 110,
       meta: { colType: 'editable' } as ColMeta,
       cell: info => {
@@ -190,6 +230,33 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
           />
         )
       },
+    }),
+    columnHelper.accessor('fs', {
+      header: 'Fs',
+      size: 60,
+      meta: { colType: 'editable' } as ColMeta,
+      cell: info => {
+        const { es_acometida, id, fsCargado } = info.row.original
+        const v = info.getValue()
+        // Acometida: no tiene Fs propio, se muestra el resultante (Σ simultánea / Σ instalada).
+        if (es_acometida) return <span className="text-xs text-font-a20" title="Fs resultante: potencia simultánea / instalada">{v != null ? v.toFixed(2) : '—'}</span>
+        return (
+          <CeldaEditable
+            valor={fsCargado != null ? String(fsCargado) : ''}
+            onGuardar={t => {
+              const n = Number(t.trim().replace(',', '.'))
+              if (!t.trim()) return actualizarDatosCarga(id, { factor_simultaneidad: null })
+              if (n > 0 && n <= 1) actualizarDatosCarga(id, { factor_simultaneidad: n })
+            }}
+          />
+        )
+      },
+    }),
+    columnHelper.accessor('potenciaSimultanea', {
+      header: 'P simult. (kW)',
+      size: 100,
+      meta: { colType: 'result' } as ColMeta,
+      cell: info => <span className="text-xs text-font-a20">{info.getValue() != null ? info.getValue()!.toFixed(2) : '—'}</span>,
     }),
     columnHelper.accessor('FP', {
       header: 'FP',
@@ -262,6 +329,6 @@ export function useColumnas(tensionesDisponibles: TensionOpt[], acciones: Accion
       },
     }),
   ], [tensionesDisponibles, nomenclatura, renombrarCircuito, actualizarDescripcion, actualizarTipo,
-      actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFP, actualizarLargo,
+      actualizarTipoTension, actualizarFase, actualizarPotencia, actualizarFP, actualizarLargo, actualizarDatosCarga,
       setPendingTipo, setCircuitoEditando, setFormacionSeleccionada, setModalAbierto])
 }

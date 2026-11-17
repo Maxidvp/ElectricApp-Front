@@ -15,6 +15,9 @@ export type CircuitoAPI = {
   tablero_destino_id: number | null
   tablero_destino: { id: number; tag: string; nombre: string | null } | null
   acometida_destino_id?: number | null
+  factor_simultaneidad?: number | null
+  cantidad_puntos?: number | null
+  potencia_unitaria?: number | null
   formacion: {
     nombre: string
     cond_por_fase: number
@@ -49,6 +52,12 @@ export type CircuitoRow = {
   tablero_destino_id: number | null
   tablero_destino: { id: number; tag: string; nombre: string | null } | null
   acometida_destino: string | null   // nombre de la acometida del destino a la que llega
+  // Planilla de Análisis de Cargas: `potencia` es la INSTALADA; la simultánea es potencia × Fs
+  potenciaSimultanea: number | null
+  fs: number | null                  // Fs aplicado, o resultante en acometidas y alimentadores vinculados
+  fsCargado: number | null           // lo que el usuario cargó (null = 1)
+  cantidad_puntos: number | null
+  potencia_unitaria: number | null
 }
 
 // Datos que necesita FormacionModal para pre-cargar un formulario

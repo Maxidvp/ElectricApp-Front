@@ -46,9 +46,10 @@ export type Selectividad = {
 type CircuitoSel = Pick<Circuito, 'id' | 'orden' | 'circuito' | 'acometida_destino_id' | 'proteccion' | 'es_acometida' | 'parent_id' | 'tipo' | 'tablero_destino_id' | 'selectividad_Is' | 'selectividad_total'>
 type TableroSel = { id: number; circuitos: CircuitoSel[] }
 
-// Un diferencial puro no es una protección de sobrecorriente: no entra en este estudio.
+// Un diferencial puro o un interruptor-seccionador no son protecciones de sobrecorriente:
+// no entran en este estudio.
 const esDeSobrecorriente = (p: Proteccion | null | undefined): p is Proteccion =>
-  !!p && p.familia?.tipo !== 'diferencial'
+  !!p && p.familia?.tipo !== 'diferencial' && p.familia?.tipo !== 'seccionador'
 
 const A = (n: number) => `${Math.round(n)} A`
 
@@ -106,7 +107,7 @@ export function evaluarSelectividad(c: CircuitoSel, aguasArriba: AguasArriba | n
   const abajo = c.proteccion
 
   if (!abajo) return { ...base, estado: 'sin_datos', detalle: 'El circuito no tiene protección asignada' }
-  if (!esDeSobrecorriente(abajo)) return { ...base, estado: 'no_aplica', detalle: 'La selectividad entre diferenciales no se evalúa' }
+  if (!esDeSobrecorriente(abajo)) return { ...base, estado: 'no_aplica', detalle: 'El aparato de este circuito no es una protección de sobrecorriente (diferencial o seccionador)' }
   if (!aguasArriba) return { ...base, estado: 'no_aplica', detalle: 'No hay una protección aguas arriba cargada en el proyecto' }
 
   const contra = `con ${aguasArriba.circuito}`

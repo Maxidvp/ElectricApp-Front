@@ -124,6 +124,20 @@ export async function updateSelectividadCircuito(id: number, data: { selectivida
   return res.json()
 }
 
+// Datos de la Planilla de Análisis de Cargas: Fs, cantidad de bocas/tomas, potencia unitaria.
+export async function updateCargaCircuito(id: number, data: { factor_simultaneidad?: number | null; cantidad_puntos?: number | null; potencia_unitaria?: number | null }) {
+  const res = await apiFetch(`/circuitos/${id}/carga`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => null)
+    throw new Error(error?.error || 'Error al actualizar los datos de carga')
+  }
+  return res.json()
+}
+
 export async function updateNombreCircuito(id: number, circuito: string) {
   const res = await apiFetch(`/circuitos/${id}/nombre`, {
     method: 'PATCH',

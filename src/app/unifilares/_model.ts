@@ -6,7 +6,8 @@
 // desincronizarse entre lo que se ve en pantalla y lo que se exporta a AutoCAD.
 import type { Circuito, Proteccion } from '@/context/types'
 import { columnX, diagramWidth, type ColumnLayout } from './_layout'
-import { CABLE_MARK_BY_POLES, CABLE_GND, BORNE, ITM, CARTEL_RIESGO_ELECTRICO, type SymbolDef } from './_symbols'
+import { textWidth, wrappedLines } from './_measure'
+import { CABLE_MARK_BY_POLES, CABLE_GND, BORNE, ID, CARTEL_RIESGO_ELECTRICO, simboloDeProteccion, type SymbolDef } from './_symbols'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Cotas del dibujo — todas las distancias y márgenes agrupadas por eje (X/Y), en el
@@ -86,7 +87,7 @@ export const SIMBOLO_TEXTO_OFFSET_X = 4   // texto de un símbolo -> cuánto se 
 export const GRUPO_TEXTO_OFFSET_X = 2     // texto del grupo diferencial, además de medio ancho del ID
 
 export const CARTEL_ANCHO = 27.82 // ancho de CARTEL_RIESGO_ELECTRICO, ver _symbols.ts
-export const CARTEL_MARGIN = 0    // cartel -> resto del contenido, separación horizontal
+export const CARTEL_MARGIN = 6    // cartel / bloque de datos -> cualquier otro elemento, separación mínima
 
 // Placeholder para cualquier símbolo del que todavía no tenemos el bloque real
 // digitalizado (ver _symbols.ts) — un rectángulo celeste simple, para no bloquear el
@@ -107,6 +108,26 @@ export const INTERRUPTOR_ABBR: Record<string, string> = {
   caja_moldeada:  'ITM',
   diferencial:    'ID',
   guardamotor:    'GM',
+  seccionador:    'IS',
+}
+
+// Líneas de datos de un aparato, como las pide el esquema tipo de CTM-003: tag, polos y
+// corriente, curva y poder de corte (o sensibilidad y clase en un diferencial), norma.
+// En un guardamotor la corriente es su rango de regulación.
+export function lineasDeProteccion(tag: string, p: Proteccion | null | undefined): string[] {
+  if (!p) return [tag, 'SIN PROTECCIÓN', '', '']
+  const tipo = p.familia?.tipo
+  const corriente = tipo === 'guardamotor'
+    ? (p.rango_regulacion_min != null && p.rango_regulacion_max != null ? `${p.rango_regulacion_min}-${p.rango_regulacion_max}A` : null)
+    : (p.In != null ? `${p.In}A` : null)
+  return [
+    tag,
+    [p.polos != null ? `${p.polos}P` : null, corriente].filter(Boolean).join(' '),
+    (tipo === 'diferencial'
+      ? [p.sensibilidad_mA != null ? `${p.sensibilidad_mA}mA` : null, p.clase_diferencial ?? null]
+      : [p.curva ? `"${p.curva}"` : null, p.Icu != null ? `${p.Icu}kA` : null]).filter(Boolean).join(' '),
+    p.familia?.norma ?? '',
+  ]
 }
 
 export function proteccionRating(p: Proteccion | null): string {
@@ -120,8 +141,14 @@ export function proteccionRating(p: Proteccion | null): string {
 
 // Cantidad de conductores de la formación (fases + neutro si es un cable propio) —
 // determina qué bloque de marca de cable corresponde (CABLE_MARK_BY_POLES).
+// Cuenta fases + neutro, no los conductores en paralelo por fase (eso va en el texto de
+// la formación). El neutro se cuenta aunque no tenga un cable propio elegido: en ese
+// caso usa el mismo que las fases (mismo criterio que generarFormacionCopaipa). Antes
+// se contaba solo con cable de neutro propio y un monofásico F+N daba 1 conductor.
+// En un cable multipolar los conductores son los del propio cable.
 export function poleCount(f: Formacion): number {
-  return f.Nfases * f.cond_por_fase + (f.cable_neutro && f.Nneutro > 0 ? f.Nneutro : 0)
+  if ((f.cable.Nfases ?? 1) > 1) return (f.cable.Nfases ?? 1) + (f.cable.Nneutro ?? 0)
+  return f.Nfases + (f.Nneutro > 0 ? 1 : 0)
 }
 
 // Igual criterio que "SECC. CABLE" de la planilla — cantidad de conductores x sección,
@@ -159,7 +186,131 @@ export interface UnifilarModel {
   symbols: ModelSymbol[]
 }
 
-export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | null, layout: ColumnLayout): UnifilarModel {
+// Una acometida del tablero para el dibujo. `hasta` = cuántos circuitos terminales
+// tiene arriba en el orden del tablero (los que alimenta, ver CLAUDE.md: una acometida
+// alimenta todo lo que tiene arriba).
+// `desde`: de dónde viene ("TP-GENERAL", "RED"…), para el encabezado de la entrada.
+export type EntradaUnifilar = { circuito: Circuito; hasta: number; desde?: string }
+
+// Acometidas y circuitos terminales de un tablero, listos para buildUnifilarModel.
+export function separarEntradas(principales: Circuito[]): { entradas: EntradaUnifilar[]; circuitos: Circuito[] } {
+  const entradas: EntradaUnifilar[] = []
+  const circuitos: Circuito[] = []
+  for (const c of principales) {
+    if (c.es_acometida) entradas.push({ circuito: c, hasta: circuitos.length })
+    else circuitos.push(c)
+  }
+  return { entradas, circuitos }
+}
+
+type Barra = { ini: number; fin: number; entradas: EntradaUnifilar[] }   // columnas [ini, fin)
+
+// Con una sola acometida hay una barra con todos los circuitos, como siempre. Con dos
+// o más, el tablero se dibuja con una barra por tramo (criterio del usuario: sistema de
+// dos barras): cada acometida entra a la barra de los circuitos que quedan entre la
+// acometida anterior y ella, y las barras contiguas se unen con un acoplamiento. Así la
+// de emergencia entra a la barra de cargas esenciales y la principal a la de las no
+// esenciales, y con el acoplamiento cerrado la principal alimenta todo.
+function armarBarras(n: number, entradas: EntradaUnifilar[]): Barra[] {
+  const ents = [...entradas].sort((a, b) => a.hasta - b.hasta)
+  if (ents.length <= 1) return [{ ini: 0, fin: n, entradas: ents }]
+  // La última es la principal: su barra llega hasta el final, aunque queden circuitos debajo de ella.
+  const fines = ents.map((e, i) => i === ents.length - 1 ? n : Math.min(Math.max(e.hasta, 0), n))
+  const cortes = [...new Set(fines.filter(f => f > 0 && f < n))].sort((a, b) => a - b)
+  const barras: Barra[] = [...cortes, n].map((fin, i, arr) => ({ ini: i === 0 ? 0 : arr[i - 1], fin, entradas: [] }))
+  ents.forEach((e, i) => {
+    // Una acometida sin circuitos propios en su tramo comparte la barra más cercana.
+    const barra = barras.find(b => b.fin === fines[i]) ?? barras.find(b => b.fin > fines[i]) ?? barras[barras.length - 1]
+    barra.entradas.push(e)
+  })
+  return barras
+}
+
+// Conductores de una formación como los rotula el esquema tipo de CTM-003: L1/L2/L3/N/PE.
+export function fasesDeFormacion(f: Formacion): string {
+  const partes = Array.from({ length: Math.min(Math.max(f.Nfases, 1), 3) }, (_, i) => `L${i + 1}`)
+  const conNeutro = f.Nneutro > 0 || ((f.cable.Nfases ?? 1) > 1 && (f.cable.Nneutro ?? 0) > 0)
+  if (conNeutro) partes.push('N')
+  if (f.cable_tierra) partes.push('PE')
+  return partes.join('/')
+}
+
+// Metal / aislación / norma del cable, ej. "Cobre/PVC IRAM 2178".
+export function especificacionCable(f: Formacion): string {
+  const fam = f.cable.familia
+  return [[fam?.material, fam?.aislamiento].filter(Boolean).join('/'), fam?.norma].filter(Boolean).join(' ')
+}
+
+// Bloque de datos del tablero (CTM-003 hoja 2), arriba a la izquierda del gabinete.
+export type DatosTableroUnifilar = { titulo: string; lineas: string[] }
+export const DATOS_TABLERO_TITULO_SIZE = 3
+export const DATOS_TABLERO_OFFSET_Y = 10       // tope del dibujo -> título del bloque (a ojo)
+export const DATOS_TABLERO_LINE_H = 2.6        // alto de línea del bloque
+export const ENTRY_ENCABEZADO_MARGEN = 0.6      // último renglón del encabezado -> borde del gabinete
+export const ENTRY_ENCABEZADO_LINE_H = 2.6     // entre el título de la entrada y sus líneas "Desde…" / fases
+export const ENTRY_NORMA_OFFSET_Y = 2.4        // norma del cable de entrada, debajo de su formación
+
+export const ENTRADAS_SEPARACION_X = 24   // entre dos acometidas que entran a la misma barra (a ojo)
+export const BARRA_UNICA_MEDIO_ANCHO = 8  // media barra cuando tiene un solo circuito (a ojo)
+export const ACOPLAMIENTO_W = 12          // largo del placeholder del acoplamiento entre barras
+export const ACOPLAMIENTO_TEXTO_OFFSET_Y = -7 // leyenda del acoplamiento, respecto a la barra
+
+// `entradas`: las acometidas del tablero (ver separarEntradas). Si no se pasa, se usa
+// `entrada` sola, con todos los circuitos colgando de ella.
+// ── Cajas (bounding boxes) ───────────────────────────────────────────────────
+// Para ubicar el cartel y el bloque de datos sin que toquen nada hay que saber cuánto
+// ocupa de verdad cada elemento: un símbolo ocupa su dibujo (no solo su punto de
+// inserción) y un texto su ancho medido.
+export type Caja = { x1: number; y1: number; x2: number; y2: number }
+
+function cajaDeSimbolo(sim: ModelSymbol): Caja {
+  const d = sim.def
+  const ix = d.insertX ?? d.viewBox / 2, iy = d.insertY ?? d.viewBox / 2
+  const xs: number[] = [], ys: number[] = []
+  for (const l of d.lines) { xs.push(l.x1, l.x2); ys.push(l.y1, l.y2) }
+  for (const p of d.dots) { xs.push(p.x - p.r, p.x + p.r); ys.push(p.y - p.r, p.y + p.r) }
+  for (const a of d.arcs ?? []) { xs.push(a.cx - a.r, a.cx + a.r); ys.push(a.cy - a.r, a.cy + a.r) }
+  if (xs.length === 0) return { x1: sim.x, y1: sim.y, x2: sim.x, y2: sim.y }
+  return { x1: sim.x + Math.min(...xs) - ix, y1: sim.y + Math.min(...ys) - iy, x2: sim.x + Math.max(...xs) - ix, y2: sim.y + Math.max(...ys) - iy }
+}
+
+const ALTO_RENGLON = 1.2   // alto de un renglón de texto, en tamaños de letra
+
+function cajaDeTexto(t: ModelText): Caja {
+  const ancho = textWidth(t.text, t.size, t.bold)
+  if (t.width == null) return { x1: t.x, y1: t.y, x2: t.x + ancho, y2: t.y + t.size * ALTO_RENGLON }
+  // Con ancho de caja: el texto se alinea adentro, y si no entra pasa a más renglones.
+  const renglones = wrappedLines(t.text, t.size, t.width, t.bold)
+  const w = Math.min(ancho, t.width)
+  const x1 = t.align === 'right' ? t.x + t.width - w : t.align === 'center' ? t.x + (t.width - w) / 2 : t.x
+  return { x1, y1: t.y, x2: x1 + w, y2: t.y + renglones * t.size * ALTO_RENGLON }
+}
+
+export function cajasDe(m: Pick<UnifilarModel, 'lines' | 'rects' | 'dots' | 'texts' | 'symbols'>): Caja[] {
+  return [
+    ...m.lines.map(l => ({ x1: Math.min(l.x1, l.x2), y1: Math.min(l.y1, l.y2), x2: Math.max(l.x1, l.x2), y2: Math.max(l.y1, l.y2) })),
+    ...m.rects.map(r => ({ x1: r.x, y1: r.y, x2: r.x + r.w, y2: r.y + r.h })),
+    ...m.dots.map(d => ({ x1: d.x - d.r, y1: d.y - d.r, x2: d.x + d.r, y2: d.y + d.r })),
+    ...m.texts.map(cajaDeTexto),
+    ...m.symbols.map(cajaDeSimbolo),
+  ]
+}
+
+export const seTocan = (a: Caja, b: Caja, margen = 0) =>
+  a.x1 < b.x2 + margen && b.x1 < a.x2 + margen && a.y1 < b.y2 + margen && b.y1 < a.y2 + margen
+
+// REGLA DE UBICACIÓN de lo que va en la columna izquierda (cartel de riesgo, bloque de
+// datos del tablero): la x más a la derecha en la que una caja de `ancho`, entre y1 e
+// y2, queda a `margen` o más de todo lo que cruza esa franja. Nunca "a ojo": sale de
+// las cajas reales de lo ya dibujado, así que vale para cualquier cantidad de
+// circuitos, acometidas, grupos diferenciales o largo de textos.
+function xLibreALaIzquierda(cajas: Caja[], y1: number, y2: number, ancho: number, margen: number, respaldo: number): number {
+  const enLaFranja = cajas.filter(c => c.y2 > y1 - margen && c.y1 < y2 + margen)
+  const limite = enLaFranja.length ? Math.min(...enLaFranja.map(c => c.x1)) : respaldo
+  return limite - margen - ancho
+}
+
+export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | null, layout: ColumnLayout, entradas?: EntradaUnifilar[], datosTablero?: DatosTableroUnifilar): UnifilarModel {
   const n = circuitos.length
   const width = diagramWidth(n, layout)
   const lines: ModelLine[] = []
@@ -172,44 +323,85 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
 
   const busX1 = columnX(0, layout)
   const busX2 = columnX(Math.max(n - 1, 0), layout)
-  const entryX = (busX1 + busX2) / 2
 
-  // Dos barras separadas, igual que en el plano real: la de potencia (arriba, de
-  // donde cuelgan las protecciones de los circuitos) y la de tierra (más abajo, a la
-  // que se conecta el PE de cada circuito) — no son la misma línea.
+  // Barras separadas, igual que en el plano real: la(s) de potencia (arriba, de donde
+  // cuelgan las protecciones de los circuitos) y la de tierra (más abajo, a la que se
+  // conecta el PE de cada circuito) — no son la misma línea.
   const hayGrupos = circuitos.some(c => c.grupo_diferencial_id != null)
   const O = BUS_Y + LINEA_PRINCIPAL + (hayGrupos ? EXTRA_LINEA_CON_GRUPO : 0) // tope de la protección, igual para todos los circuitos terminales
   const yBarraTierra = O + DIST_BARRA_TIERRA
   const yPeine = BUS_Y + DIST_PEINE_GRUPO
 
-  lines.push({ x1: busX1, y1: BUS_Y, x2: busX2, y2: BUS_Y, weight: LINE_WEIGHT_UNIFILAR })
   lines.push({ x1: busX1+DERIVACION_TIERRA_OFFSET, y1: yBarraTierra, x2: busX2+DERIVACION_TIERRA_OFFSET, y2: yBarraTierra, weight: LINE_WEIGHT_UNIFILAR, role: 'tierra' })
 
-  if (entrada) {
-    const entradaProteccion = entrada.proteccion ?? null
-    const entradaFormacion = entrada.formacion ?? null
-    const entryLineBottom = entradaProteccion ? ENTRY_BREAKER_CENTER_Y - MISSING_SYMBOL_H / 2 : BUS_Y
+  const barras = armarBarras(n, entradas ?? (entrada ? [{ circuito: entrada, hasta: n }] : []))
 
-    lines.push({ x1: entryX, y1: ENTRY_TOP_Y, x2: entryX, y2: entryLineBottom, weight: LINE_WEIGHT_UNIFILAR })
+  barras.forEach((barra, bi) => {
+    const xIni = columnX(barra.ini, layout)
+    const xFin = columnX(barra.fin - 1, layout)
+    const unica = barras.length > 1 && xIni === xFin
+    const bx1 = unica ? xIni - BARRA_UNICA_MEDIO_ANCHO : xIni
+    const bx2 = unica ? xFin + BARRA_UNICA_MEDIO_ANCHO : xFin
+    lines.push({ x1: bx1, y1: BUS_Y, x2: bx2, y2: BUS_Y, weight: LINE_WEIGHT_UNIFILAR })
 
-    if (entradaProteccion) {
-      lines.push({ x1: entryX, y1: ENTRY_BREAKER_CENTER_Y + MISSING_SYMBOL_H / 2, x2: entryX, y2: BUS_Y, weight: LINE_WEIGHT_UNIFILAR })
-      // Seccionador de entrada: todavía no tenemos ese bloque real digitalizado (ver
-      // MISSING_SYMBOL_W/H arriba) — placeholder celeste en vez de la caja+diagonal
-      // dibujada a mano de antes.
-      rects.push(missingSymbolRect(entryX, ENTRY_BREAKER_CENTER_Y))
-      texts.push({ x: entryX + ENTRY_PROTECCION_TEXTO_OFFSET_X, y: ENTRY_BREAKER_CENTER_Y + ENTRY_PROTECCION_TEXTO_OFFSET_Y, text: proteccionRating(entradaProteccion), size: TEXT_SIZE_UNIFILAR })
+    // Acoplamiento con la barra siguiente. El aparato no está cargado en el proyecto
+    // (no hay dónde indicarlo todavía): va el placeholder celeste, con su leyenda.
+    if (bi < barras.length - 1) {
+      const sig = barras[bi + 1]
+      const sx1 = columnX(sig.ini, layout) - (columnX(sig.ini, layout) === columnX(sig.fin - 1, layout) ? BARRA_UNICA_MEDIO_ANCHO : 0)
+      const xm = (bx2 + sx1) / 2
+      lines.push({ x1: bx2, y1: BUS_Y, x2: xm - ACOPLAMIENTO_W / 2, y2: BUS_Y, weight: LINE_WEIGHT_UNIFILAR })
+      lines.push({ x1: xm + ACOPLAMIENTO_W / 2, y1: BUS_Y, x2: sx1, y2: BUS_Y, weight: LINE_WEIGHT_UNIFILAR })
+      rects.push({ x: xm - ACOPLAMIENTO_W / 2, y: BUS_Y - MISSING_SYMBOL_W / 2, w: ACOPLAMIENTO_W, h: MISSING_SYMBOL_W })
+      texts.push({ x: xm - 15, y: BUS_Y + ACOPLAMIENTO_TEXTO_OFFSET_Y, width: 30, align: 'center', text: 'ACOPLAMIENTO', size: TEXT_SIZE_UNIFILAR })
     }
 
-    if (entradaFormacion) {
-      const def = CABLE_MARK_BY_POLES[poleCount(entradaFormacion)]
-      if (def) symbols.push({ x: entryX, y: ENTRY_TICK_Y, def })
-      else rects.push(missingSymbolRect(entryX, ENTRY_TICK_Y))
-      texts.push({ x: entryX + ENTRY_FORMACION_TEXTO_OFFSET_X, y: ENTRY_TICK_Y + ENTRY_FORMACION_TEXTO_OFFSET_Y, text: formacionResumen(entradaFormacion), size: TEXT_SIZE_UNIFILAR })
-    }
+    const centro = (xIni + xFin) / 2
+    barra.entradas.forEach((entradaU, ei) => {
+      const ent = entradaU.circuito
+      const entryX = centro + (ei - (barra.entradas.length - 1) / 2) * ENTRADAS_SEPARACION_X
+      const entradaProteccion = ent.proteccion ?? null
+      const entradaFormacion = ent.formacion ?? null
+      const entryLineBottom = entradaProteccion ? ENTRY_BREAKER_CENTER_Y - MISSING_SYMBOL_H / 2 : BUS_Y
 
-    texts.push({ x: entryX - ENTRY_TITULO_OFFSET_X, y: ENTRY_TOP_Y + ENTRY_TITULO_OFFSET_Y, width: ENTRY_TITULO_W, align: 'right', text: entrada.circuito, size: TEXT_SIZE_UNIFILAR, bold: true })
-  }
+      lines.push({ x1: entryX, y1: ENTRY_TOP_Y, x2: entryX, y2: entryLineBottom, weight: LINE_WEIGHT_UNIFILAR })
+
+      if (entradaProteccion) {
+        lines.push({ x1: entryX, y1: ENTRY_BREAKER_CENTER_Y + MISSING_SYMBOL_H / 2, x2: entryX, y2: BUS_Y, weight: LINE_WEIGHT_UNIFILAR })
+        // Protección de entrada: el símbolo que corresponde a su tipo (se inserta por su
+        // extremo superior, y mide lo mismo que el hueco reservado: MISSING_SYMBOL_H).
+        // Un tipo sin símbolo propio cae al placeholder celeste.
+        const defEntrada = simboloDeProteccion(entradaProteccion.familia?.tipo)
+        if (defEntrada) symbols.push({ x: entryX, y: ENTRY_BREAKER_CENTER_Y - MISSING_SYMBOL_H / 2, def: defEntrada })
+        else rects.push(missingSymbolRect(entryX, ENTRY_BREAKER_CENTER_Y))
+        // Mismos datos que los aparatos de las salidas (antes iba solo "4P 100A").
+        const abbrEntrada = INTERRUPTOR_ABBR[entradaProteccion.familia?.tipo ?? ''] ?? ''
+        lineasDeProteccion([abbrEntrada, ent.circuito].filter(Boolean).join(' '), entradaProteccion).forEach((texto, li) => {
+          if (texto) texts.push({ x: entryX + SIMBOLO_TEXTO_OFFSET_X, y: ENTRY_BREAKER_CENTER_Y - MISSING_SYMBOL_H / 2 + DATOS_CIRCUITO_OFFSET_Y + li * DATOS_CIRCUITO_LINE_H, text: texto, size: TEXT_SIZE_UNIFILAR })
+        })
+      }
+
+      if (entradaFormacion) {
+        const def = CABLE_MARK_BY_POLES[poleCount(entradaFormacion)]
+        if (def) symbols.push({ x: entryX, y: ENTRY_TICK_Y, def })
+        else rects.push(missingSymbolRect(entryX, ENTRY_TICK_Y))
+        texts.push({ x: entryX + ENTRY_FORMACION_TEXTO_OFFSET_X, y: ENTRY_TICK_Y + ENTRY_FORMACION_TEXTO_OFFSET_Y, text: formacionResumen(entradaFormacion), size: TEXT_SIZE_UNIFILAR })
+        const norma = especificacionCable(entradaFormacion)
+        if (norma) texts.push({ x: entryX + ENTRY_FORMACION_TEXTO_OFFSET_X, y: ENTRY_TICK_Y + ENTRY_FORMACION_TEXTO_OFFSET_Y + ENTRY_NORMA_OFFSET_Y, text: norma, size: TEXT_SIZE_UNIFILAR })
+      }
+
+      // Encabezado de la entrada como en el esquema tipo de CTM-003: circuito, de dónde
+      // viene y qué conductores trae (L1/L2/L3/N/PE).
+      // Van apilados de modo que el último renglón termine justo arriba del borde del
+      // gabinete (antes el tercero quedaba cruzado por esa línea).
+      const encabezado = [ent.circuito, entradaU.desde ? `Desde ${entradaU.desde}` : '', entradaFormacion ? fasesDeFormacion(entradaFormacion) : ''].filter(Boolean)
+      const yBase = ENTRY_TOP_Y + LIMITE_INSET_TOP - ENTRY_ENCABEZADO_MARGEN
+      encabezado.forEach((texto, li) => texts.push({
+        x: entryX - ENTRY_TITULO_OFFSET_X, y: yBase - (encabezado.length - li) * ENTRY_ENCABEZADO_LINE_H,
+        width: ENTRY_TITULO_W, align: 'right', text: texto, size: TEXT_SIZE_UNIFILAR, bold: li === 0,
+      }))
+    })
+  })
 
   const yMarcaCable = O + DIST_MARCA_CABLE
   const yCableTierra = O + DIST_CABLE_TIERRA
@@ -235,7 +427,8 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
 
     if (gj > gi) lines.push({ x1: xIni, y1: yPeine, x2: xFin, y2: yPeine, weight: LINE_WEIGHT_UNIFILAR })
     lines.push({ x1: xCenter, y1: BUS_Y, x2: xCenter, y2: yPeine, weight: LINE_WEIGHT_UNIFILAR })
-    rects.push(missingSymbolRect(xCenter, yIdCentro))
+    // Mismo alto que el hueco reservado (MISSING_SYMBOL_H) e inserción por arriba.
+    symbols.push({ x: xCenter, y: yIdCentro - MISSING_SYMBOL_H / 2, def: ID })
 
     // 4 líneas de datos a la derecha del ID, mismo criterio que el bloque de datos de
     // cada ITM (ver más abajo): tag, polos+In, sensibilidad+clase, norma — la primera
@@ -265,22 +458,21 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
     // conductor aparte, no una continuación de esta línea.
     //dots.push({ x, y: BUS_Y, r: 3 })
     lines.push({ x1: x, y1: c.grupo_diferencial_id != null ? yPeine : BUS_Y, x2: x, y2: O, weight: LINE_WEIGHT_UNIFILAR })
-    // ITM: bloque real, se inserta por su extremo superior (ver insertX/insertY en
-    // _symbols.ts) — por eso va en y=O, no en el centro de la caja como antes. Celeste
-    // (no esConductor): es una marca informativa del dispositivo, no el conductor.
-    symbols.push({ x, y: O, def: ITM })
+    // Protección: el símbolo de su tipo (termomagnética, diferencial…), insertado por
+    // su extremo superior (ver insertX/insertY en _symbols.ts) — por eso va en y=O.
+    // Celeste (no esConductor): es una marca informativa del dispositivo, no el
+    // conductor. Sin protección asignada, o de un tipo sin símbolo, va el placeholder
+    // celeste: antes se dibujaba una termomagnética aunque el circuito no tuviera nada.
+    const defProteccion = simboloDeProteccion(c.proteccion?.familia?.tipo)
+    if (defProteccion) symbols.push({ x, y: O, def: defProteccion })
+    else rects.push(missingSymbolRect(x, O + PROTECCION_H / 2))
     lines.push({ x1: x, y1: O + PROTECCION_H, x2: x, y2: yFinTramo, weight: LINE_WEIGHT_UNIFILAR })
 
     // 4 líneas de datos a la derecha del bloque, mismo criterio que el plano de
     // referencia: tag, polos+In, curva+Icu, norma — cada una si hay dato para mostrar.
     const p = c.proteccion
     const abbr = p ? (INTERRUPTOR_ABBR[p.familia?.tipo ?? ''] ?? '') : ''
-    const lineas = [
-      [abbr, c.circuito].filter(Boolean).join(' '),
-      p ? [p.polos != null ? `${p.polos}P` : null, p.In != null ? `${p.In}A` : null].filter(Boolean).join(' ') : '',
-      p ? [p.curva ? `"${p.curva}"` : null, p.Icu != null ? `${p.Icu}kA` : null].filter(Boolean).join(' ') : '',
-      p?.familia?.norma ?? '',
-    ]
+    const lineas = lineasDeProteccion([abbr, c.circuito].filter(Boolean).join(' '), p)
     lineas.forEach((texto, li) => {
       if (texto) texts.push({ x: x + SIMBOLO_TEXTO_OFFSET_X, y: O + DATOS_CIRCUITO_OFFSET_Y + li * DATOS_CIRCUITO_LINE_H, text: texto, size: TEXT_SIZE_UNIFILAR })
     })
@@ -317,28 +509,54 @@ export function buildUnifilarModel(circuitos: Circuito[], entrada: Circuito | nu
   // el contenido dibujado (entrada + circuitos) con un margen fijo. No es lo mismo que
   // missingSymbolRect: ese es un placeholder de bloque faltante, este es un elemento
   // real y permanente del plano.
+  // Se mide con las cajas reales (símbolos completos y textos), no solo con los puntos
+  // de inserción: antes un texto o un símbolo podía quedar fuera del recuadro.
+  const contenido = cajasDe({ lines, rects, dots, texts, symbols })
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
   const consider = (px: number, py: number) => {
     minX = Math.min(minX, px); maxX = Math.max(maxX, px)
     minY = Math.min(minY, py); maxY = Math.max(maxY, py)
   }
+  // El alto del recuadro sigue saliendo de las líneas (tramos de los circuitos y
+  // entradas, que lo cruzan a propósito); el ancho, de todo el contenido.
   for (const l of lines) { consider(l.x1, l.y1); consider(l.x2, l.y2) }
-  for (const s of symbols) consider(s.x, s.y)
-  for (const d of dots) consider(d.x, d.y)
-  for (const r of rects) { consider(r.x, r.y); consider(r.x + r.w, r.y + r.h) }
-  // El título de la entrada se extiende a la izquierda del resto del contenido.
-  if (entrada) consider(entryX - ENTRY_TITULO_OFFSET_X, ENTRY_TOP_Y)
+  for (const c of contenido) { minX = Math.min(minX, c.x1); maxX = Math.max(maxX, c.x2) }
 
-  // Cartel de riesgo eléctrico: columna propia a la IZQUIERDA de todo el contenido
-  // eléctrico, nunca abajo — un cartel de seguridad va al costado del tablero, no
-  // debajo de la planilla. Alineado por abajo con el fin del contenido (yFinTramo).
-  // Tiene que calcularse y considerarse en el bounding box ANTES de trazar el recuadro
-  // límite — si no, el recuadro se dibuja con el bounding box viejo (sin el cartel) y
-  // el cartel queda afuera.
-  const cartelX = minX - CARTEL_MARGIN - CARTEL_ANCHO
+  // Cartel de riesgo eléctrico y bloque de datos del tablero: columna propia a la
+  // IZQUIERDA del contenido eléctrico (un cartel de seguridad va al costado del
+  // tablero, no debajo de la planilla). El cartel va alineado por abajo con el fin del
+  // contenido; el bloque de datos, arriba. La x de cada uno sale de xLibreALaIzquierda
+  // (ver la regla más arriba) y después se alinean los dos por su borde izquierdo. Si
+  // el tablero es tan bajo que quedarían encimados entre sí, el cartel pasa a la
+  // izquierda del bloque.
   const cartelY = maxY - CARTEL_OFFSET_Y
+  const cartelTop = cartelY - CARTEL_ALTURA
+  let cartelX = xLibreALaIzquierda(contenido, cartelTop, cartelY, CARTEL_ANCHO, CARTEL_MARGIN, minX)
+
+  if (datosTablero) {
+    const yTitulo = ENTRY_TOP_Y + DATOS_TABLERO_OFFSET_Y
+    const yLineas = yTitulo + DATOS_TABLERO_TITULO_SIZE + 2
+    // Ancho real del bloque: el del renglón más largo (medido), no un ancho fijo.
+    const anchoBloque = Math.max(
+      textWidth(datosTablero.titulo, DATOS_TABLERO_TITULO_SIZE, true),
+      ...datosTablero.lineas.map(t => textWidth(t, TEXT_SIZE_UNIFILAR)),
+    )
+    const yFinBloque = yLineas + datosTablero.lineas.length * DATOS_TABLERO_LINE_H
+    let bloqueX = xLibreALaIzquierda(contenido, yTitulo, yFinBloque, anchoBloque, CARTEL_MARGIN, minX)
+    const izquierda = Math.min(cartelX, bloqueX)
+    bloqueX = izquierda
+    cartelX = yFinBloque + CARTEL_MARGIN > cartelTop ? izquierda - CARTEL_MARGIN - CARTEL_ANCHO : izquierda
+
+    texts.push({ x: bloqueX, y: yTitulo, text: datosTablero.titulo, size: DATOS_TABLERO_TITULO_SIZE, bold: true })
+    datosTablero.lineas.forEach((texto, li) => texts.push({ x: bloqueX, y: yLineas + li * DATOS_TABLERO_LINE_H, text: texto, size: TEXT_SIZE_UNIFILAR }))
+    // Entra en el recuadro del gabinete: en un tablero sin acometida dibujada, lo más
+    // alto del resto del contenido es la barra y el bloque quedaría afuera.
+    consider(bloqueX, yTitulo - LIMITE_INSET_TOP - 2)
+    consider(bloqueX + anchoBloque, yFinBloque)
+  }
+
   symbols.push({ x: cartelX, y: cartelY, def: CARTEL_RIESGO_ELECTRICO, role: 'peligro' })
-  consider(cartelX, cartelY - CARTEL_ALTURA)
+  consider(cartelX, cartelTop)
   consider(cartelX + CARTEL_ANCHO, cartelY)
 
   const limX1 = minX - LIMITE_MARGIN, limY1 = minY + LIMITE_INSET_TOP

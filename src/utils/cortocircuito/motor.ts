@@ -6,7 +6,7 @@ import { C, type Complex } from './complex'
 import { obtenerC, type Escenario } from './constantes'
 import type { EntradaProyecto, FaultPoint, ResultadoFalla, TipoFalla, SyncGenerator, AsyncMotor } from './tipos'
 import { impedanciaRed, impedanciaGenerador, impedanciaMotor, corrienteNominalGenerador } from './elementos'
-import { construirImpedancias, agregarFuentesMotores, reducirEnNodo, caminoEntre, type Grafo } from './red'
+import { construirImpedancias, agregarFuentesMotores, reducirEnNodo, caminoEntre, hayCamino, type Grafo } from './red'
 import { calcularKappa, calcularIp, calcularMu, calcularQMotor, calcularM, calcularN } from './derivadas'
 import { validarEntrada } from './validaciones'
 
@@ -69,8 +69,14 @@ function calcularFraccionesFuente(
   c: number, Un: number, Ik3_total: number, incluyeMotores: boolean, esc: Escenario, btTolerancia10: boolean,
 ): Fracciones {
   const red = entrada.red_alimentacion
-  const ZbranchRed = C.add(impedanciaPropiaRed(entrada, esc, Un, btTolerancia10), caminoEntre(grafo, red.nodo, nodoFalla))
-  const IkRed = (c * Un) / (Math.sqrt(3) * C.abs(ZbranchRed))
+  // Si la red no tiene camino hasta la falla (isla alimentada solo por generadores, ej.
+  // un tablero en servicio de emergencia), su aporte es cero. Antes esto lanzaba un
+  // error y el caso "solo generador" quedaba siempre afuera del cálculo.
+  let IkRed = 0
+  if (hayCamino(grafo, red.nodo, nodoFalla)) {
+    const ZbranchRed = C.add(impedanciaPropiaRed(entrada, esc, Un, btTolerancia10), caminoEntre(grafo, red.nodo, nodoFalla))
+    IkRed = (c * Un) / (Math.sqrt(3) * C.abs(ZbranchRed))
+  }
 
   const generadores: AporteGenerador[] = entrada.generadores.map((g: SyncGenerator) => {
     const Zbranch = C.add(impedanciaGenerador(g, Un, btTolerancia10).Z1, caminoEntre(grafo, g.nodo, nodoFalla))

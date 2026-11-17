@@ -82,6 +82,8 @@ export function coordinarProteccion(Ib: number | null, Iz: number | null, p: Pro
   const tipo = p.familia?.tipo ?? ''
   if (tipo === 'diferencial')
     return { estado: 'no_aplica', In: p.In ?? null, ajuste: null, detalle: 'Un diferencial no protege contra sobrecarga' }
+  if (tipo === 'seccionador')
+    return { estado: 'no_aplica', In: p.In ?? null, ajuste: null, detalle: 'Un interruptor-seccionador no protege contra sobrecarga' }
   if (Ib == null || Iz == null)
     return { estado: 'sin_datos', In: p.In ?? null, ajuste: null, detalle: 'Falta la corriente de diseño o la admisible del cable' }
   if (Ib > Iz)

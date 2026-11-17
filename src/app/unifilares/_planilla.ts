@@ -5,7 +5,8 @@ import type { Circuito, Tablero } from '@/context/types'
 import { calcCorriente, generarFormacionCopaipa, type FormatoFormacion } from '@/utils/electricidad'
 import { COL_W, diagramWidth, type ColumnLayout } from './_layout'
 import { textWidth, wrappedLines } from './_measure'
-import type { ModelLine, ModelText } from './_model'
+import { poleCount, type ModelLine, type ModelText } from './_model'
+import type { CargaCircuito } from '@/utils/cargas'
 
 // Mismo criterio que el resto de la app (ver Caídas/Cargas): la tensión de cálculo
 // sale de tipo_tension del circuito + la tensión correspondiente del tablero.
@@ -21,9 +22,12 @@ const INTERRUPTOR_ABBR: Record<string, string> = {
   caja_moldeada:  'ITM',
   diferencial:    'ID',
   guardamotor:    'GM',
+  seccionador:    'IS',
 }
 
-type Row = { label: string; get: (c: Circuito, t: Tablero) => string }
+// `carga`: la carga efectiva del circuito (utils/cargas.ts). Con ella la planilla muestra lo
+// mismo que Cargas: la demanda de un alimentador vinculado y la corriente simultánea.
+type Row = { label: string; get: (c: Circuito, t: Tablero, carga?: CargaCircuito) => string }
 
 export const ROWS: Row[] = [
   { label: 'CIRCUITO N°', get: c => c.circuito },
@@ -36,11 +40,17 @@ export const ROWS: Row[] = [
     },
   },
   { label: 'TIPO CIRCUITO', get: c => c.tipo ?? '—' },
-  { label: 'POTENCIA (kW)', get: c => c.potencia != null ? String(c.potencia) : '—' },
+  {
+    label: 'POTENCIA (kW)',
+    get: (c, _t, carga) => {
+      const p = carga ? carga.potenciaInstalada : c.potencia
+      return p != null ? String(Number(p.toFixed(2))) : '—'
+    },
+  },
   {
     label: 'CORRIENTE (A)',
-    get: (c, t) => {
-      const i = calcCorriente(c.potencia, c.tipo_tension, tensionCircuito(c, t), c.FP)
+    get: (c, t, carga) => {
+      const i = carga ? carga.corriente : calcCorriente(c.potencia, c.tipo_tension, tensionCircuito(c, t), c.FP)
       return i != null ? i.toFixed(2) : '—'
     },
   },
@@ -66,8 +76,9 @@ export const ROWS: Row[] = [
     get: c => {
       const f = c.formacion
       if (!f) return '—'
-      const n = f.Nfases * f.cond_por_fase + (f.cable_neutro && f.Nneutro > 0 ? f.Nneutro : 0)
-      return `${n}x${f.cable.seccion_f}${f.cable.calibre_tipo}`
+      // Misma cuenta de conductores que la marca de cable del dibujo (poleCount).
+      const paralelo = f.cond_por_fase > 1 ? `${f.cond_por_fase}x(` : ''
+      return `${paralelo}${poleCount(f)}x${f.cable.seccion_f}${f.cable.calibre_tipo}${paralelo ? ')' : ''}`
     },
   },
   {
@@ -76,7 +87,7 @@ export const ROWS: Row[] = [
       ? `1x${c.formacion.cable_tierra.seccion_f}${c.formacion.cable_tierra.calibre_tipo}`
       : '—',
   },
-  { label: 'DESTINO DEL CIRCUITO', get: c => c.descripcion ?? '—' },
+  { label: 'DESTINO DEL CIRCUITO', get: c => c.tablero_destino ? `Tablero ${c.tablero_destino.tag}` : c.descripcion ?? '—' },
 ]
 
 // Formato COPAIPA: norma + sección + PE van juntos en una sola fila, completos (con
@@ -142,7 +153,7 @@ export interface PlanillaModel {
   texts: ModelText[]
 }
 
-export function buildPlanillaModel(circuitos: Circuito[], tablero: Tablero, layout: ColumnLayout, formato: FormatoFormacion = 'ingles'): PlanillaModel {
+export function buildPlanillaModel(circuitos: Circuito[], tablero: Tablero, layout: ColumnLayout, formato: FormatoFormacion = 'ingles', cargas?: Map<number, CargaCircuito>): PlanillaModel {
   const ROWS = planillaRows(formato)
   const n = circuitos.length
   const { groupColW, labelColW } = layout
@@ -156,7 +167,7 @@ export function buildPlanillaModel(circuitos: Circuito[], tablero: Tablero, layo
   const rowHeights = ROWS.map(row => {
     let maxLines = wrappedLines(row.label, TEXT_SIZE_TITULO, labelColW - PAD_X_LABEL * 2, true)
     for (const c of circuitos) {
-      const lines = wrappedLines(row.get(c, tablero), TEXT_SIZE_DATO, COL_W - PAD_X_DATO * 2)
+      const lines = wrappedLines(row.get(c, tablero, cargas?.get(c.id)), TEXT_SIZE_DATO, COL_W - PAD_X_DATO * 2)
       maxLines = Math.max(maxLines, lines)
     }
     return Math.max(ROW_H_MIN, maxLines * TEXT_SIZE_TITULO * LINE_H + PAD_Y * 2)
@@ -170,7 +181,7 @@ export function buildPlanillaModel(circuitos: Circuito[], tablero: Tablero, layo
     circuitos.forEach((c, ci) => {
       texts.push({
         x: groupColW + labelColW + ci * COL_W + PAD_X_DATO, y: y + PAD_Y,
-        width: COL_W - PAD_X_DATO * 2, align: 'center', text: row.get(c, tablero), size: TEXT_SIZE_DATO,
+        width: COL_W - PAD_X_DATO * 2, align: 'center', text: row.get(c, tablero, cargas?.get(c.id)), size: TEXT_SIZE_DATO,
       })
     })
   })

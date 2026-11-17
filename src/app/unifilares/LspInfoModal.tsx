@@ -27,9 +27,9 @@ export default function LspInfoModal({ onCerrar }: Props) {
             hacer falta un <code className="text-info-a10">ZOOM Extents</code> para verlo completo.
           </li>
           <li>
-            Los símbolos (como la marca de cable tetrapolar) se insertan por nombre de bloque —
-            tienen que existir ya en el dibujo de destino o en una librería cargada, si no
-            AutoCAD va a preguntar si querés crear un bloque nuevo con ese nombre.
+            Los símbolos se insertan como bloques. El script trae la definición de cada uno y
+            la crea solo si el dibujo no tiene ya un bloque con ese nombre: en un dibujo vacío
+            funciona sin preparar nada, y si ya tenés tu biblioteca cargada se usan tus bloques.
           </li>
         </ol>
 

@@ -5,6 +5,8 @@ export const TIPOS_PROTECCION = [
   { value: 'caja_moldeada',  label: 'Interruptor en caja moldeada' },
   { value: 'diferencial',    label: 'Diferencial' },
   { value: 'guardamotor',    label: 'Guardamotor' },
+  // Interruptor-seccionador (IEC 60947-3): maniobra y seccionamiento, sin disparo propio.
+  { value: 'seccionador',    label: 'Interruptor-seccionador' },
 ]
 
 export const CURVAS = ['B', 'C', 'D', 'K', 'Z']

@@ -43,6 +43,22 @@ export const CABLE_MONO: SymbolDef = {
   dots: [{ x: 5.4, y: 6.7, r: 0.2 }],
 }
 
+// UNIF_CABLE_TRI — marca de cable de 3 conductores. NO sale de un bloque real como las
+// otras dos: está dibujada con su mismo trazo y separación (1.2 mm entre conductores,
+// centrada igual). Sin punto: en las marcas reales el punto está en el conductor de
+// neutro (tetrapolar = 3F+N, monofásico = F+N), y la cuenta de conductores sola no dice
+// si alguno de los tres es neutro.
+export const CABLE_TRI: SymbolDef = {
+  name: 'UNIF_CABLE_TRI',
+  viewBox: 14.2,
+  lines: [
+    { x1: 5.4, y1: 4.9, x2: 8.6, y2: 6.7 },
+    { x1: 5.4, y1: 6.1, x2: 8.6, y2: 7.9 },
+    { x1: 5.4, y1: 7.3, x2: 8.6, y2: 9.1 },
+  ],
+  dots: [],
+}
+
 // UNIF_CABLE_GND.svg — marca del cable de tierra (derivación de PE). A diferencia de
 // CABLE_MARK_BY_POLES, esta no varía según cantidad de conductores — es siempre la
 // misma marca, en la derivación de tierra de cada circuito (ver _model.ts).
@@ -99,6 +115,50 @@ export const ITM: SymbolDef = {
     // hacia la izquierda — de -90° (7.5,10) a 90° (7.5,11) pasando por 0° (8,10.5).
     { cx: 7.5, cy: 10.5, r: 0.5, startAngle: -90, endAngle: 90 },
   ],
+}
+
+// UNIF_ID — interruptor diferencial. NO sale de un bloque real: está dibujado siguiendo
+// el símbolo de la guía de COPAIPA ("Guía de Productos y Símbolos para Instalación
+// Eléctrica", y el esquema tipo de CTM-003 hoja 2 — ver Docs COPAIPA/): misma cabeza que
+// el ITM (cruz + contacto), el conductor que atraviesa el toroide, y el vínculo en "["
+// que une el contacto con el toroide. Misma caja que el ITM (12 mm de alto, inserción
+// por el extremo superior) para entrar en las mismas cotas. Si el dibujo de destino ya
+// tiene un bloque con este nombre, la exportación usa ese.
+export const ID: SymbolDef = {
+  name: 'UNIF_ID',
+  viewBox: 14,
+  insertX: 7,
+  insertY: 0,
+  lines: [
+    { x1: 7, y1: 0, x2: 7, y2: 3 },         // pata superior
+    { x1: 6.5, y1: 3, x2: 7.5, y2: 3 },     // travesaño
+    { x1: 6.3, y1: 2.2, x2: 7.7, y2: 0.8 }, // cruz
+    { x1: 6.3, y1: 0.8, x2: 7.7, y2: 2.2 },
+    { x1: 6, y1: 3, x2: 7, y2: 7 },         // cuchilla (contacto abierto)
+    { x1: 7, y1: 7, x2: 7, y2: 12 },        // conductor, atraviesa el toroide
+    { x1: 6.5, y1: 5, x2: 4.6, y2: 5 },     // vínculo contacto → toroide
+    { x1: 4.6, y1: 5, x2: 4.6, y2: 9.5 },
+    { x1: 4.6, y1: 9.5, x2: 5.5, y2: 9.5 },
+  ],
+  dots: [{ x: 7, y: 9.5, r: 1.5, filled: false }], // toroide
+}
+
+// UNIF_IS — interruptor-seccionador (IEC 60947-3). NO sale de un bloque real: sigue el
+// "IS" del esquema tipo de CTM-003 hoja 2 (contacto con el travesaño de seccionador y el
+// círculo de interruptor bajo carga), en la misma caja que el ITM. Si el dibujo de
+// destino ya tiene un bloque con este nombre, la exportación usa ese.
+export const IS: SymbolDef = {
+  name: 'UNIF_IS',
+  viewBox: 14,
+  insertX: 7,
+  insertY: 0,
+  lines: [
+    { x1: 7, y1: 0, x2: 7, y2: 2 },         // pata superior
+    { x1: 6.2, y1: 2, x2: 7.8, y2: 2 },     // travesaño (función seccionador)
+    { x1: 5.9, y1: 3.3, x2: 7, y2: 7 },     // cuchilla (contacto abierto)
+    { x1: 7, y1: 7, x2: 7, y2: 12 },        // pata inferior
+  ],
+  dots: [{ x: 7, y: 2.5, r: 0.5, filled: false }], // círculo (maniobra bajo carga)
 }
 
 // CARTEL_RIESGO_ELECTRICO.svg — cartel normalizado de riesgo eléctrico (placa +
@@ -161,11 +221,24 @@ export const CARTEL_RIESGO_ELECTRICO: SymbolDef = {
   dots: [],
 }
 
-// Cantidad de conductores de la formación → símbolo de marca de cable. Tripolar (3)
-// queda pendiente de que llegue ese bloque — mientras tanto ese caso no dibuja marca.
+// Cantidad de conductores de la formación → símbolo de marca de cable.
 export const CABLE_MARK_BY_POLES: Record<number, SymbolDef> = {
   2: CABLE_MONO,
+  3: CABLE_TRI,
   4: CABLE_TETRA,
+}
+
+// Tipo de protección del catálogo (FamiliaProteccion.tipo) → símbolo. El guardamotor y
+// el interruptor en caja moldeada son interruptores automáticos con disparo térmico y
+// magnético: mismo símbolo que el termomagnético. Un tipo sin símbolo propio devuelve
+// null y el dibujo muestra el recuadro de "símbolo faltante".
+export function simboloDeProteccion(tipo: string | null | undefined): SymbolDef | null {
+  switch (tipo) {
+    case 'termomagnetico': case 'caja_moldeada': case 'guardamotor': return ITM
+    case 'diferencial': return ID
+    case 'seccionador': return IS
+    default: return null
+  }
 }
 
 // Todos los símbolos conocidos, por nombre de bloque — usado para resolver los
@@ -174,8 +247,11 @@ export const CABLE_MARK_BY_POLES: Record<number, SymbolDef> = {
 export const SYMBOLS_BY_NAME: Record<string, SymbolDef> = {
   [CABLE_TETRA.name]: CABLE_TETRA,
   [CABLE_MONO.name]: CABLE_MONO,
+  [CABLE_TRI.name]: CABLE_TRI,
   [CABLE_GND.name]: CABLE_GND,
   [BORNE.name]: BORNE,
   [ITM.name]: ITM,
+  [ID.name]: ID,
+  [IS.name]: IS,
   [CARTEL_RIESGO_ELECTRICO.name]: CARTEL_RIESGO_ELECTRICO,
 }

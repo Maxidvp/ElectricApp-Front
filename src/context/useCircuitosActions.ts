@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import * as circuitosApi from '@/services/circuitos'
 import type { FormacionPatch } from '@/services/circuitos'
-import type { Tablero, Circuito, Cable, Proteccion, GrupoDiferencial } from './types'
+import type { Tablero, Circuito, Cable, Proteccion, GrupoDiferencial, DatosCargaCircuito } from './types'
 import { nextTempId, mapCirc, addCirc, replaceCirc, mergeWithTemp, DESCRIPCION_CREANDO } from './helpers'
 import { useToast } from './ToastContext'
 import { sigueIgual, type Historial } from './historial'
@@ -318,6 +318,11 @@ export function useCircuitosActions(
     editarCampos(id, patch, (rid, v) => circuitosApi.updateSelectividadCircuito(rid, { selectividad_Is: v.selectividad_Is ?? null, selectividad_total: !!v.selectividad_total }), { historial: 'límite de selectividad' })
   }
 
+  // Fs, cantidad de bocas/tomas y potencia unitaria (Planilla de Análisis de Cargas).
+  function actualizarDatosCarga(id: number, datos: DatosCargaCircuito) {
+    editarCampos(id, datos, (rid, v) => circuitosApi.updateCargaCircuito(rid, v as DatosCargaCircuito), { historial: 'datos de carga' })
+  }
+
   // Vincula (o desvincula, con tableroDestinoId null) un circuito ALIMENTADOR a otro tablero.
   // La validación de ciclos/duplicados vive en el back, por eso ante un error se recarga
   // el proyecto en vez de confiar en el estado optimista (podría haber quedado inconsistente).
@@ -421,7 +426,7 @@ export function useCircuitosActions(
     reordenarCircuitos,
     actualizarDescripcion, actualizarFP, actualizarLargo, actualizarPotencia,
     actualizarTipoTension, actualizarFase, actualizarTipo, actualizarEsAcometida,
-    actualizarMetodoInstalacion, actualizarFcManual, actualizarFtManual, actualizarSelectividad,
+    actualizarMetodoInstalacion, actualizarFcManual, actualizarFtManual, actualizarSelectividad, actualizarDatosCarga,
     vincularTableroAlimentador,
     agregarAcometida, actualizarFormacion, actualizarProteccion, asignarGrupoDiferencial, crearCircuitoAuxiliar, reordenarSubcircuitos,
   }

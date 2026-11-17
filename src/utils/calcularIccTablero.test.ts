@@ -100,6 +100,18 @@ describe('calcularIccTablero', () => {
     expect(Math.abs(r.Icc_min_kA! - 11.876) / 11.876).toBeLessThanOrEqual(0.005)
   })
 
+  it('tablero alimentado solo por un grupo electrógeno', () => {
+    // 60 kVA, 400 V, x"d = 12 %, cos φ = 0,8 (sen φ = 0,6), R/X"d por defecto en BT = 0,15.
+    //   |ZG| = 0,12 · 400² / 60 000 = 0,320 Ω
+    //   KG = cmáx / (1 + x"d · sen φ) = 1,05 / 1,072 = 0,9795 → |ZGK| = 0,3134 Ω
+    //   I"k máx = 1,05 · 400 / (√3 · 0,3134) = 773,7 A ; I"k mín = 0,95 · 400 / (√3 · 0,3134) = 700,0 A
+    const gen = fuente(4, { tipo: 'GENERADOR', tension_nominal: 400, potencia_nominal: 60, xd_subtransitoria_pct: 12, factor_potencia: 0.8 })
+    const t = tablero([gen])
+    const r = calcularIccTablero(t, [t])
+    expect(Math.abs(r.Icc_max_kA! - 0.7737) / 0.7737).toBeLessThanOrEqual(0.005)
+    expect(Math.abs(r.Icc_min_kA! - 0.7000) / 0.7000).toBeLessThanOrEqual(0.005)
+  })
+
   it('sin fuentes → null, sin inventar un número', () => {
     const t = tablero([])
     const r = calcularIccTablero(t, [t])

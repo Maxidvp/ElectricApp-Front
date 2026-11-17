@@ -13,6 +13,7 @@ type Form = {
   corriente_nom: string
   potencia_inst: string; potencia_dem: string; factor_potencia: string
   fabricante: string; modelo: string; norma: string; grado_proteccion: string
+  material_gabinete: string; clase_aislacion: string; grado_proteccion_operacion: string; grado_ik: string; apto_personas: string; conductores_internos: string; forma_separacion: string; esquema_tierra: string; reserva_pct: string; potencia_disipacion: string; icw_ka: string
 }
 
 // Categoría = qué diagramas/rutas de la app aplican a este tablero. `tipo` sigue
@@ -38,6 +39,7 @@ const EMPTY: Form = {
   corriente_nom: '',
   potencia_inst: '', potencia_dem: '', factor_potencia: '',
   fabricante: '', modelo: '', norma: '', grado_proteccion: '',
+  material_gabinete: '', clase_aislacion: '', grado_proteccion_operacion: '', grado_ik: '', apto_personas: '', conductores_internos: '', forma_separacion: '', esquema_tierra: '', reserva_pct: '', potencia_disipacion: '', icw_ka: '',
 }
 
 function toForm(t: any): Form {
@@ -61,6 +63,17 @@ function toForm(t: any): Form {
     modelo:           t.modelo           ?? '',
     norma:            t.norma            ?? '',
     grado_proteccion: t.grado_proteccion ?? '',
+    material_gabinete: t.material_gabinete ?? '',
+    clase_aislacion: t.clase_aislacion ?? '',
+    grado_proteccion_operacion: t.grado_proteccion_operacion ?? '',
+    grado_ik: t.grado_ik ?? '',
+    apto_personas: t.apto_personas ?? '',
+    conductores_internos: t.conductores_internos ?? '',
+    forma_separacion: t.forma_separacion ?? '',
+    esquema_tierra: t.esquema_tierra ?? '',
+    reserva_pct: n(t.reserva_pct ?? null),
+    potencia_disipacion: n(t.potencia_disipacion ?? null),
+    icw_ka: n(t.icw_ka ?? null),
   }
 }
 
@@ -86,6 +99,17 @@ function fromForm(form: Form) {
     modelo:           str(form.modelo),
     norma:            str(form.norma),
     grado_proteccion: str(form.grado_proteccion),
+    material_gabinete: str(form.material_gabinete),
+    clase_aislacion: str(form.clase_aislacion),
+    grado_proteccion_operacion: str(form.grado_proteccion_operacion),
+    grado_ik: str(form.grado_ik),
+    apto_personas: str(form.apto_personas),
+    conductores_internos: str(form.conductores_internos),
+    forma_separacion: str(form.forma_separacion),
+    esquema_tierra: str(form.esquema_tierra),
+    reserva_pct: num(form.reserva_pct),
+    potencia_disipacion: num(form.potencia_disipacion),
+    icw_ka: num(form.icw_ka),
   }
 }
 
@@ -358,9 +382,33 @@ export default function TablaTableros() {
               <Campo label="Fabricante"        name="fabricante"       value={form.fabricante}       onChange={v => handleChange('fabricante', v)}       placeholder="ej. Siemens" />
               <Campo label="Modelo"            name="modelo"           value={form.modelo}           onChange={v => handleChange('modelo', v)}           placeholder="ej. SIVACON S8" />
               <Campo label="Norma"             name="norma"            value={form.norma}            onChange={v => handleChange('norma', v)}            placeholder="ej. IEC 61439" />
-              <Campo label="Grado de protección" name="grado_proteccion" value={form.grado_proteccion} onChange={v => handleChange('grado_proteccion', v)} placeholder="ej. IP54" />
+              <Campo label="Grado de protección externo" name="grado_proteccion" value={form.grado_proteccion} onChange={v => handleChange('grado_proteccion', v)} placeholder="ej. IP54" />
             </div>
           </div>
+
+          {/* Gabinete — datos que el unifilar muestra junto al tablero (esquema tipo de
+              COPAIPA, CTM-003) y los propios de un tablero industrial. Solo POTENCIA. */}
+          {form.categoria === 'POTENCIA' && (
+            <div className={cx.section}>
+              <div className={cx.hdr}>
+                <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-info-a10" />
+                <span>Gabinete (datos para el unifilar)</span>
+              </div>
+              <div className={`${cx.grid} grid-cols-3`}>
+                <Campo label="Material del gabinete" name="material_gabinete" value={form.material_gabinete} onChange={v => handleChange('material_gabinete', v)} placeholder="Metálico / Material aislante" />
+                <Campo label="Clase de aislación" name="clase_aislacion" value={form.clase_aislacion} onChange={v => handleChange('clase_aislacion', v)} placeholder="ej. II" />
+                <Campo label="IP para operación" name="grado_proteccion_operacion" value={form.grado_proteccion_operacion} onChange={v => handleChange('grado_proteccion_operacion', v)} placeholder="ej. IP20" />
+                <Campo label="Grado IK" name="grado_ik" value={form.grado_ik} onChange={v => handleChange('grado_ik', v)} placeholder="ej. IK08" />
+                <Campo label="Apto para personas" name="apto_personas" value={form.apto_personas} onChange={v => handleChange('apto_personas', v)} placeholder="ej. BA1, BA4, BA5" />
+                <Campo label="Reserva (%)" name="reserva_pct" type="number" value={form.reserva_pct} onChange={v => handleChange('reserva_pct', v)} placeholder="ej. 20" />
+                <Campo label="Conductores internos" name="conductores_internos" value={form.conductores_internos} onChange={v => handleChange('conductores_internos', v)} placeholder="ej. Cu/PVC IRAM NM 247-3" />
+                <Campo label="Potencia de disipación (W)" name="potencia_disipacion" type="number" value={form.potencia_disipacion} onChange={v => handleChange('potencia_disipacion', v)} placeholder="solo gabinete aislante" />
+                <Campo label="Esquema de conexión a tierra" name="esquema_tierra" value={form.esquema_tierra} onChange={v => handleChange('esquema_tierra', v)} placeholder="ej. TT, TN-S" />
+                <Campo label="Icw de barras (kA)" name="icw_ka" type="number" value={form.icw_ka} onChange={v => handleChange('icw_ka', v)} placeholder="ej. 25" />
+                <Campo label="Forma de separación" name="forma_separacion" value={form.forma_separacion} onChange={v => handleChange('forma_separacion', v)} placeholder="ej. 2b, 4a (IEC 61439)" />
+              </div>
+            </div>
+          )}
 
           {/* Corrientes */}
           <div className={cx.section}>

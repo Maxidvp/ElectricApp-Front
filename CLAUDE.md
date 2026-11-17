@@ -110,6 +110,39 @@ así que sirve mientras dure la ventana; el back elimina de verdad lo borrado al
 Todavía sin deshacer: ruteo, grupos diferenciales, altas, duplicados, reordenamientos y
 vincular alimentador.
 
+## Simultaneidad y planillas de COPAIPA (CTM-002)
+
+- **Simultaneidad** (`utils/cargas.ts`): cada circuito tiene `factor_simultaneidad`
+  (null = 1). `CargaCircuito.potencia` es la **simultánea** (instalada × Fs) y de ella
+  salen la corriente del circuito y la suma de su acometida; `potenciaInstalada` es la
+  cargada. La acometida no tiene Fs propio: `fs` es el resultante. Así lo hace el modelo
+  de la Planilla de Análisis de Cargas de CTM-002 (el test reproduce su ejemplo).
+- **Locales** (`/locales`, modelo `Local`): una fila por ambiente, llegan en la carga
+  inicial del proyecto. El campo `tablero` es texto libre y los puntos por local son
+  independientes de `Circuito.cantidad_puntos` (no se cruzan todavía).
+- Documentos en `/memorias`: `analisis-cargas` y `locales`, con las columnas de CTM-002.
+- Sin hacer: grado de electrificación por unidad funcional (tablas AEA 771.8, no cargarlas
+  de memoria), factores de simultaneidad sugeridos por norma, memoria técnica descriptiva.
+
+## Unifilar (`app/unifilares/`)
+
+El formato sigue el **esquema unifilar tipo de COPAIPA** (CTM-003 hoja 2; las guías están
+en `D:\Claude\ElectricApp\Docs COPAIPA\`), ampliado con datos de tablero industrial.
+`_model.ts` arma la geometría (mm reales) y la consumen el canvas y la exportación.
+- **Símbolos** (`_symbols.ts`): `simboloDeProteccion(tipo)` elige el del aparato. ITM,
+  bornes, marcas de cable de 2 y 4 conductores y el cartel salen de bloques reales del
+  usuario; ID, IS y la marca de 3 conductores están dibujados según las guías de COPAIPA.
+  Un aparato sin símbolo (o un circuito sin protección) sale como recuadro celeste.
+- **Acometidas**: con más de una, una barra por tramo unidas por un acoplamiento
+  (`armarBarras`); cada entrada lleva su encabezado "Desde … / L1/L2/L3/N/PE".
+- **Datos del tablero** (`_datosTablero.ts`): lo que pide CTM-003 sale siempre (con "…"
+  si falta); lo industrial (In, Icc e Icw de barras, forma de separación, ECT) solo si
+  está cargado. Se cargan en Tableros → "Gabinete (datos para el unifilar)".
+- **Exportación** (`_export.ts`): el `.lsp` define cada bloque que usa solo si el dibujo
+  no tiene uno con ese nombre.
+Pendiente del esquema tipo: secciones del cableado interno, datos del elemento de
+distribución y de los bornes de paso, aparato de acoplamiento, fila Ambiente/Local.
+
 ## Verificación y Memoria de cálculo
 
 `/verificacion` (panel con todos los ✗ / datos faltantes / avisos del proyecto) y
@@ -165,7 +198,14 @@ en silencio.
 **UI:** verificar con un script Playwright
 descartable en `D:\ElectricApp\Back\.scratch\` (scratchpad compartido con el
 backend, gitignored) contra el proyecto de prueba persistente (id 63 en la
-sesión de desarrollo actual — no crear/borrar proyectos de prueba nuevos) —
+sesión de desarrollo actual — no crear/borrar proyectos de prueba nuevos). Desde el
+17/11/2026 ese proyecto está cargado como una instalación completa y coherente, a pedido
+del usuario: TP-GENERAL (red + trafo 200 kVA, grupo GE-01, acometida de emergencia y
+principal, dos barras), TP-SUB01 (oficinas, cabecera con interruptor-seccionador),
+TP-TALLER (motores con guardamotor), 10 locales, Fs y bocas cargados. Usa cuatro aparatos
+del catálogo marcados "Genérico (prueba)" (caja moldeada, seccionador, guardamotor): no
+son datos de fabricante. Sirve para revisar todas las pantallas de una vez; si un test
+escribe algo, dejarlo como estaba —
 antes de navegar, setear `localStorage.setItem('ea_proyecto', '63')`. Borrar
 los scripts después de cada verificación.
 

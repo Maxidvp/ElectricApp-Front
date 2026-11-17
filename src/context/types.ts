@@ -44,7 +44,7 @@ export type Formacion = {
 
 export type FamiliaProteccion = {
   id: number
-  tipo: string   // 'termomagnetico' | 'diferencial' | 'guardamotor' | 'caja_moldeada'
+  tipo: string   // 'termomagnetico' | 'diferencial' | 'guardamotor' | 'caja_moldeada' | 'seccionador'
   marca: string | null
   modelo: string | null
   catalogo: string | null
@@ -100,6 +100,11 @@ export type Circuito = {
   metodo_instalacion: string | null
   fc_manual: number | null
   ft_manual: number | null
+  // Planilla de Análisis de Cargas (CTM-002): Fs del circuito (null = 1) y, como dato
+  // informativo, cantidad de bocas/tomas y su potencia unitaria en W
+  factor_simultaneidad?: number | null
+  cantidad_puntos?: number | null
+  potencia_unitaria?: number | null
   // Límite de selectividad con la protección de aguas arriba, dato de fabricante
   // cargado a mano (pisa al calculado — ver utils/selectividad.ts)
   selectividad_Is?: number | null   // A
@@ -111,6 +116,32 @@ export type Circuito = {
   tablero_destino: { id: number; tag: string; nombre: string | null } | null
   // Acometida del tablero destino a la que llega (null = toda la carga del tablero)
   acometida_destino_id?: number | null
+}
+
+export type DatosCargaCircuito = Partial<Pick<Circuito, 'factor_simultaneidad' | 'cantidad_puntos' | 'potencia_unitaria'>>
+
+// Un ambiente del proyecto — fila de la "Planilla de Locales" de COPAIPA (CTM-002).
+export type Local = {
+  id: number
+  proyecto_id: number
+  orden: number
+  unidad_funcional: string | null
+  tablero: string | null       // tablero(s) que lo alimentan, texto libre
+  planta: string | null
+  numero: string | null
+  nombre: string               // ambiente / función
+  area: number | null          // m²
+  largo: number | null         // m
+  iug: number | null
+  tug: number | null
+  tue: number | null
+  otros: number | null
+  cap_personas: string | null  // BA…
+  evacuacion: string | null    // BD…
+  materiales: string | null    // BE…
+  otras: string | null
+  canalizacion: string | null
+  conductores: string | null
 }
 
 export type FuenteAlimentacion = {
@@ -224,6 +255,18 @@ export type Tablero = {
   norma: string | null
   grado_proteccion: string | null
   modulos: number | null
+  // Datos del gabinete para el unifilar (CTM-003 de COPAIPA) y de tablero industrial
+  material_gabinete?: string | null
+  clase_aislacion?: string | null
+  grado_proteccion_operacion?: string | null
+  grado_ik?: string | null
+  apto_personas?: string | null
+  conductores_internos?: string | null
+  forma_separacion?: string | null
+  esquema_tierra?: string | null
+  reserva_pct?: number | null
+  potencia_disipacion?: number | null
+  icw_ka?: number | null
   circuitos: Circuito[]
   fuentes: FuenteAlimentacion[]
   lazos: LazoInstrumentacion[]
@@ -277,6 +320,11 @@ export type ProyectosContextType = {
   actualizarMetodoInstalacion: (id: number, metodo: string | null) => void
   actualizarFcManual: (id: number, fc: number | null) => void
   actualizarSelectividad: (id: number, Is: number | null, total: boolean) => void
+  actualizarDatosCarga: (id: number, datos: DatosCargaCircuito) => void
+  locales: Local[]
+  agregarLocal: (datos?: Partial<Local>) => Promise<void>
+  actualizarLocal: (id: number, datos: Partial<Local>) => void
+  eliminarLocal: (id: number) => void
   actualizarFtManual: (id: number, ft: number | null) => void
   vincularTableroAlimentador: (id: number, tableroDestinoId: number | null, acometidaDestinoId?: number | null) => void
   agregarAcometida: (tableroId: number, nombre: string, insertIndex: number) => void

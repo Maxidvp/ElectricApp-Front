@@ -26,6 +26,8 @@ const ESTILOS = `
 .mem-hoja th { background: #e9e9e9; font-weight: 700; }
 .mem-hoja td.izq, .mem-hoja th.izq { text-align: left; }
 .mem-hoja tr.mem-total td { font-weight: 700; background: #f4f4f4; }
+.mem-hoja tr.mem-grupo td { font-weight: 700; background: #f4f4f4; text-align: left; }
+.mem-hoja table.mem-compacta th, .mem-hoja table.mem-compacta td { padding: 2px 3px; font-size: 9.5px; }
 .mem-datos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px 18px; margin-bottom: 8px; }
 .mem-datos span b { font-weight: 700; }
 .mem-mal { color: #b00020; font-weight: 700; }
@@ -44,11 +46,11 @@ const ESTILOS = `
 
 // Datos que usan todos los documentos.
 export function useMemoria() {
-  const { tableros, segmentos, proyectoActivo } = useProyectos()
+  const { tableros, segmentos, proyectoActivo, locales } = useProyectos()
   const [sitio] = useState(() => typeof window === 'undefined' ? SITIO_DEFAULT : leerParametrosSitio())
   const evaluado = useMemo(() => evaluarProyecto(tableros, segmentos, sitio), [tableros, segmentos, sitio])
   const formato = (proyectoActivo?.formato_formacion as FormatoFormacion) ?? 'ingles'
-  return { proyectoActivo, evaluado, sitio, formato }
+  return { proyectoActivo, evaluado, sitio, formato, locales }
 }
 
 export function Hoja({ titulo, children }: { titulo: string; children: React.ReactNode }) {

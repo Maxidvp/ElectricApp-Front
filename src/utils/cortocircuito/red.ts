@@ -184,6 +184,20 @@ export function reducirEnNodo(
   return resultado
 }
 
+// ¿Hay continuidad física entre dos nodos?
+export function hayCamino(grafo: Grafo, desde: string, hasta: string): boolean {
+  if (desde === hasta) return true
+  const visitados = new Set<string>([desde])
+  const cola = [desde]
+  while (cola.length > 0) {
+    for (const arista of grafo.get(cola.shift()!) ?? []) {
+      if (arista.hasta === hasta) return true
+      if (!visitados.has(arista.hasta)) { visitados.add(arista.hasta); cola.push(arista.hasta) }
+    }
+  }
+  return false
+}
+
 // Camino único (suma en serie de los tramos físicos) entre dos nodos del árbol.
 // Se usa para aislar el aporte individual de cada fuente (generador/motor) a
 // I"k — igual que hace la propia norma en sus ejemplos: cada máquina se trata

@@ -1,4 +1,5 @@
 'use client'
+import { Fragment } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Hoja, useMemoria, n } from '@/components/memoria/Hoja'
@@ -63,7 +64,8 @@ function General({ evaluado, sitio, formato }: Datos) {
       <h2>2. Criterios de cálculo</h2>
       <p><b>Corriente de diseño (Ib).</b> Monofásico/bifásico: I = P / (U · cos φ). Trifásico: I = P / (√3 · U · cos φ). La
         acometida suma la potencia de los circuitos del tablero con factor de potencia ponderado por potencia; un
-        alimentador toma la demanda del tablero que alimenta. No se aplican factores de demanda ni de simultaneidad.</p>
+        alimentador toma la demanda del tablero que alimenta. P es la potencia simultánea: la instalada de cada circuito
+        por su factor de simultaneidad (1 si no se cargó).</p>
       <p><b>Corriente admisible (Iz).</b> Iz = Iadm · n · FH · FC · FT. Iadm: dato de catálogo del cable para la forma de
         instalación; n: conductores en paralelo por fase; FH: factor por altitud, min(1; 1,02 − 0,00002·h); FC: factor por
         agrupamiento (AEA 90364-7-771 / IEC 60364-5-52 B.52.17 y B.52.20) según el método y la cantidad de circuitos que
@@ -96,21 +98,23 @@ function Cargas({ evaluado, formato }: Datos) {
   return (
     <>
       <p className="mem-nota" style={{ marginTop: 10 }}>
-        Potencias instaladas, sin factores de demanda ni de simultaneidad. La acometida suma los circuitos del tablero;
-        un alimentador toma la demanda del tablero que alimenta.
+        P (kW) e Ib son los simultáneos (potencia instalada × Fs de cada circuito; ver la Planilla de Análisis de Cargas).
+        La acometida suma los circuitos que tiene arriba; un alimentador toma la demanda del tablero que alimenta.
       </p>
       {evaluado.tableros.map((t, i) => {
         // Potencia del tablero = suma de sus salidas (la acometida es esa misma suma).
         const salidas = t.circuitos.filter(e => !e.circuito.es_acometida)
-        const total = salidas.reduce((acc, e) => acc + (e.carga.potencia ?? 0), 0)
-        const sinPotencia = salidas.filter(e => e.carga.potencia == null).length
+        const total = salidas.reduce((acc, e) => acc + (e.carga.potenciaInstalada ?? 0), 0)
+        const simultanea = salidas.reduce((acc, e) => acc + (e.carga.potencia ?? 0), 0)
+        const sinPotencia = salidas.filter(e => e.carga.potenciaInstalada == null).length
         return (
           <div key={t.tablero.id} className={i > 0 ? 'mem-tablero' : undefined}>
             <TituloTablero t={t} />
             <DatosTablero t={t} />
             <TablaCargas t={t} formato={formato} conProteccion />
             <p>
-              <b>Potencia instalada del tablero:</b> {n(total)} kW en {salidas.length} salida(s)
+              <b>Potencia instalada del tablero:</b> {n(total)} kW en {salidas.length} salida(s) ·{' '}
+              <b>simultánea:</b> {n(simultanea)} kW
               {sinPotencia > 0 && <span className="mem-mal"> — {sinPotencia} salida(s) sin potencia cargada, no incluidas</span>}
             </p>
             <h3>Balance de fases</h3>
@@ -218,8 +222,146 @@ function Cables({ evaluado, formato }: Datos) {
   )
 }
 
+// Tipos de circuito de iluminación y de tomas (AEA 90364-7-771): definen en qué columna
+// de la planilla van la cantidad, la potencia unitaria y el factor de simultaneidad.
+const ES_ILUMINACION = new Set(['IUG', 'IUE'])
+const ES_TOMAS = new Set(['TUG', 'TUE'])
+
+// Planilla de Análisis de Cargas con las columnas del modelo de COPAIPA (CTM-002 hoja 4).
+// Las filas van en el orden del tablero: cada acometida queda como subtotal de lo que
+// tiene arriba, igual que en el modelo. Todo sale de evaluarProyecto.
+function AnalisisCargas({ evaluado }: Datos) {
+  const W = (kw: number | null | undefined) => kw == null ? '—' : Math.round(kw * 1000).toLocaleString('es-AR')
+  return (
+    <>
+      <p className="mem-nota" style={{ marginTop: 10 }}>
+        Potencia simultánea = potencia instalada × Fs; de ella salen la intensidad de cada circuito y la suma de cada
+        acometida. En las filas de subtotal, Fs es el resultante (simultánea / instalada). Los circuitos sin Fs cargado se
+        toman con Fs = 1.
+      </p>
+      {evaluado.tableros.map((t, i) => (
+        <div key={t.tablero.id} className={i > 0 ? 'mem-tablero' : undefined}>
+          <TituloTablero t={t} />
+          <table className="mem-compacta">
+            <thead>
+              <tr>
+                <th rowSpan={2} className="izq">Circ.</th><th rowSpan={2}>Tipo</th>
+                <th colSpan={2}>Bocas</th><th colSpan={2}>Tomas</th><th rowSpan={2}>F.M. / otros [W]</th>
+                <th rowSpan={2}>Long. (m)</th><th rowSpan={2}>FP</th><th rowSpan={2}>Potencia instalada [W]</th>
+                <th colSpan={3}>Fs</th><th rowSpan={2}>Potencia simult. [W]</th>
+                <th colSpan={3}>Intensidad simultánea (A)</th>
+                <th colSpan={3}>Conductor</th><th rowSpan={2}>Mét. de instalación</th><th rowSpan={2} className="izq">Destino</th>
+              </tr>
+              <tr>
+                <th>Cant.</th><th>P unit. [W]</th><th>Cant.</th><th>P unit. [W]</th>
+                <th>Ilum.</th><th>Tomas</th><th>FM / Tab.</th>
+                <th>R (L1)</th><th>S (L2)</th><th>T (L3)</th>
+                <th>Caída [%]</th><th>Secc. [mm²]</th><th>Iadm [A]</th>
+              </tr>
+            </thead>
+            <tbody>{t.circuitos.map(e => {
+              const c = e.circuito
+              const tipo = c.tipo ?? ''
+              const ilum = ES_ILUMINACION.has(tipo), tomas = ES_TOMAS.has(tipo)
+              const sub = c.es_acometida
+              const fs = e.carga.fs != null ? n(e.carga.fs) : '—'
+              // Intensidad por fase: la acometida trae las tres; un circuito la lleva en
+              // las fases a las que está conectado.
+              const I = e.carga.corriente
+              const enFase = (f: 'R' | 'S' | 'T') => sub
+                ? (e.carga.corrientesFase ? n(e.carga.corrientesFase[f], 1) : '—')
+                : I != null && (e.carga.tipo === 'tri' || (c.fase ?? '').includes(f)) ? n(I, 1) : ''
+              return (
+                <tr key={c.id} className={sub ? 'mem-total' : undefined}>
+                  <td className="izq">{sub ? `Subtot. ${c.circuito}` : c.circuito}</td><td>{sub ? 'CS' : tipo || '—'}</td>
+                  <td>{ilum ? c.cantidad_puntos ?? '—' : ''}</td><td>{ilum ? c.potencia_unitaria ?? '—' : ''}</td>
+                  <td>{tomas ? c.cantidad_puntos ?? '—' : ''}</td><td>{tomas ? c.potencia_unitaria ?? '—' : ''}</td>
+                  <td>{!sub && !ilum && !tomas ? W(e.carga.potenciaInstalada) : ''}</td>
+                  <td>{n(c.Largo, 0)}</td><td>{n(e.carga.fp)}</td><td>{W(e.carga.potenciaInstalada)}</td>
+                  <td>{ilum ? fs : ''}</td><td>{tomas ? fs : ''}</td><td>{!ilum && !tomas ? fs : ''}</td>
+                  <td>{W(e.carga.potencia)}</td>
+                  <td>{enFase('R')}</td><td>{enFase('S')}</td><td>{enFase('T')}</td>
+                  <td className={e.caida.epct != null && e.caida.epct > LIMITE_CAIDA_PCT ? 'mem-mal' : undefined}>{n(e.caida.epct)}</td>
+                  <td>{c.formacion?.cable.seccion_f ?? '—'}</td>
+                  <td className={e.ampacidad.cumple === false ? 'mem-mal' : undefined}>{n(e.ampacidad.iadm_corr, 1)}</td>
+                  <td>{METODO[c.metodo_instalacion ?? ''] ?? '—'}</td>
+                  <td className="izq">{c.tablero_destino ? `Alimentador ${c.tablero_destino.tag}` : c.descripcion ?? '—'}</td>
+                </tr>
+              )
+            })}</tbody>
+          </table>
+        </div>
+      ))}
+      <p className="mem-nota">
+        Iadm: corriente admisible del conductor ya corregida por agrupamiento, temperatura y altitud. Caída: sobre el
+        tramo del circuito. En rojo, lo que no cumple (ver Verificación).
+      </p>
+    </>
+  )
+}
+
+// Planilla de Locales con las columnas del modelo de COPAIPA (CTM-002 hoja 4), agrupada
+// por unidad funcional.
+function Locales({ locales }: Datos) {
+  const ordenados = [...locales].sort((a, b) => a.orden - b.orden || a.id - b.id)
+  const grupos: { uf: string; filas: typeof ordenados }[] = []
+  for (const l of ordenados) {
+    const uf = l.unidad_funcional ?? ''
+    const g = grupos.find(x => x.uf === uf)
+    if (g) g.filas.push(l); else grupos.push({ uf, filas: [l] })
+  }
+  const suma = (filas: typeof ordenados, k: 'area' | 'iug' | 'tug' | 'tue' | 'otros') => filas.reduce((s, l) => s + (l[k] ?? 0), 0)
+  if (ordenados.length === 0) return <p style={{ marginTop: 12 }}>El proyecto no tiene locales cargados (se cargan en la página Locales).</p>
+  return (
+    <>
+      <table className="mem-compacta" style={{ marginTop: 12 }}>
+        <thead>
+          <tr>
+            <th rowSpan={2}>Tablero</th><th rowSpan={2}>Planta</th><th rowSpan={2}>N° local</th><th rowSpan={2} className="izq">Ambiente / función</th>
+            <th rowSpan={2}>Área [m²] / Largo [m]</th>
+            <th colSpan={4}>Puntos de utilización</th><th colSpan={4}>Condiciones de utilización</th><th colSpan={2}>Materiales permitidos</th>
+          </tr>
+          <tr>
+            <th>IUG</th><th>TUG</th><th>TUE</th><th>Otros</th>
+            <th>Capacidad personas</th><th>Evacuación</th><th>Materiales</th><th>Otras</th>
+            <th>Canalización</th><th>Conductores / cables</th>
+          </tr>
+        </thead>
+        <tbody>{grupos.map(g => (
+          <Fragment key={g.uf}>
+            {(g.uf || grupos.length > 1) && (
+              <tr className="mem-grupo"><td colSpan={15}>
+                {g.uf || 'Sin unidad funcional'} ({n(suma(g.filas, 'area'), 1)} m²) — {suma(g.filas, 'iug')} IUG · {suma(g.filas, 'tug')} TUG · {suma(g.filas, 'tue')} TUE · {suma(g.filas, 'otros')} otros
+              </td></tr>
+            )}
+            {g.filas.map(l => (
+              <tr key={l.id}>
+                <td>{l.tablero ?? '—'}</td><td>{l.planta ?? '—'}</td><td>{l.numero ?? '—'}</td><td className="izq">{l.nombre}</td>
+                <td>{l.area != null ? n(l.area, 1) : l.largo != null ? `${n(l.largo, 1)} m` : '—'}</td>
+                <td>{l.iug ?? ''}</td><td>{l.tug ?? ''}</td><td>{l.tue ?? ''}</td><td>{l.otros ?? ''}</td>
+                <td>{l.cap_personas ?? '—'}</td><td>{l.evacuacion ?? '—'}</td><td>{l.materiales ?? '—'}</td><td>{l.otras ?? '—'}</td>
+                <td>{l.canalizacion ?? '—'}</td><td>{l.conductores ?? '—'}</td>
+              </tr>
+            ))}
+          </Fragment>
+        ))}
+        <tr className="mem-total">
+          <td colSpan={4} className="izq">Total del proyecto</td><td>{n(suma(ordenados, 'area'), 1)}</td>
+          <td>{suma(ordenados, 'iug')}</td><td>{suma(ordenados, 'tug')}</td><td>{suma(ordenados, 'tue')}</td><td>{suma(ordenados, 'otros')}</td>
+          <td colSpan={6} />
+        </tr>
+        </tbody>
+      </table>
+      <p className="mem-nota">
+        El grado de electrificación de cada unidad funcional no se calcula todavía: indicarlo en la memoria descriptiva.
+      </p>
+    </>
+  )
+}
+
 const CONTENIDO: Record<DocumentoId, (d: Datos) => React.ReactNode> = {
   general: General, cargas: Cargas, cortocircuito: Cortocircuito, cables: Cables,
+  locales: Locales, 'analisis-cargas': AnalisisCargas,
 }
 
 export default function DocumentoMemoria() {

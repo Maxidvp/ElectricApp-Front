@@ -11,7 +11,7 @@ import type { FormacionData } from '@/app/cargas/types'
 import { generarFormacion } from '@/utils/electricidad'
 import { impedanciaRed } from '@/utils/cortocircuito'
 import { verificarCircuitoCC, type BarraCC, type TipoFallaMin } from '@/utils/verificacionCortocircuito'
-import { calcularIccTablero } from '@/utils/calcularIccTablero'
+import { calcularIccTablero, esCircuitoEsencial } from '@/utils/calcularIccTablero'
 import { selectividadCircuito, type Selectividad, type EstadoSelectividad } from '@/utils/selectividad'
 import CeldaEditable from '@/components/CeldaEditable'
 import { varianteLabel } from '@/utils/protecciones'
@@ -158,7 +158,8 @@ export default function Cortocircuitos() {
         id: c.id, circuito: c.circuito,
         formacion: c.formacion ? generarFormacion(c.formacion, formato) : '—',
         formacionData: formacionData(c as any),
-        ...verificarCircuitoCC(c, barra),
+        // Un circuito no esencial no lo alimenta el respaldo: usa la Icc mínima de la alimentación principal.
+        ...verificarCircuitoCC(c, esCircuitoEsencial(c, tablero) || iccTablero.Icc_min_principal_kA == null ? barra : { ...barra, Icc_min_A: iccTablero.Icc_min_principal_kA * 1000 }),
         selectividad: selectividadCircuito(c, tablero, tableros, barra.Icc_max_A),
         selManual: c.selectividad_total ? 'total' : c.selectividad_Is != null ? String(c.selectividad_Is) : '',
         proteccionId: proteccion?.id ?? null,
